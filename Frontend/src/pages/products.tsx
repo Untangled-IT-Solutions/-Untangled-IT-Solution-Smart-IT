@@ -1,6 +1,6 @@
 // src/pages/products.tsx
 import { useState, useMemo } from "react";
-import { Search, Plus, Minus, ShoppingCart, FileText, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, Plus, Minus, ShoppingCart, FileText, ChevronDown, ChevronUp } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useStore } from "../lib/store-context";
 import { PRODUCT_CATEGORIES, products, formatPrice, availabilityLabel } from "../lib/store-data";
@@ -17,7 +17,9 @@ const productImages: Record<string, string> = {
   'featured-lat-5420': laptop2,
   'featured-lat-5440': laptop3,
   'featured-monitor': monitor1,
-  // Add more mappings for other products if they have images in assets
+  // Map the quote products too if they have images
+  'lat-5440': laptop3,
+  'lat-7440': laptop3,
 };
 
 interface ProductsPageProps {
@@ -47,20 +49,21 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
     });
   }, [list, search, category]);
 
+  // FIXED: cart is a Record, not an array
   const getCartQty = (id: string) => {
-    const line = cart.find((l) => l.id === id);
-    return line?.qty || 0;
+    const item = cart[id];
+    return item?.quantity || 0;
   };
 
+  // FIXED: quote is an array of QuoteLine objects
   const isInQuote = (id: string) => quote.some((l) => l.id === id);
 
-  const handleQuoteClick = (productId: string, productName: string, productImage?: string) => {
+  const handleQuoteClick = (productId: string, productName: string) => {
     if (!isInQuote(productId)) {
       addToQuote({ 
         id: productId, 
         name: productName, 
-        kind: "product",
-        image: productImage
+        kind: "product"
       });
     }
     if (onNavigate) {
@@ -69,7 +72,26 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
   };
 
   const handleAddToCart = (productId: string) => {
-    addToCart(productId, 1);
+    // Find the product to get its data
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    // Create product data for the cart
+    const productData = {
+      id: product.id,
+      name: product.name,
+      brand: product.brand,
+      category: product.category,
+      segment: product.segment,
+      shortDescription: product.shortDescription,
+      specs: product.specs,
+      price: product.price || 0,
+      availability: product.availability,
+      quoteOnly: product.quoteOnly || false,
+      image: product.image || '',
+    };
+    
+    addToCart(productId, 1, productData);
   };
 
   const toggleSpecs = (id: string) => {
@@ -259,11 +281,13 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
                 )
               ) : (
                 <button
-                  onClick={() => handleQuoteClick(product.id, product.name, productImage)}
+                  onClick={() => handleQuoteClick(product.id, product.name)}
                   className={`mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${
-                    theme === "light"
-                      ? "bg-[#839705] text-white hover:bg-[#98ab06]"
-                      : "bg-white text-black hover:bg-gray-200"
+                    inQuote
+                      ? "bg-green-600 text-white hover:bg-green-700"
+                      : theme === "light"
+                        ? "bg-[#839705] text-white hover:bg-[#98ab06]"
+                        : "bg-[#839705] text-white hover:bg-[#98ab06]"
                   }`}
                 >
                   <FileText className="h-4 w-4" />

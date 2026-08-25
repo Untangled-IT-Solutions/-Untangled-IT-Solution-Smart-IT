@@ -1,14 +1,19 @@
-"""Projects controller."""
+# app/controllers/project_controller.py
+"""Project controller."""
 
-from app.models.project import Project
 from app.services.project_service import ProjectService
 
 
 class ProjectController:
-    """Provides project module data to the view."""
+    """Controls project operations."""
 
     def __init__(self, project_service: ProjectService) -> None:
-        self._project_service = project_service
+        self._service = project_service
 
-    def get_projects(self) -> list[Project]:
-        return self._project_service.get_projects()
+    def get_projects(self) -> list:
+        """Get all projects."""
+        return self._service.get_projects()
+
+    def get_project(self, project_id: int):
+        """Get a single project."""
+        return self._service.get_project(project_id)

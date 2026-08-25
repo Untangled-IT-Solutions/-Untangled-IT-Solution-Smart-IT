@@ -1,4 +1,4 @@
-// Backend/server/index-working-v2.ts
+/ Backend/server/index-working-v2.ts
 import { createServer } from 'node:http';
 import { createApp, eventHandler, toNodeListener, readBody, getQuery } from 'h3';
 import crypto from 'node:crypto';
@@ -47,7 +47,7 @@ const quoteSchema = new mongoose.Schema({
   }],
   status: { 
     type: String, 
-    enum: ['received', 'in_review', 'quoted', 'closed', 'pending', 'waiting_feedback', 'in_touch', 'approved', 'payment'],
+    enum: ['received', 'in_review', 'quoted', 'closed', 'pending', 'waiting_feedback', 'in_touch', 'approved', 'payment', 'assigned', 'accepted', 'in_progress', 'awaiting_client', 'awaiting_payment', 'paid', 'completed', 'returned'],
     default: 'received'
   },
   replyMessage: String,
@@ -61,6 +61,8 @@ const quoteSchema = new mongoose.Schema({
     default: 'pending'
   },
   paymentReference: { type: String },
+  assigned_to: { type: mongoose.Schema.Types.Mixed, default: null },
+  assigned_by: { type: mongoose.Schema.Types.Mixed, default: null },
   feedback: {
     rating: { type: Number, min: 1, max: 5 },
     comment: { type: String },
@@ -94,7 +96,9 @@ const orderSchema = new mongoose.Schema({
   carrier: String,
   estimatedDelivery: Date,
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  assigned_to: { type: mongoose.Schema.Types.Mixed, default: null },
+  assigned_by: { type: mongoose.Schema.Types.Mixed, default: null }
 });
 
 // Create models
@@ -449,7 +453,9 @@ app.use('/api/quotes', eventHandler(async (event) => {
           paymentAmount: q.paymentAmount || 0,
           paymentStatus: q.paymentStatus || 'pending',
           feedback: q.feedback || { submitted: false },
-          replyMessage: q.replyMessage || null
+          replyMessage: q.replyMessage || null,
+          assigned_to: q.assigned_to || null,
+          assigned_by: q.assigned_by || null
         }))
       };
     } catch (error) {
@@ -613,7 +619,9 @@ app.use('/api/orders', eventHandler(async (event) => {
           status: o.status,
           total: o.total,
           createdAt: o.createdAt,
-          items: o.items
+          items: o.items,
+          assigned_to: o.assigned_to || null,
+          assigned_by: o.assigned_by || null
         }))
       };
     } catch (error) {
@@ -996,6 +1004,674 @@ app.use('/api/quotes/feedback', eventHandler(async (event) => {
   
   return { success: false, message: 'Method not allowed' };
 }));
+
+// ============================================
+// DESKTOP MANAGEMENT API - EMPLOYEES + ASSIGNMENTS
+// ============================================
+
+const MANAGEMENT_ROLES = new Set([
+  'director', 'branch manager', 'business lead', 'operations manager',
+  'manager', 'admin', 'administrator', 'super admin'
+]);
+
+function isManagementUser(user: any, employee: any): boolean {
+  const role = normaliseLogin(user?.role || employee?.role || '');
+  return MANAGEMENT_ROLES.has(role);
+}
+
+function safeEmployeePayload(employee: any, user: any = null) {
+  const fullName = employeeDisplayName(employee, user);
+  return {
+    id: employee?._id?.toString?.() ?? employee?._id ?? employee?.id ?? null,
+    employee_id: employee?.employee_id ?? employee?.id ?? employee?._id?.toString?.() ?? null,
+    full_name: fullName,
+    first_name: employee?.first_name || '',
+    last_name: employee?.last_name || employee?.surname || '',
+    email: employee?.email || employee?.email_address || user?.email || '',
+    username: user?.username || user?.email || employee?.username || employee?.email || '',
+    role: employee?.role || user?.role || 'Staff',
+    department: employee?.department || user?.department || '',
+    position: employee?.position || user?.position || '',
+    status: employee?.status || user?.status || 'Active',
+  };
+}
+
+async function requireManagementSession(event: any) {
+  const session = await requireDesktopSession(event);
+  if (!isManagementUser(session.user, session.employee)) {
+    const error = new Error('Manager permission is required for this operation.');
+    (error as any).statusCode = 403;
+    throw error;
+  }
+  return session;
+}
+
+app.use('/api/employees', eventHandler(async (event) => {
+  if (event.method !== 'GET') {
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  }
+  try {
+    const { db, user } = await requireDesktopSession(event);
+    const employees = await db.collection('employees').find({}).sort({ full_name: 1, first_name: 1, surname: 1 }).limit(500).toArray();
+    const userDocs = await db.collection('users').find({}).project({ password: 0, password_hash: 0, hashed_password: 0 }).limit(2000).toArray();
+    const usersByEmployee = new Map<string, any>();
+    const usersByEmail = new Map<string, any>();
+    for (const u of userDocs) {
+      if (u.employee_id !== undefined && u.employee_id !== null) usersByEmployee.set(String(u.employee_id), u);
+      const email = normaliseLogin(u.email || u.username);
+      if (email) usersByEmail.set(email, u);
+    }
+    const safeEmployees = employees
+      .filter((employee: any) => isActive(employee.status, true))
+      .map((employee: any) => {
+        const employeeKeys = [employee._id?.toString?.(), employee.employee_id, employee.id].filter(Boolean).map(String);
+        const linked = employeeKeys.map(k => usersByEmployee.get(k)).find(Boolean)
+          || usersByEmail.get(normaliseLogin(employee.email || employee.email_address));
+        return safeEmployeePayload(employee, linked);
+      });
+    return { success: true, count: safeEmployees.length, employees: safeEmployees };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Failed to load employees' };
+  }
+}));
+
+
+
+function safeAdminUserPayload(user: any, employee: any = null) {
+  const fullName = employeeDisplayName(employee, user);
+  return {
+    id: user?._id?.toString?.() ?? user?._id ?? null,
+    employee_id: user?.employee_id?.toString?.() ?? employee?.employee_id?.toString?.() ?? employee?._id?.toString?.() ?? null,
+    username: user?.username || user?.email || '',
+    email: user?.email || employee?.email || employee?.email_address || '',
+    role: user?.role || employee?.role || 'Staff',
+    status: user?.status || 'active',
+    full_name: fullName,
+    first_name: employee?.first_name || '',
+    surname: employee?.surname || employee?.last_name || '',
+    department: user?.department || employee?.department || '',
+    position: user?.position || employee?.position || '',
+    last_login_at: user?.last_login_at || null,
+    created_at: user?.created_at || null,
+    updated_at: user?.updated_at || null,
+    has_account: true,
+  };
+}
+
+async function findEmployeeByReference(db: any, reference: unknown) {
+  const value = String(reference ?? '').trim();
+  if (!value) return null;
+
+  const employees = db.collection('employees');
+
+  // First try the normal indexed fields.
+  const clauses: any[] = [{ employee_id: value }, { id: value }];
+  const oid = safeObjectId(value);
+  if (oid) clauses.push({ _id: oid });
+
+  // If employee_id is stored as a number/ObjectId in MongoDB, also try a
+  // numeric representation where applicable.
+  if (/^-?\\d+$/.test(value)) {
+    const numericValue = Number(value);
+    if (Number.isSafeInteger(numericValue)) {
+      clauses.push({ employee_id: numericValue }, { id: numericValue });
+    }
+  }
+
+  let employee = await employees.findOne({ $or: clauses });
+  if (employee) return employee;
+
+  // Final compatibility fallback: compare the string representation of the
+  // common employee identifiers. This handles old records where the same
+  // employee ID was stored with a different BSON type.
+  const candidates = await employees.find({}).limit(5000).toArray();
+  const wanted = value.toLowerCase();
+
+  employee = candidates.find((item: any) => {
+    const values = [
+      item?.employee_id,
+      item?.id,
+      item?._id?.toString?.(),
+      item?._id,
+      item?.user_id,
+      item?.username,
+      item?.email,
+    ].filter(v => v !== undefined && v !== null);
+
+    return values.some(v => String(v).trim().toLowerCase() === wanted);
+  }) || null;
+
+  return employee;
+}
+
+async function findUserByReference(db: any, reference: unknown) {
+  const value = String(reference ?? '').trim();
+  if (!value) return null;
+  const clauses: any[] = [{ username: value }, { email: value }];
+  const oid = safeObjectId(value);
+  if (oid) clauses.push({ _id: oid });
+  return db.collection('users').findOne({ $or: clauses });
+}
+
+function hashPbkdf2Sha256(password: string): string {
+  const iterations = 310_000;
+  const salt = crypto.randomBytes(16).toString('hex');
+  const digest = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), Buffer.from(salt, 'utf8'), iterations, 32, 'sha256').toString('hex');
+  return `pbkdf2_sha256$${iterations}$${salt}$${digest}`;
+}
+
+app.use('/api/admin/employees', eventHandler(async (event) => {
+  if (event.method !== 'GET') { event.node.res.statusCode = 405; return { success: false, error: 'Method not allowed' }; }
+  try {
+    const { db } = await requireManagementSession(event);
+    const employees = await db.collection('employees').find({}).sort({ full_name: 1, first_name: 1, surname: 1 }).limit(2000).toArray();
+    const users = await db.collection('users').find({}).project({ password: 0, password_hash: 0, hashed_password: 0 }).limit(5000).toArray();
+    const byEmployee = new Map<string, any>();
+    const byEmail = new Map<string, any>();
+    for (const user of users) {
+      if (user.employee_id !== undefined && user.employee_id !== null) byEmployee.set(String(user.employee_id), user);
+      const email = normaliseLogin(user.email || user.username);
+      if (email) byEmail.set(email, user);
+    }
+    const result = employees.map((employee: any) => {
+      const keys = [employee.employee_id, employee.id, employee._id?.toString?.()].filter(Boolean).map(String);
+      const linked = keys.map(k => byEmployee.get(k)).find(Boolean) || byEmail.get(normaliseLogin(employee.email || employee.email_address));
+      const payload = safeEmployeePayload(employee, linked);
+      return {
+        ...payload,
+        _id: payload.id,
+        mongo_id: payload.id,
+        has_account: !!linked,
+        user_id: linked?._id?.toString?.() ?? linked?._id ?? null,
+        last_login_at: linked?.last_login_at || null,
+      };
+    });
+    return { success: true, count: result.length, employees: result };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Failed to load employees' };
+  }
+}));
+
+app.use('/api/admin/users', eventHandler(async (event) => {
+  try {
+    const { db } = await requireManagementSession(event);
+    if (event.method === 'GET') {
+      const users = await db.collection('users').find({}).project({ password: 0, password_hash: 0, hashed_password: 0 }).sort({ username: 1 }).limit(5000).toArray();
+      const employees = await db.collection('employees').find({}).limit(5000).toArray();
+      const byEmployee = new Map<string, any>();
+      const byEmail = new Map<string, any>();
+      for (const employee of employees) {
+        for (const key of [employee.employee_id, employee.id, employee._id?.toString?.()].filter(Boolean)) byEmployee.set(String(key), employee);
+        const email = normaliseLogin(employee.email || employee.email_address);
+        if (email) byEmail.set(email, employee);
+      }
+      const result = users.map((user: any) => {
+        const employee = byEmployee.get(String(user.employee_id ?? '')) || byEmail.get(normaliseLogin(user.email || user.username));
+        return safeAdminUserPayload(user, employee);
+      });
+      return { success: true, count: result.length, users: result };
+    }
+
+    if (event.method === 'POST') {
+      const body = await readBody(event);
+      const employee = await findEmployeeByReference(db, body?.employee_id);
+      if (!employee) { event.node.res.statusCode = 404; return { success: false, error: 'Employee not found.' }; }
+      const username = normaliseLogin(body?.username);
+      const password = String(body?.password ?? '');
+      if (!username || !password) { event.node.res.statusCode = 400; return { success: false, error: 'Username and password are required.' }; }
+      if (password.length < 8) { event.node.res.statusCode = 400; return { success: false, error: 'Password must be at least 8 characters.' }; }
+      const existingUsername = await findUserByReference(db, username);
+      if (existingUsername) { event.node.res.statusCode = 409; return { success: false, error: `Username '${username}' is already in use.` }; }
+      const employeeKeys = [employee.employee_id, employee.id, employee._id].filter(v => v !== undefined && v !== null);
+      const existingEmployeeAccount = await db.collection('users').findOne({ employee_id: { $in: employeeKeys } });
+      if (existingEmployeeAccount) { event.node.res.statusCode = 409; return { success: false, error: 'This employee already has a user account.', code: 'ACCOUNT_EXISTS' }; }
+      const now = new Date();
+      const doc: any = {
+        employee_id: employee.employee_id ?? employee.id ?? employee._id,
+        username,
+        email: body?.email || employee.email || employee.email_address || username,
+        role: String(body?.role || 'Staff'),
+        status: body?.active === false ? 'inactive' : 'active',
+        password_hash: hashPbkdf2Sha256(password),
+        require_password_change: !!body?.require_password_change,
+        created_at: now,
+        updated_at: now,
+      };
+      const inserted = await db.collection('users').insertOne(doc);
+      const created = await db.collection('users').findOne({ _id: inserted.insertedId }, { projection: { password: 0, password_hash: 0, hashed_password: 0 } });
+      return { success: true, user: safeAdminUserPayload(created, employee) };
+    }
+
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'User administration failed.' };
+  }
+}));
+
+app.use('/api/admin/users/:id/reset-password', eventHandler(async (event) => {
+  if (event.method !== 'POST') { event.node.res.statusCode = 405; return { success: false, error: 'Method not allowed' }; }
+  try {
+    const { db } = await requireManagementSession(event);
+    const id = String(event.context.params?.id || '').trim();
+    const oid = safeObjectId(id);
+    if (!oid) { event.node.res.statusCode = 404; return { success: false, error: 'User not found.' }; }
+    const target = await db.collection('users').findOne({ _id: oid });
+    if (!target) { event.node.res.statusCode = 404; return { success: false, error: 'User not found.' }; }
+    const body = await readBody(event);
+    const password = String(body?.password ?? '');
+    if (password.length < 8) { event.node.res.statusCode = 400; return { success: false, error: 'Password must be at least 8 characters.' }; }
+    await db.collection('users').updateOne({ _id: oid }, { $set: { password_hash: hashPbkdf2Sha256(password), updated_at: new Date(), require_password_change: true } });
+    const updated = await db.collection('users').findOne({ _id: oid }, { projection: { password: 0, password_hash: 0, hashed_password: 0 } });
+    const employee = await findEmployeeByReference(db, updated?.employee_id);
+    return { success: true, user: safeAdminUserPayload(updated, employee) };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Password reset failed.' };
+  }
+}));
+
+app.use('/api/admin/users/:id', eventHandler(async (event) => {
+  try {
+    const { db, user: actor } = await requireManagementSession(event);
+    const id = String(event.context.params?.id || '').trim();
+    const oid = safeObjectId(id);
+    if (!oid) { event.node.res.statusCode = 404; return { success: false, error: 'User not found.' }; }
+    const target = await db.collection('users').findOne({ _id: oid });
+    if (!target) { event.node.res.statusCode = 404; return { success: false, error: 'User not found.' }; }
+
+    if (event.method === 'PUT') {
+      const body = await readBody(event);
+      const update: any = { updated_at: new Date() };
+      if (body?.username !== undefined) {
+        const username = normaliseLogin(body.username);
+        if (!username) { event.node.res.statusCode = 400; return { success: false, error: 'Username cannot be empty.' }; }
+        const owner = await db.collection('users').findOne({ username, _id: { $ne: oid } });
+        if (owner) { event.node.res.statusCode = 409; return { success: false, error: `Username '${username}' is already in use.` }; }
+        update.username = username;
+      }
+      if (body?.role !== undefined) update.role = String(body.role || 'Staff');
+      if (body?.active !== undefined) update.status = body.active ? 'active' : 'inactive';
+      if (body?.employee_id !== undefined) {
+        const employee = await findEmployeeByReference(db, body.employee_id);
+        if (!employee) { event.node.res.statusCode = 404; return { success: false, error: 'Employee not found.' }; }
+        update.employee_id = employee.employee_id ?? employee.id ?? employee._id;
+        update.email = employee.email || employee.email_address || target.email || update.username || target.username;
+      }
+      if (body?.password) {
+        const password = String(body.password);
+        if (password.length < 8) { event.node.res.statusCode = 400; return { success: false, error: 'Password must be at least 8 characters.' }; }
+        update.password_hash = hashPbkdf2Sha256(password);
+        update.require_password_change = !!body?.require_password_change;
+      }
+      await db.collection('users').updateOne({ _id: oid }, { $set: update });
+      const updated = await db.collection('users').findOne({ _id: oid }, { projection: { password: 0, password_hash: 0, hashed_password: 0 } });
+      const employee = await findEmployeeByReference(db, updated?.employee_id);
+      return { success: true, user: safeAdminUserPayload(updated, employee) };
+    }
+
+    if (event.method === 'POST' && event.context.params?.id && event.node.req.url?.includes('/reset-password')) {
+      const body = await readBody(event);
+      const password = String(body?.password ?? '');
+      if (password.length < 8) { event.node.res.statusCode = 400; return { success: false, error: 'Password must be at least 8 characters.' }; }
+      await db.collection('users').updateOne({ _id: oid }, { $set: { password_hash: hashPbkdf2Sha256(password), updated_at: new Date(), require_password_change: true } });
+      const updated = await db.collection('users').findOne({ _id: oid }, { projection: { password: 0, password_hash: 0, hashed_password: 0 } });
+      const employee = await findEmployeeByReference(db, updated?.employee_id);
+      return { success: true, user: safeAdminUserPayload(updated, employee) };
+    }
+
+    if (event.method === 'DELETE') {
+      if (String(actor?._id) === id) { event.node.res.statusCode = 400; return { success: false, error: 'You cannot delete your own account while logged in.' }; }
+      await db.collection('users').deleteOne({ _id: oid });
+      return { success: true, message: 'User deleted.' };
+    }
+
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'User administration failed.' };
+  }
+}));
+
+async function handleQuoteAssignment(event: any) {
+  const { db, user } = await requireManagementSession(event);
+  const reference = String(event.context.params?.reference || '').trim().toUpperCase();
+  const body = await readBody(event);
+
+  if (!reference) {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Reference is required' };
+  }
+
+  // Accept every payload shape used by the desktop clients.
+  const requested = body?.employee_id ?? body?.employeeId ?? body?.assigned_to ?? body?.assignedTo ?? null;
+  let assignedTo: any = null;
+
+  if (requested !== null && requested !== undefined && String(requested).trim() !== '') {
+    const employee = await findEmployeeByReference(db, requested);
+    if (!employee || !isActive(employee.status, true)) {
+      console.error(`❌ Assignment failed: employee not found: ${requested}`);
+      return { success: false, error: 'Employee not found or inactive' };
+    }
+
+    const linkedUser = await db.collection('users').findOne({ $or: [
+      { employee_id: employee.employee_id },
+      { employee_id: employee._id },
+      ...(employee.email ? [{ email: employee.email }] : []),
+    ] });
+
+    assignedTo = safeEmployeePayload(employee, linkedUser);
+  }
+
+  const actor = {
+    id: user._id?.toString?.() ?? user._id,
+    username: user.username || user.email || '',
+    full_name: user.full_name || user.username || user.email || '',
+  };
+
+  console.log(`👤 Assignment request: quote=${reference} employee=${requested ?? 'UNASSIGN'} method=${event.method} url=${event.node.req.url}`);
+
+  if (isMongoConnected) {
+    const quote = await Quote.findOne({
+      $or: [
+        { reference },
+        { reference: { $regex: `^${reference.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}$`, $options: 'i' } },
+      ],
+    });
+
+    if (!quote) {
+      console.error(`❌ Assignment failed: quote not found: ${reference}`);
+      return { success: false, error: 'Quote not found' };
+    }
+
+    quote.assigned_to = assignedTo;
+    quote.assigned_by = assignedTo ? actor : null;
+    if (assignedTo) quote.status = 'assigned';
+    await quote.save();
+
+    console.log(`✅ Quote ${quote.reference} assigned to ${assignedTo?.employee_id || assignedTo?.id || 'UNASSIGNED'}`);
+    return {
+      success: true,
+      message: assignedTo ? 'Quote assigned successfully.' : 'Quote unassigned successfully.',
+      quote: {
+        reference: quote.reference,
+        assigned_to: quote.assigned_to,
+        assigned_by: quote.assigned_by,
+        status: quote.status,
+      },
+    };
+  }
+
+  const quote = inMemoryQuotes.find(q => String(q.reference).toUpperCase() === reference);
+  if (!quote) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'Quote not found' };
+  }
+  quote.assigned_to = assignedTo;
+  quote.assigned_by = assignedTo ? actor : null;
+  if (assignedTo) quote.status = 'assigned';
+  return { success: true, message: 'Quote assigned successfully.', quote };
+}
+
+// ============================================================
+// UNIVERSAL DESKTOP QUOTE ASSIGNMENT DISPATCHER
+// ============================================================
+// The Windows desktop client historically used more than one assignment
+// URL.  Handle the request at the /api/admin/quotes level and inspect the
+// actual URL so a router parameter mismatch cannot produce a false 404.
+// This handler is registered BEFORE the generic /api/admin/quotes/:reference
+// update handler below.
+//
+// Supported examples:
+//   PUT/POST/PATCH /api/admin/quotes/UQ-XXXXXX/assignment
+//   PUT/POST/PATCH /api/admin/quotes/UQ-XXXXXX/assign
+//   PUT/POST/PATCH /api/admin/quotes/UQ-XXXXXX/assign-employee
+//   PUT/POST/PATCH /api/admin/quotes/UQ-XXXXXX/assignment/employee
+// ============================================================
+
+app.use('/api/admin/quotes', eventHandler(async (event) => {
+  const method = String(event.method || '').toUpperCase();
+  const rawUrl = String(event.node.req.url || '');
+  const pathname = rawUrl.split('?')[0];
+
+  const match = pathname.match(
+    /^\/api\/admin\/quotes\/([^/]+)\/(assignment|assign|assign-employee|assign_employee|assignment\/employee)\/?$/
+  );
+
+  // Not an assignment request: let the normal quote handlers continue.
+  if (!match) return;
+
+  console.log(`🚨 ASSIGNMENT ENDPOINT HIT: ${method} ${rawUrl}`);
+
+  if (!['PUT', 'POST', 'PATCH'].includes(method)) {
+    event.node.res.statusCode = 405;
+    return {
+      success: false,
+      error: 'Method not allowed for quote assignment',
+      endpoint: pathname,
+    };
+  }
+
+  try {
+    // Do not rely on event.context.params here. Extract the reference directly
+    // from the actual URL so this works even when h3 mounted middleware does
+    // not populate dynamic params.
+    const reference = decodeURIComponent(match[1]).trim().toUpperCase();
+    const body = await readBody(event);
+    const { db, user } = await requireManagementSession(event);
+
+    const requested =
+      body?.employee_id ??
+      body?.employeeId ??
+      body?.assigned_to ??
+      body?.assignedTo ??
+      body?.employee ??
+      body?.employeeID ??
+      null;
+
+    console.log(
+      `👤 ASSIGNMENT REQUEST: quote=${reference} employee=${requested ?? 'UNASSIGN'} method=${method} url=${rawUrl}`
+    );
+
+    let assignedTo: any = null;
+
+    if (requested !== null && requested !== undefined && String(requested).trim() !== '') {
+      const employee = await findEmployeeByReference(db, requested);
+
+      if (!employee) {
+        // Return a normal JSON response instead of an HTTP 404 so the desktop
+        // client can display the actual reason instead of "Backend returned HTTP 404".
+        console.error(`❌ ASSIGNMENT EMPLOYEE NOT FOUND: ${String(requested)}`);
+        return {
+          success: false,
+          error: `Employee not found: ${String(requested)}`,
+          code: 'EMPLOYEE_NOT_FOUND',
+        };
+      }
+
+      if (!isActive(employee.status, true)) {
+        console.error(`❌ ASSIGNMENT EMPLOYEE INACTIVE: ${String(requested)}`);
+        return {
+          success: false,
+          error: `Employee is inactive: ${employeeDisplayName(employee)}`,
+          code: 'EMPLOYEE_INACTIVE',
+        };
+      }
+
+      const linkedUser = await db.collection('users').findOne({
+        $or: [
+          { employee_id: employee.employee_id },
+          { employee_id: employee._id },
+          ...(employee.email ? [{ email: employee.email }] : []),
+        ],
+      });
+
+      assignedTo = safeEmployeePayload(employee, linkedUser);
+
+      console.log(
+        `👤 ASSIGNMENT EMPLOYEE FOUND: employee_id=${assignedTo.employee_id} name=${assignedTo.full_name}`
+      );
+    }
+
+    // Quote lookup is deliberately case-insensitive and whitespace-tolerant.
+    let quote: any = null;
+
+    if (isMongoConnected) {
+      const escaped = reference.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&');
+
+      quote = await Quote.findOne({
+        $or: [
+          { reference },
+          { reference: { $regex: `^${escaped}$`, $options: 'i' } },
+        ],
+      });
+
+      if (!quote) {
+        // Last-resort collection lookup for legacy documents.
+        const rawQuote = await db.collection('quotes').findOne({
+          reference: { $regex: `^${escaped}$`, $options: 'i' },
+        });
+
+        if (rawQuote) {
+          quote = await Quote.findById(rawQuote._id);
+        }
+      }
+    } else {
+      quote = inMemoryQuotes.find(
+        (q: any) => String(q?.reference || '').trim().toUpperCase() === reference
+      );
+    }
+
+    if (!quote) {
+      // Again, keep business-level failures as JSON instead of HTTP 404.
+      console.error(`❌ ASSIGNMENT QUOTE NOT FOUND: ${reference}`);
+      return {
+        success: false,
+        error: `Quote not found: ${reference}`,
+        code: 'QUOTE_NOT_FOUND',
+      };
+    }
+
+    const actor = {
+      id: user?._id?.toString?.() ?? user?._id ?? null,
+      username: user?.username || user?.email || '',
+      full_name: user?.full_name || user?.username || user?.email || '',
+    };
+
+    quote.assigned_to = assignedTo;
+    quote.assigned_by = assignedTo ? actor : null;
+
+    if (assignedTo) {
+      quote.status = 'assigned';
+    }
+
+    if (isMongoConnected) {
+      quote.updatedAt = new Date();
+      await quote.save();
+    }
+
+    console.log(
+      `✅ ASSIGNMENT SUCCESS: quote=${reference} employee=${assignedTo?.employee_id || assignedTo?.id || 'UNASSIGNED'} status=${quote.status}`
+    );
+
+    return {
+      success: true,
+      message: assignedTo
+        ? 'Quote assigned successfully.'
+        : 'Quote unassigned successfully.',
+      quote: {
+        reference: quote.reference,
+        assigned_to: quote.assigned_to,
+        assigned_by: quote.assigned_by,
+        status: quote.status,
+      },
+    };
+  } catch (error: any) {
+    const status = error?.statusCode || 500;
+    console.error(
+      `❌ ASSIGNMENT EXCEPTION [${method} ${rawUrl}] HTTP ${status}:`,
+      error?.stack || error?.message || error
+    );
+
+    event.node.res.statusCode = status;
+
+    return {
+      success: false,
+      error: error?.message || 'Quote assignment failed.',
+      code: 'ASSIGNMENT_EXCEPTION',
+    };
+  }
+}));
+
+// Compatibility routes: older/newer desktop builds used different assignment URLs.
+for (const path of [
+  '/api/admin/quotes/:reference/assignment',
+  '/api/admin/quotes/:reference/assign',
+  '/api/quotes/:reference/assignment',
+  '/api/quotes/:reference/assign',
+]) {
+  app.use(path, eventHandler(async (event) => {
+    // Support both PUT and POST so the backend cannot 404/405 solely because
+    // the desktop build uses the other assignment convention.
+    if (event.method !== 'PUT' && event.method !== 'POST') {
+      event.node.res.statusCode = 405;
+      return { success: false, error: 'Method not allowed' };
+    }
+    try {
+      return await handleQuoteAssignment(event);
+    } catch (error: any) {
+      event.node.res.statusCode = error?.statusCode || 500;
+      console.error(`❌ Quote assignment error [${event.method} ${event.node.req.url}]:`, error?.message || error);
+      return { success: false, error: error?.message || 'Failed to assign quote' };
+    }
+  }));
+}
+
+async function handleOrderAssignment(event: any) {
+  const { db, user } = await requireManagementSession(event);
+  const reference = String(event.context.params?.reference || '').trim().toUpperCase();
+  const body = await readBody(event);
+  if (!reference) { event.node.res.statusCode = 400; return { success: false, error: 'Reference is required' }; }
+
+  const requested = body?.employee_id ?? body?.employeeId ?? body?.assigned_to ?? body?.assignedTo ?? null;
+  let assignedTo: any = null;
+  if (requested !== null && requested !== undefined && String(requested).trim() !== '') {
+    const employee = await findEmployeeByReference(db, requested);
+    if (!employee || !isActive(employee.status, true)) { event.node.res.statusCode = 404; return { success: false, error: 'Employee not found or inactive' }; }
+    const linkedUser = await db.collection('users').findOne({ $or: [
+      { employee_id: employee.employee_id }, { employee_id: employee._id }, ...(employee.email ? [{ email: employee.email }] : [])
+    ] });
+    assignedTo = safeEmployeePayload(employee, linkedUser);
+  }
+
+  const actor = { id: user._id?.toString?.() ?? user._id, username: user.username || user.email || '', full_name: user.full_name || user.username || user.email || '' };
+  const order = isMongoConnected ? await Order.findOne({ reference }) : inMemoryOrders.find(o => String(o.reference).toUpperCase() === reference);
+  if (!order) { event.node.res.statusCode = 404; return { success: false, error: 'Order not found' }; }
+  order.assigned_to = assignedTo;
+  order.assigned_by = assignedTo ? actor : null;
+  if (assignedTo && String(order.status || '').toLowerCase() === 'pending') order.status = 'assigned';
+  order.updatedAt = new Date();
+  if (isMongoConnected) await order.save();
+  return { success: true, message: assignedTo ? 'Order assigned successfully.' : 'Order unassigned successfully.', order: { reference: order.reference, assigned_to: order.assigned_to, assigned_by: order.assigned_by, status: order.status } };
+}
+
+for (const path of [
+  '/api/admin/orders/:reference/assignment',
+  '/api/admin/orders/:reference/assign',
+  '/api/orders/:reference/assignment',
+  '/api/orders/:reference/assign',
+]) {
+  app.use(path, eventHandler(async (event) => {
+    if (event.method !== 'PUT' && event.method !== 'POST') { event.node.res.statusCode = 405; return { success: false, error: 'Method not allowed' }; }
+    try { return await handleOrderAssignment(event); }
+    catch (error: any) { event.node.res.statusCode = error?.statusCode || 500; console.error(`❌ Order assignment error [${event.method} ${event.node.req.url}]:`, error?.message || error); return { success: false, error: error?.message || 'Failed to assign order' }; }
+  }));
+}
 
 // ============================================
 // ADMIN API - Update Quote
@@ -1429,7 +2105,17 @@ async function requireDesktopSession(event: any) {
     throw error;
   }
 
-  await db.collection('api_sessions').updateOne({ _id: session._id }, { $set: { last_activity_at: new Date() } });
+  // Do not write to MongoDB on every attendance/status request. Session
+  // activity is only refreshed periodically; attendance state itself is
+  // refreshed by the explicit status endpoint or state-changing actions.
+  const now = Date.now();
+  const lastActivity = session.last_activity_at ? new Date(session.last_activity_at).getTime() : 0;
+  if (now - lastActivity >= 5 * 60 * 1000) {
+    await db.collection('api_sessions').updateOne(
+      { _id: session._id },
+      { $set: { last_activity_at: new Date(now) } },
+    );
+  }
   return { db, session, user, employee };
 }
 
@@ -1555,95 +2241,6 @@ app.use('/api/auth/logout', eventHandler(async (event) => {
   }
 }));
 
-// ============================================
-// DESKTOP DASHBOARD
-// ============================================
-// Dashboard metrics are calculated on the server so the desktop client
-// never connects directly to MongoDB.
-
-async function dashboardSummary() {
-  const db = mongoRequired();
-  const today = todaySouthAfrica();
-  const attendance = db.collection('attendance');
-  const employees = db.collection('employees');
-  const tasks = db.collection('work_assignments');
-  const approvals = db.collection('approvals');
-
-  const activeAttendanceQuery = {
-    work_date: today,
-    clock_in_at: { $exists: true, $nin: [null, ''] },
-    $or: [
-      { clock_out_at: { $exists: false } },
-      { clock_out_at: null },
-      { clock_out_at: '' },
-    ],
-    status: { $in: ['clocked_in', 'on_break'] },
-  };
-
-  const activeAttendanceIds = await attendance.distinct('employee_id', activeAttendanceQuery);
-  const peopleWorking = new Set(activeAttendanceIds.map((id: any) => String(id))).size;
-
-  const [
-    totalEmployees,
-    activeEmployees,
-    tasksDueToday,
-    tasksOverdue,
-    tasksWaitingReview,
-    tasksInProgress,
-    pendingTasks,
-    pendingApprovals,
-  ] = await Promise.all([
-    employees.countDocuments({}),
-    employees.countDocuments({ status: { $in: ['Active', 'active', 'enabled', 'approved'] } }),
-    tasks.countDocuments({
-      due_date: { $gte: new Date(`${today}T00:00:00.000Z`), $lt: new Date(`${today}T23:59:59.999Z`) },
-      status: { $nin: ['Completed', 'Cancelled', 'Canceled', 'Closed', 'closed', 'Done', 'done'] },
-    }),
-    tasks.countDocuments({
-      due_date: { $lt: new Date() },
-      status: { $nin: ['Completed', 'Cancelled', 'Canceled', 'Closed', 'closed', 'Done', 'done'] },
-    }),
-    tasks.countDocuments({ status: { $in: ['Waiting Review', 'waiting review', 'Waiting for Review', 'waiting_for_review'] } }),
-    tasks.countDocuments({ status: { $in: ['In Progress', 'in progress', 'in_progress'] } }),
-    tasks.countDocuments({ status: { $in: ['New', 'new', 'Assigned', 'assigned', 'In Progress', 'in progress', 'in_progress', 'Waiting Review', 'waiting review'] } }),
-    approvals.countDocuments({ status: { $in: ['Pending', 'pending'] } }),
-  ]);
-
-  return {
-    success: true,
-    people_working: peopleWorking,
-    people_on_leave: await employees.countDocuments({ status: { $in: ['On Leave', 'on leave', 'Leave', 'leave'] } }),
-    people_on_site: peopleWorking,
-    tasks_due_today: tasksDueToday,
-    tasks_overdue: tasksOverdue,
-    tasks_waiting_review: tasksWaitingReview,
-    completed_this_week: 0,
-    pending_approvals: pendingApprovals,
-    upcoming_deadlines: tasksDueToday,
-    latest_activity: [],
-    total_employees: totalEmployees,
-    active_employees: activeEmployees,
-    tasks_in_progress: tasksInProgress,
-    pending_tasks: pendingTasks,
-  };
-}
-
-app.use('/api/dashboard/summary', eventHandler(async (event) => {
-  if (event.method !== 'GET') {
-    event.node.res.statusCode = 405;
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    await requireDesktopSession(event);
-    return await dashboardSummary();
-  } catch (error: any) {
-    event.node.res.statusCode = error?.statusCode || 500;
-    console.error('Desktop dashboard summary error:', error?.message || error);
-    return { success: false, error: error?.message || 'Unable to load dashboard.' };
-  }
-}));
-
 async function attendanceAction(event: any, action: string) {
   const { db, employee, user } = await requireDesktopSession(event);
   const collection = db.collection('attendance');
@@ -1668,6 +2265,7 @@ async function attendanceAction(event: any, action: string) {
     }
     return {
       success: true,
+      server_time: now.toISOString(),
       state,
       status: record?.status || 'not_started',
       elapsed_seconds: Math.round(elapsed * 100) / 100,
@@ -1700,10 +2298,14 @@ async function attendanceAction(event: any, action: string) {
       created_at: now,
       updated_at: now,
     };
-    if (record) await collection.updateOne({ _id: record._id }, { $set: doc });
-    else { const inserted = await collection.insertOne(doc); record = await collection.findOne({ _id: inserted.insertedId }); }
-    record = await getTodayAttendance(db, employeeId);
-    return { success: true, message: 'Clocked in.', ...serialiseAttendance(record) };
+    if (record) {
+      await collection.updateOne({ _id: record._id }, { $set: doc });
+      record = { ...record, ...doc };
+    } else {
+      const inserted = await collection.insertOne(doc);
+      record = { ...doc, _id: inserted.insertedId };
+    }
+    return { success: true, server_time: now.toISOString(), message: 'Clocked in.', record: serialiseAttendance(record) };
   }
 
   if (action === 'clock_out') {
@@ -1712,30 +2314,33 @@ async function attendanceAction(event: any, action: string) {
     if (record.break_started_at) throw Object.assign(new Error('End the active break before clocking out.'), { statusCode: 400 });
     if (record.lunch_started_at && !record.lunch_ended_at) throw Object.assign(new Error('End lunch before clocking out.'), { statusCode: 400 });
     const hours = Math.round((netElapsedSeconds(record, now) / 3600) * 100) / 100;
-    await collection.updateOne({ _id: record._id }, { $set: { clock_out_at: now, hours_worked: hours, status: 'clocked_out', updated_at: now } });
-    record = await getTodayAttendance(db, employeeId);
-    return { success: true, message: 'Clocked out.', ...serialiseAttendance(record) };
+    const update = { clock_out_at: now, hours_worked: hours, status: 'clocked_out', updated_at: now };
+    await collection.updateOne({ _id: record._id }, { $set: update });
+    record = { ...record, ...update };
+    return { success: true, server_time: now.toISOString(), message: 'Clocked out.', record: serialiseAttendance(record) };
   }
 
   if (action === 'break_start') {
     if (!record?.clock_in_at) throw Object.assign(new Error('Clock in before starting a break.'), { statusCode: 400 });
     if (record.clock_out_at) throw Object.assign(new Error('Employee has already clocked out.'), { statusCode: 400 });
     if (record.break_started_at) throw Object.assign(new Error('A break is already in progress.'), { statusCode: 409 });
-    await collection.updateOne({ _id: record._id }, { $set: { break_started_at: now, break_ended_at: null, status: 'on_break', updated_at: now } });
-    record = await getTodayAttendance(db, employeeId);
-    return { success: true, message: 'Break started.', ...serialiseAttendance(record) };
+    const update = { break_started_at: now, break_ended_at: null, status: 'on_break', updated_at: now };
+    await collection.updateOne({ _id: record._id }, { $set: update });
+    record = { ...record, ...update };
+    return { success: true, server_time: now.toISOString(), message: 'Break started.', record: serialiseAttendance(record) };
   }
 
   if (action === 'break_end') {
     if (!record?.break_started_at) throw Object.assign(new Error('No active break was found.'), { statusCode: 400 });
     const extra = elapsedSeconds(record.break_started_at, now) / 60;
     const total = Math.round((Number(record.break_duration_minutes || 0) + extra) * 100) / 100;
+    const update = { break_ended_at: now, break_duration_minutes: total, status: 'clocked_in', updated_at: now };
     await collection.updateOne(
       { _id: record._id },
-      { $set: { break_ended_at: now, break_duration_minutes: total, status: 'clocked_in', updated_at: now }, $unset: { break_started_at: '' } },
+      { $set: update, $unset: { break_started_at: '' } },
     );
-    record = await getTodayAttendance(db, employeeId);
-    return { success: true, message: 'Break ended.', ...serialiseAttendance(record) };
+    record = { ...record, ...update, break_started_at: null };
+    return { success: true, server_time: now.toISOString(), message: 'Break ended.', record: serialiseAttendance(record) };
   }
 
   throw Object.assign(new Error('Unknown attendance action.'), { statusCode: 400 });
@@ -1784,6 +2389,9 @@ async function startServer() {
   const server = createServer(toNodeListener(app));
   server.listen(config.port, '0.0.0.0', () => {
     console.log(`\n🚀 Server running on http://localhost:${config.port}`);
+    console.log(`🛠️ Assignment API: PUT/POST/PATCH /api/admin/quotes/:reference/assignment`);
+    console.log(`🛠️ Assignment aliases: /assign, /assign-employee, /assignment/employee`);
+    console.log(`🧩 Assignment dispatcher: UNIVERSAL-FIXED-v2`);
     console.log(`📡 API available at http://localhost:${config.port}/api`);
     console.log(`🏥 Health check: http://localhost:${config.port}/api/health`);
     console.log(`🔍 Track Quote API: http://localhost:${config.port}/api/quotes/track?ref=UQ-XXXXXX&email=you@email.com`);

@@ -2,15 +2,20 @@
 import { useState } from "react";
 import { CheckCircle2, Copy, Check, Package, ArrowRight, Loader2, Receipt, Mail } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
-import { useStore, productById } from "../lib/store-context";
+import { useStore } from "../lib/store-context";
 import { formatPrice } from "../lib/store-data";
 import { submitOrder } from "../lib/api";
 
-export default function CheckoutPage() {
+interface CheckoutPageProps {
+  onNavigate?: (page: string, data?: any) => void;
+  onClose?: () => void;
+}
+
+export default function CheckoutPage({ onNavigate, onClose }: CheckoutPageProps = {}) {
   console.log('✅ CheckoutPage rendered');
   
   const { theme } = useTheme();
-  const { cart, clearCart, cartTotal, cartCount } = useStore();
+  const { cart, clearCart, cartTotal, cartCount, getCartItems } = useStore();
   const [placed, setPlaced] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderReference, setOrderReference] = useState<string | null>(null);
@@ -24,6 +29,9 @@ export default function CheckoutPage() {
     address: "",
     notes: "",
   });
+
+  // Get cart items as array
+  const cartItems = getCartItems ? getCartItems() : Object.values(cart || {});
 
   const handleCopyReference = async () => {
     if (!orderReference) return;
@@ -40,6 +48,23 @@ export default function CheckoutPage() {
       document.body.removeChild(textarea);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 3000);
+    }
+  };
+
+  // --- FIX: Navigate to track order page ---
+  const handleTrackOrder = () => {
+    if (!orderReference) return;
+    
+    // Use React Router navigation if available
+    if (onNavigate) {
+      onNavigate('track-order', { 
+        ref: orderReference, 
+        email: formData.email 
+      });
+    } else {
+      // Fallback: Use URL with properly encoded parameters
+      const trackUrl = `/track-order?ref=${encodeURIComponent(orderReference)}&email=${encodeURIComponent(formData.email)}`;
+      window.location.href = trackUrl;
     }
   };
 
@@ -97,10 +122,9 @@ export default function CheckoutPage() {
         )}
 
         <div className="mt-8 flex flex-wrap justify-center gap-3">
+          {/* --- FIXED: Use handleTrackOrder function --- */}
           <button
-            onClick={() => {
-              window.location.href = '/track-order?ref=' + orderReference;
-            }}
+            onClick={handleTrackOrder}
             className="rounded-xl bg-[#839705] px-6 py-3 text-sm font-semibold text-white hover:bg-[#98ab06] transition-colors inline-flex items-center gap-2 shadow-lg hover:shadow-xl"
           >
             <Package className="h-4 w-4" />
@@ -117,7 +141,8 @@ export default function CheckoutPage() {
     );
   }
 
-  if (cart.length === 0) {
+  // Check if cart is empty
+  if (cartItems.length === 0) {
     return (
       <div className="mx-auto max-w-xl px-4 py-20 text-center">
         <div className="mx-auto w-24 h-24 rounded-full bg-muted flex items-center justify-center mb-6">
@@ -142,6 +167,7 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
+      // Validate form
       if (!formData.name.trim()) {
         throw new Error('Please enter your full name');
       }
@@ -155,17 +181,16 @@ export default function CheckoutPage() {
         throw new Error('Please enter your delivery address');
       }
 
-      const orderItems = cart.map(line => {
-        const product = productById(line.id);
-        return {
-          id: line.id,
-          name: product?.name || line.id,
-          qty: line.qty,
-          price: product?.price || 0
-        };
-      });
+      // Prepare order items
+      const orderItems = cartItems.map(item => ({
+        id: item.id,
+        name: item.name,
+        qty: item.quantity,
+        price: item.price || 0,
+      }));
 
-      const response = await submitOrder({
+      // Prepare order payload
+      const orderPayload = {
         customerName: formData.name.trim(),
         company: formData.company.trim(),
         email: formData.email.trim(),
@@ -173,16 +198,24 @@ export default function CheckoutPage() {
         address: formData.address.trim(),
         notes: formData.notes.trim(),
         items: orderItems,
-        total: cartTotal
-      });
+        total: cartTotal,
+      };
+
+      console.log('📦 Submitting order:', orderPayload);
+
+      // Submit order to backend
+      const response = await submitOrder(orderPayload);
+      console.log('✅ Order response:', response);
 
       if (response.success && response.orderReference) {
         setOrderReference(response.orderReference);
       } else {
+        // Fallback reference if API doesn't return one
         const fallbackRef = `ORD-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         setOrderReference(fallbackRef);
       }
 
+      // Clear the cart
       clearCart();
       setPlaced(true);
     } catch (error) {
@@ -302,19 +335,16 @@ export default function CheckoutPage() {
         }`}>
           <h2 className="text-base font-extrabold text-foreground">Order Summary</h2>
           <ul className="mt-3 space-y-2 text-sm">
-            {cart.map((line) => {
-              const product = productById(line.id);
-              return (
-                <li key={line.id} className="flex justify-between gap-3">
-                  <span className="min-w-0 text-muted-foreground">
-                    {line.qty} × {product?.name || line.id}
-                  </span>
-                  <span className="shrink-0 font-semibold text-foreground">
-                    {formatPrice((product?.price || 0) * line.qty)}
-                  </span>
-                </li>
-              );
-            })}
+            {cartItems.map((item) => (
+              <li key={item.id} className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted-foreground">
+                  {item.quantity} × {item.name}
+                </span>
+                <span className="shrink-0 font-semibold text-foreground">
+                  {formatPrice((item.price || 0) * item.quantity)}
+                </span>
+              </li>
+            ))}
           </ul>
           
           <div className={`mt-4 flex justify-between border-t pt-3 text-base font-extrabold ${

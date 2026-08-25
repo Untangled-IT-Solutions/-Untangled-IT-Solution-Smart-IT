@@ -1,206 +1,240 @@
-# app/services/mongo_attendance_service.py
-"""Attendance service with timer using MongoDB."""
+"""Fast attendance adapter.
+
+The desktop client treats the backend as the source of truth for attendance
+state, but never polls it for the live clock.  After the initial state is
+loaded, elapsed time is calculated locally from the server timestamps.  The
+backend is contacted only for state-changing actions or an explicit refresh.
+"""
+from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any, List
-from bson import ObjectId
+from typing import Any, Optional
+import time
+from zoneinfo import ZoneInfo
 
-from app.services.mongodb_service import MongoDBService
-from app.models.mongo_models import AttendanceStatus
+from app.services.backend_api_client import BackendAPIClient
 
 
 class MongoAttendanceService:
-    """Attendance service with real-time tracking."""
-    
-    def __init__(self, mongodb: MongoDBService):
-        self._mongo = mongodb
-        self._active_timers: Dict[ObjectId, datetime] = {}
-    
-    def _get_today_str(self) -> str:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    
-    def clock_in(self, employee_id: ObjectId, employee_name: str) -> Dict[str, Any]:
-        """Clock in an employee."""
-        attendance = self._mongo.get_collection("attendance")
-        today = self._get_today_str()
-        now = datetime.now(timezone.utc)
-        
-        # Check if already clocked in
-        existing = attendance.find_one({
-            "employee_id": employee_id,
-            "work_date": today,
-        })
-        
-        if existing and existing.get("clock_in_at") and not existing.get("clock_out_at"):
-            raise ValueError("Employee is already clocked in.")
-        
-        record = {
-            "employee_id": employee_id,
-            "employee_name": employee_name,
-            "work_date": today,
-            "clock_in_at": now,
-            "clock_out_at": None,
-            "break_started_at": None,
-            "lunch_started_at": None,
-            "break_duration_minutes": 0,
-            "lunch_duration_minutes": 0,
-            "hours_worked": 0,
-            "status": AttendanceStatus.CLOCKED_IN.value,
-            "created_at": now,
-        }
-        
-        if existing:
-            attendance.update_one(
-                {"_id": existing["_id"]},
-                {"$set": record}
-            )
-            result = attendance.find_one({"_id": existing["_id"]})
-        else:
-            result = attendance.insert_one(record)
-            result = attendance.find_one({"_id": result.inserted_id})
-        
-        self._active_timers[employee_id] = now
-        return result
-    
-    def clock_out(self, employee_id: ObjectId) -> Dict[str, Any]:
-        """Clock out an employee."""
-        attendance = self._mongo.get_collection("attendance")
-        today = self._get_today_str()
-        now = datetime.now(timezone.utc)
-        
-        record = attendance.find_one({
-            "employee_id": employee_id,
-            "work_date": today,
-        })
-        
+    LOCAL_ZONE = ZoneInfo("Africa/Johannesburg")
+    UTC = timezone.utc
+    STATE_CACHE_SECONDS = 30.0
+
+    def __init__(self, backend: BackendAPIClient):
+        self._backend = backend
+        self._today_cache: Optional[dict[str, Any]] = None
+        self._today_cache_at = 0.0
+        self._state: Optional[dict[str, Any]] = None
+        self._state_at = 0.0
+        self._summary_cache = (0.0, 0.0, 0.0)
+        self._server_offset_seconds = 0.0
+
+    @classmethod
+    def _parse_datetime(cls, value: Any) -> Any:
+        if value is None or isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return value
+        return value
+
+    @classmethod
+    def _as_local(cls, value: Any) -> Optional[datetime]:
+        value = cls._parse_datetime(value)
+        if not isinstance(value, datetime):
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=cls.UTC)
+        return value.astimezone(cls.LOCAL_ZONE)
+
+    @classmethod
+    def format_local_time(cls, value: Any) -> str:
+        local = cls._as_local(value)
+        return local.strftime("%H:%M:%S") if local else "--:--:--"
+
+    @classmethod
+    def format_local_datetime(cls, value: Any) -> str:
+        local = cls._as_local(value)
+        return local.strftime("%Y-%m-%d %H:%M:%S") if local else "--"
+
+    @classmethod
+    def _normalise_record(cls, record: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
         if not record:
-            raise ValueError("No attendance record found for today.")
-        
-        if not record.get("clock_in_at"):
-            raise ValueError("Employee hasn't clocked in.")
-        
+            return None
+        result = dict(record)
+        for key in (
+            "clock_in_at", "clock_out_at", "break_started_at", "break_ended_at",
+            "lunch_started_at", "lunch_ended_at", "created_at", "updated_at",
+        ):
+            if key in result:
+                result[key] = cls._parse_datetime(result[key])
+        return result
+
+    @staticmethod
+    def _state_from_record(record: Optional[dict[str, Any]]) -> dict[str, Any]:
+        if not record:
+            return {
+                "success": True,
+                "state": "not_started",
+                "status": "not_started",
+                "elapsed_seconds": 0,
+                "elapsed_hours": 0,
+                "record": None,
+            }
+
+        status = record.get("status") or "not_started"
         if record.get("clock_out_at"):
-            raise ValueError("Employee already clocked out.")
-        
-        # Calculate hours worked
-        clock_in = record["clock_in_at"]
-        total_seconds = (now - clock_in).total_seconds()
-        hours = total_seconds / 3600
-        
-        # Subtract break and lunch time
-        break_minutes = record.get("break_duration_minutes", 0)
-        lunch_minutes = record.get("lunch_duration_minutes", 0)
-        total_break_hours = (break_minutes + lunch_minutes) / 60
-        hours = max(0, hours - total_break_hours)
-        
-        attendance.update_one(
-            {"_id": record["_id"]},
-            {
-                "$set": {
-                    "clock_out_at": now,
-                    "hours_worked": round(hours, 2),
-                    "status": AttendanceStatus.CLOCKED_OUT.value,
-                    "updated_at": now,
-                }
-            }
-        )
-        
-        if employee_id in self._active_timers:
-            del self._active_timers[employee_id]
-        
-        return attendance.find_one({"_id": record["_id"]})
-    
-    def start_break(self, employee_id: ObjectId) -> Dict[str, Any]:
-        """Start a break."""
-        attendance = self._mongo.get_collection("attendance")
-        today = self._get_today_str()
-        now = datetime.now(timezone.utc)
-        
-        record = attendance.find_one({
-            "employee_id": employee_id,
-            "work_date": today,
-        })
-        
+            state = "completed"
+            elapsed = float(record.get("hours_worked") or 0) * 3600
+        elif record.get("break_started_at"):
+            state = "on_break"
+            elapsed = 0
+        elif record.get("clock_in_at"):
+            state = "working"
+            elapsed = 0
+        else:
+            state = "not_started"
+            elapsed = 0
+
+        return {
+            "success": True,
+            "state": state,
+            "status": status,
+            "elapsed_seconds": elapsed,
+            "elapsed_hours": elapsed / 3600,
+            "clock_in_at": record.get("clock_in_at"),
+            "clock_out_at": record.get("clock_out_at"),
+            "break_started_at": record.get("break_started_at"),
+            "break_duration_minutes": float(record.get("break_duration_minutes") or 0),
+            "record": record,
+        }
+
+    def _set_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        state = dict(state)
+        state["record"] = self._normalise_record(state.get("record"))
+
+        # Keep the timer aligned to the backend clock so a workstation with
+        # an incorrect Windows clock does not make attendance hours drift.
+        server_time = self._parse_datetime(state.get("server_time"))
+        if isinstance(server_time, datetime):
+            if server_time.tzinfo is None:
+                server_time = server_time.replace(tzinfo=self.UTC)
+            self._server_offset_seconds = (server_time - datetime.now(self.UTC)).total_seconds()
+
+        self._state = state
+        self._state_at = time.monotonic()
+        self._today_cache = state.get("record")
+        self._today_cache_at = self._state_at
+        return state
+
+    def refresh_state(self, employee_id: Any = None) -> dict[str, Any]:
+        """Fetch authoritative attendance state once from the backend."""
+        data = self._backend.attendance("/api/attendance/status")
+        return self._set_state(data)
+
+    def get_today_record(self, employee_id: Any, force: bool = False) -> Optional[dict[str, Any]]:
+        now = time.monotonic()
+        if not force and self._today_cache is not None and now - self._today_cache_at < self.STATE_CACHE_SECONDS:
+            return self._today_cache
+
+        # The state endpoint contains the same today's record, so do not make
+        # a second HTTP request to /attendance/today for normal UI refreshes.
+        state = self.refresh_state(employee_id)
+        return state.get("record")
+
+    def get_timer_status(self, employee_id: Any, force: bool = False) -> dict[str, Any]:
+        now = time.monotonic()
+        if not force and self._state is not None and now - self._state_at < self.STATE_CACHE_SECONDS:
+            return dict(self._state)
+        return self.refresh_state(employee_id)
+
+    def _apply_action_response(self, data: dict[str, Any]) -> dict[str, Any]:
+        record = self._normalise_record(data.get("record"))
+        if record is not None:
+            state = self._state_from_record(record)
+            state.update({k: v for k, v in data.items() if k not in {"record"}})
+            return self._set_state(state)
+        return self._set_state(data)
+
+    def _invalidate_summaries(self) -> None:
+        self._summary_cache = (0.0, 0.0, 0.0)
+        self._server_offset_seconds = 0.0
+
+    def clock_in(self, employee_id: Any, employee_name: str = "") -> dict[str, Any]:
+        data = self._backend.attendance("/api/attendance/clock-in", {})
+        self._invalidate_summaries()
+        return self._apply_action_response(data)
+
+    def clock_out(self, employee_id: Any) -> dict[str, Any]:
+        data = self._backend.attendance("/api/attendance/clock-out", {})
+        self._invalidate_summaries()
+        return self._apply_action_response(data)
+
+    def start_break(self, employee_id: Any) -> dict[str, Any]:
+        data = self._backend.attendance("/api/attendance/break/start", {})
+        self._invalidate_summaries()
+        return self._apply_action_response(data)
+
+    def end_break(self, employee_id: Any) -> dict[str, Any]:
+        data = self._backend.attendance("/api/attendance/break/end", {})
+        self._invalidate_summaries()
+        return self._apply_action_response(data)
+
+    def get_live_seconds(self, record: Optional[dict[str, Any]]) -> int:
         if not record:
-            raise ValueError("No attendance record found.")
-        
-        if record.get("status") != AttendanceStatus.CLOCKED_IN.value:
-            raise ValueError("Must be clocked in to take a break.")
-        
-        if record.get("break_started_at"):
-            raise ValueError("Already on break.")
-        
-        attendance.update_one(
-            {"_id": record["_id"]},
-            {
-                "$set": {
-                    "break_started_at": now,
-                    "status": AttendanceStatus.ON_BREAK.value,
-                    "updated_at": now,
-                }
-            }
-        )
-        
-        return attendance.find_one({"_id": record["_id"]})
-    
-    def end_break(self, employee_id: ObjectId) -> Dict[str, Any]:
-        """End a break."""
-        attendance = self._mongo.get_collection("attendance")
-        today = self._get_today_str()
-        now = datetime.now(timezone.utc)
-        
-        record = attendance.find_one({
-            "employee_id": employee_id,
-            "work_date": today,
-        })
-        
-        if not record:
-            raise ValueError("No attendance record found.")
-        
-        if not record.get("break_started_at"):
-            raise ValueError("Not on break.")
-        
-        break_start = record["break_started_at"]
-        duration = int((now - break_start).total_seconds() / 60)
-        
-        attendance.update_one(
-            {"_id": record["_id"]},
-            {
-                "$set": {
-                    "break_started_at": None,
-                    "break_duration_minutes": record.get("break_duration_minutes", 0) + duration,
-                    "status": AttendanceStatus.CLOCKED_IN.value,
-                    "updated_at": now,
-                }
-            }
-        )
-        
-        return attendance.find_one({"_id": record["_id"]})
-    
-    def get_today_record(self, employee_id: ObjectId) -> Optional[Dict[str, Any]]:
-        """Get today's attendance record."""
-        attendance = self._mongo.get_collection("attendance")
-        return attendance.find_one({
-            "employee_id": employee_id,
-            "work_date": self._get_today_str(),
-        })
-    
-    def get_timer_status(self, employee_id: ObjectId) -> Dict[str, Any]:
-        """Get current timer status."""
+            return 0
+        if record.get("status") == "clocked_out":
+            return int(round(float(record.get("hours_worked") or 0) * 3600))
+
+        start = self._as_local(record.get("clock_in_at"))
+        if not start:
+            return 0
+
+        now = datetime.now(self.LOCAL_ZONE) + timedelta(seconds=self._server_offset_seconds)
+        seconds = max(0.0, (now - start).total_seconds())
+        seconds -= float(record.get("break_duration_minutes") or 0) * 60
+        seconds -= float(record.get("lunch_duration_minutes") or 0) * 60
+
+        active_break = self._as_local(record.get("break_started_at"))
+        if active_break:
+            seconds -= max(0.0, (now - active_break).total_seconds())
+
+        active_lunch = self._as_local(record.get("lunch_started_at"))
+        if active_lunch:
+            seconds -= max(0.0, (now - active_lunch).total_seconds())
+
+        return max(0, int(seconds))
+
+    def get_live_hours(self, record: Optional[dict[str, Any]]) -> float:
+        return self.get_live_seconds(record) / 3600.0
+
+    def get_weekly_timesheet(self, employee_id: Any):
         record = self.get_today_record(employee_id)
-        if not record:
-            return {"status": "not_started"}
-        
-        status = record.get("status", "clocked_out")
-        result = {"status": status}
-        
-        if status == AttendanceStatus.CLOCKED_IN.value and record.get("clock_in_at"):
-            elapsed = (datetime.now(timezone.utc) - record["clock_in_at"]).total_seconds()
-            result["elapsed_seconds"] = int(elapsed)
-            result["elapsed_hours"] = round(elapsed / 3600, 2)
-        
-        if status == AttendanceStatus.ON_BREAK.value and record.get("break_started_at"):
-            elapsed = (datetime.now(timezone.utc) - record["break_started_at"]).total_seconds()
-            result["break_elapsed_minutes"] = int(elapsed / 60)
-        
-        return result
+        return [record] if record else []
+
+    def get_weekly_total(self, employee_id: Any) -> float:
+        now = time.monotonic()
+        if now - self._summary_cache[0] < 30.0:
+            return self._summary_cache[1]
+        record = self.get_today_record(employee_id)
+        value = self.get_live_hours(record)
+        self._summary_cache = (now, value, value)
+        return value
+
+    def get_monthly_total(self, employee_id: Any) -> float:
+        now = time.monotonic()
+        if now - self._summary_cache[0] < 30.0:
+            return self._summary_cache[2]
+        self.get_weekly_total(employee_id)
+        return self._summary_cache[2]
+
+    def is_clocked_in(self, employee_id: Any) -> bool:
+        return self.get_timer_status(employee_id).get("status") == "clocked_in"
+
+    def is_on_break(self, employee_id: Any) -> bool:
+        return self.get_timer_status(employee_id).get("status") == "on_break"
+
+    def is_clocked_out(self, employee_id: Any) -> bool:
+        return self.get_timer_status(employee_id).get("status") == "clocked_out"

@@ -1,6 +1,5 @@
-"""Dashboard summary card widget."""
-
-from collections.abc import Callable
+# app/widgets/summary_card.py
+"""Summary card widget for dashboard metrics."""
 
 import customtkinter as ctk
 
@@ -8,88 +7,61 @@ from app.utils.theme import Theme
 
 
 class SummaryCard(ctk.CTkFrame):
-    """Reusable card for displaying a single dashboard metric."""
+    """A card widget for displaying summary metrics."""
 
     def __init__(
         self,
-        master: object,
+        master,
         title: str,
         value: str,
-        accent_color: str,
-        icon: str = "▦",
-        command: Callable[[], None] | None = None,
-    ) -> None:
+        accent_color: str = Theme.ACCENT,
+        icon: str = "",
+        **kwargs
+    ):
         super().__init__(
             master,
             fg_color=Theme.PANEL,
-            border_color=Theme.BORDER,
-            border_width=0,
             corner_radius=Theme.RADIUS,
+            **kwargs
         )
-        self._accent_color = accent_color
-        self._command = command
-        self.configure(height=148, cursor="hand2" if command else "")
-        self.grid_propagate(False)
         self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=0)
-
-        ctk.CTkLabel(
+        self.grid_rowconfigure(0, weight=1)
+        
+        # Accent bar at top
+        accent = ctk.CTkFrame(
             self,
-            text=icon,
-            width=34,
-            height=34,
-            fg_color=Theme.PANEL_ALT,
-            corner_radius=Theme.RADIUS,
-            text_color=accent_color,
-            font=(Theme.FONT_FAMILY, 16, "bold"),
-        ).grid(row=0, column=0, padx=20, pady=(18, 4), sticky="w")
-
-        ctk.CTkLabel(
-            self,
-            text="Open",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=0, column=1, padx=20, pady=(18, 4), sticky="e")
-
-        ctk.CTkLabel(
-            self,
-            text=title,
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=1, column=0, columnspan=2, padx=20, pady=(8, 2), sticky="w")
-
-        ctk.CTkLabel(
-            self,
-            text=value,
-            text_color=Theme.TEXT,
-            font=(Theme.FONT_FAMILY, 34, "bold"),
-        ).grid(row=2, column=0, columnspan=2, padx=20, sticky="w")
-
-        ctk.CTkFrame(self, height=3, fg_color=accent_color, corner_radius=2).grid(
-            row=3,
-            column=0,
-            columnspan=2,
-            padx=20,
-            pady=(14, 0),
-            sticky="ew",
+            height=4,
+            fg_color=accent_color,
+            corner_radius=0,
         )
-        if command is not None:
-            self._bind_click_handler(self)
-
-    def _bind_click_handler(self, widget: object) -> None:
-        if isinstance(widget, ctk.CTkBaseClass):
-            widget.bind("<Button-1>", self._handle_click)
-            widget.bind("<Enter>", self._handle_enter)
-            widget.bind("<Leave>", self._handle_leave)
-            for child in widget.winfo_children():
-                self._bind_click_handler(child)
-
-    def _handle_click(self, _event: object) -> None:
-        if self._command is not None:
-            self._command()
-
-    def _handle_enter(self, _event: object) -> None:
-        self.configure(fg_color=Theme.PANEL_ALT)
-
-    def _handle_leave(self, _event: object) -> None:
-        self.configure(fg_color=Theme.PANEL)
+        accent.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
+        
+        # Content frame
+        content = ctk.CTkFrame(self, fg_color="transparent")
+        content.grid(row=1, column=0, padx=16, pady=(12, 16), sticky="ew")
+        content.grid_columnconfigure(1, weight=1)
+        
+        # Icon
+        if icon:
+            ctk.CTkLabel(
+                content,
+                text=icon,
+                font=("Segoe UI", 28),
+                text_color=Theme.TEXT,
+            ).grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 12))
+        
+        # Value
+        ctk.CTkLabel(
+            content,
+            text=value,
+            font=("Segoe UI", 28, "bold"),
+            text_color=Theme.TEXT,
+        ).grid(row=0, column=1, sticky="e")
+        
+        # Title
+        ctk.CTkLabel(
+            content,
+            text=title,
+            font=("Segoe UI", 12),
+            text_color=Theme.MUTED_TEXT,
+        ).grid(row=1, column=1, sticky="e")

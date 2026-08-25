@@ -78,3 +78,17 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear on external drives
+.Spotlight-V100
+.Trashes
+
+# Icon must end with two \r
+Icon

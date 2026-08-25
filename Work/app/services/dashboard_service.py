@@ -1,113 +1,393 @@
-"""Dashboard data service."""
+"""MongoDB-backed dashboard data service."""
 
-import sqlite3
-from pathlib import Path
+from __future__ import annotations
 
-from app.database.database import Database
-from app.models.dashboard import BusinessLeadDashboard, DashboardSummary, DirectorDashboard
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List
+
+from app.models.dashboard import (
+    BusinessLeadDashboard,
+    DashboardSummary,
+    DirectorDashboard,
+)
 from app.models.notification import Activity
+from app.services.mongodb_service import MongoDBService
 
 
 class DashboardService:
-    """Calculates operational and executive dashboard values directly from SQLite."""
+    """Calculates dashboard values directly from MongoDB."""
 
-    def __init__(self, database: Database) -> None:
+    ACTIVE_TASK_STATUSES = {
+        "New",
+        "Assigned",
+        "In Progress",
+        "Waiting Review",
+    }
+
+    CLOSED_TASK_STATUSES = {
+        "Completed",
+        "Cancelled",
+    }
+
+    def __init__(self, database: MongoDBService) -> None:
         self._database = database
 
+    # ==================================================================
+    # GENERAL HELPERS
+    # ==================================================================
+
     @property
-    def db_path(self) -> Path:
-        return self._database.db_path
+    def db(self) -> Any:
+        return self._database.db
+
+    @property
+    def employees(self) -> Any:
+        return self.db["employees"]
+
+    @property
+    def tasks(self) -> Any:
+        return self.db["work_assignments"]
+
+    @property
+    def approvals(self) -> Any:
+        return self.db["approvals"]
+
+    @property
+    def notifications(self) -> Any:
+        return self.db["notifications"]
+
+    @property
+    def activity(self) -> Any:
+        """
+        MongoDB collection containing operational activity.
+
+        If your application uses another collection name, change it here.
+        """
+        return self.db["activity_log"]
+
+    @staticmethod
+    def _now() -> datetime:
+        return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _start_of_today() -> datetime:
+        now = datetime.now(timezone.utc)
+
+        return now.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+    @staticmethod
+    def _end_of_today() -> datetime:
+        return DashboardService._start_of_today() + timedelta(days=1)
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    # ==================================================================
+    # DATE HELPERS
+    # ==================================================================
+
+    @staticmethod
+    def _date_range_for_today() -> Dict[str, Any]:
+        start = DashboardService._start_of_today()
+        end = DashboardService._end_of_today()
+
+        return {
+            "$gte": start,
+            "$lt": end,
+        }
+
+    @staticmethod
+    def _date_value_filter(
+        field: str,
+        start: datetime,
+        end: datetime,
+    ) -> Dict[str, Any]:
+        return {
+            field: {
+                "$gte": start,
+                "$lt": end,
+            }
+        }
+
+    # ==================================================================
+    # TASK HELPERS
+    # ==================================================================
+
+    def _task_count(
+        self,
+        query: Dict[str, Any] | None = None,
+    ) -> int:
+        return self._safe_int(
+            self.tasks.count_documents(query or {})
+        )
+
+    def _active_task_query(self) -> Dict[str, Any]:
+        return {
+            "status": {
+                "$nin": list(self.CLOSED_TASK_STATUSES)
+            }
+        }
+
+    # ==================================================================
+    # SUMMARY
+    # ==================================================================
 
     def get_summary(self) -> DashboardSummary:
         """Return the current operational dashboard."""
-        with self._connect() as connection:
-            total_employees = self._count(connection, "SELECT COUNT(*) FROM employees;")
-            active_employees = self._count(
-                connection, "SELECT COUNT(*) FROM employees WHERE status = 'Active';"
+
+        now = self._now()
+        today_start = self._start_of_today()
+        tomorrow = self._end_of_today()
+        seven_days = today_start + timedelta(days=7)
+        week_start = today_start - timedelta(days=6)
+
+        # --------------------------------------------------------------
+        # EMPLOYEES
+        # --------------------------------------------------------------
+
+        total_employees = self._safe_int(
+            self.employees.count_documents({})
+        )
+
+        active_employees = self._safe_int(
+            self.employees.count_documents(
+                {
+                    "status": "Active",
+                }
             )
-            people_working = self._count(
-                connection,
-                "SELECT COUNT(*) FROM employees WHERE status = 'Active' AND clocked_in = 1;",
+        )
+
+        people_working = self._safe_int(
+            self.employees.count_documents(
+                {
+                    "status": "Active",
+                    "clocked_in": True,
+                }
             )
-            people_on_leave = self._count(
-                connection, "SELECT COUNT(*) FROM employees WHERE status = 'On Leave';"
+        )
+
+        people_on_leave = self._safe_int(
+            self.employees.count_documents(
+                {
+                    "status": "On Leave",
+                }
             )
-            people_on_site = self._count(
-                connection,
-                """
-                SELECT COUNT(DISTINCT employees.id)
-                FROM employees
-                JOIN tasks ON tasks.assigned_employee = employees.full_name
-                WHERE employees.clocked_in = 1
-                AND tasks.category = 'Technical'
-                AND tasks.status IN ('Assigned', 'In Progress', 'Waiting Review');
-                """,
+        )
+
+        # --------------------------------------------------------------
+        # PEOPLE ON SITE
+        # --------------------------------------------------------------
+
+        people_on_site = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "category": "Technical",
+                    "status": {
+                        "$in": [
+                            "Assigned",
+                            "In Progress",
+                            "Waiting Review",
+                        ]
+                    },
+                    "employee_id": {
+                        "$exists": True,
+                        "$ne": None,
+                    },
+                }
             )
-            tasks_due_today = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE due_date = DATE('now', 'localtime')
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
+        )
+
+        # If your work_assignments documents contain duplicate
+        # assignments for the same employee, use aggregation instead.
+        # See the note below.
+
+        # --------------------------------------------------------------
+        # TASKS DUE TODAY
+        # --------------------------------------------------------------
+
+        tasks_due_today = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "due_date": {
+                        "$gte": today_start,
+                        "$lt": tomorrow,
+                    },
+                    "status": {
+                        "$nin": list(
+                            self.CLOSED_TASK_STATUSES
+                        )
+                    },
+                }
             )
-            tasks_overdue = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE due_date < DATE('now', 'localtime')
-                AND due_date != ''
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
+        )
+
+        # --------------------------------------------------------------
+        # OVERDUE
+        # --------------------------------------------------------------
+
+        tasks_overdue = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "due_date": {
+                        "$lt": now,
+                    },
+                    "status": {
+                        "$nin": list(
+                            self.CLOSED_TASK_STATUSES
+                        )
+                    },
+                }
             )
-            tasks_waiting_review = self._count(
-                connection, "SELECT COUNT(*) FROM tasks WHERE status = 'Waiting Review';"
+        )
+
+        # --------------------------------------------------------------
+        # WAITING REVIEW
+        # --------------------------------------------------------------
+
+        tasks_waiting_review = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "status": "Waiting Review",
+                }
             )
-            completed_this_week = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE status = 'Completed'
-                AND DATE(COALESCE(updated_at, created_date, created_at))
-                    >= DATE('now', 'localtime', '-6 days');
-                """,
+        )
+
+        # --------------------------------------------------------------
+        # COMPLETED THIS WEEK
+        # --------------------------------------------------------------
+
+        completed_this_week = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "status": "Completed",
+                    "$or": [
+                        {
+                            "updated_at": {
+                                "$gte": week_start,
+                            }
+                        },
+                        {
+                            "updatedAt": {
+                                "$gte": week_start,
+                            }
+                        },
+                    ],
+                }
             )
-            tasks_in_progress = self._count(
-                connection, "SELECT COUNT(*) FROM tasks WHERE status = 'In Progress';"
+        )
+
+        # --------------------------------------------------------------
+        # IN PROGRESS
+        # --------------------------------------------------------------
+
+        tasks_in_progress = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "status": "In Progress",
+                }
             )
-            pending_tasks = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE status IN ('New', 'Assigned', 'In Progress', 'Waiting Review');
-                """,
+        )
+
+        # --------------------------------------------------------------
+        # PENDING TASKS
+        # --------------------------------------------------------------
+
+        pending_tasks = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "status": {
+                        "$in": list(
+                            self.ACTIVE_TASK_STATUSES
+                        )
+                    }
+                }
             )
-            pending_approvals = self._count(
-                connection, "SELECT COUNT(*) FROM approvals WHERE status = 'Pending';"
+        )
+
+        # --------------------------------------------------------------
+        # APPROVALS
+        # --------------------------------------------------------------
+
+        pending_approvals = self._safe_int(
+            self.approvals.count_documents(
+                {
+                    "status": "Pending",
+                }
             )
-            upcoming_deadlines = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE due_date BETWEEN DATE('now', 'localtime')
-                    AND DATE('now', 'localtime', '+7 days')
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
-            ) + self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM calendar_events
-                WHERE start_date BETWEEN DATE('now', 'localtime')
-                    AND DATE('now', 'localtime', '+7 days');
-                """,
+        )
+
+        # --------------------------------------------------------------
+        # UPCOMING DEADLINES
+        # --------------------------------------------------------------
+
+        upcoming_task_deadlines = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "due_date": {
+                        "$gte": today_start,
+                        "$lt": seven_days,
+                    },
+                    "status": {
+                        "$nin": list(
+                            self.CLOSED_TASK_STATUSES
+                        )
+                    },
+                }
             )
-            activity_rows = connection.execute(
-                """
-                SELECT * FROM activity_log
-                ORDER BY datetime(created_at) DESC, id DESC
-                LIMIT 6;
-                """
-            ).fetchall()
+        )
+
+        upcoming_events = 0
+
+        if "calendar_events" in self.db.list_collection_names():
+            upcoming_events = self._safe_int(
+                self.db["calendar_events"].count_documents(
+                    {
+                        "start_date": {
+                            "$gte": today_start,
+                            "$lt": seven_days,
+                        }
+                    }
+                )
+            )
+
+        upcoming_deadlines = (
+            upcoming_task_deadlines
+            + upcoming_events
+        )
+
+        # --------------------------------------------------------------
+        # ACTIVITY
+        # --------------------------------------------------------------
+
+        activity_rows = list(
+            self.activity.find({})
+            .sort(
+                [
+                    ("created_at", -1),
+                    ("createdAt", -1),
+                    ("_id", -1),
+                ]
+            )
+            .limit(6)
+        )
+
+        latest_activity = tuple(
+            self._row_to_activity(row)
+            for row in activity_rows
+        )
+
+        # --------------------------------------------------------------
+        # RETURN MODEL
+        # --------------------------------------------------------------
 
         return DashboardSummary(
             people_working=people_working,
@@ -119,75 +399,120 @@ class DashboardService:
             completed_this_week=completed_this_week,
             pending_approvals=pending_approvals,
             upcoming_deadlines=upcoming_deadlines,
-            latest_activity=tuple(self._row_to_activity(row) for row in activity_rows),
+            latest_activity=latest_activity,
             total_employees=total_employees,
             active_employees=active_employees,
             tasks_in_progress=tasks_in_progress,
             pending_tasks=pending_tasks,
         )
 
-    def get_business_lead_dashboard(self) -> BusinessLeadDashboard:
+    # ==================================================================
+    # BUSINESS LEAD
+    # ==================================================================
+
+    def get_business_lead_dashboard(
+        self,
+    ) -> BusinessLeadDashboard:
         """Return metrics relevant to the Business Lead."""
-        with self._connect() as connection:
-            pending_approvals = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM approvals
-                WHERE status = 'Pending' AND current_stage = 'Business Lead';
-                """,
+
+        pending_approvals = self._safe_int(
+            self.approvals.count_documents(
+                {
+                    "status": "Pending",
+                    "current_stage": "Business Lead",
+                }
             )
-            rfqs = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE category IN ('RFQ', 'Tender')
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
+        )
+
+        rfqs = self._task_count(
+            {
+                "category": {
+                    "$in": [
+                        "RFQ",
+                        "Tender",
+                    ]
+                },
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        supplier_registrations = self._task_count(
+            {
+                "category": "Supplier Registration",
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        technical_jobs = self._task_count(
+            {
+                "category": "Technical",
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        software_projects = self._task_count(
+            {
+                "category": {
+                    "$in": [
+                        "Software",
+                        "Website",
+                    ]
+                },
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        operational_alerts = self._safe_int(
+            self.notifications.count_documents(
+                {
+                    "is_read": False,
+                    "is_executive": False,
+                }
             )
-            supplier_registrations = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE category = 'Supplier Registration'
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
+        )
+
+        active_work = self._task_count(
+            self._active_task_query()
+        )
+
+        week_start = self._start_of_today() - timedelta(days=6)
+
+        completed_week = self._safe_int(
+            self.tasks.count_documents(
+                {
+                    "status": "Completed",
+                    "$or": [
+                        {
+                            "updated_at": {
+                                "$gte": week_start,
+                            }
+                        },
+                        {
+                            "updatedAt": {
+                                "$gte": week_start,
+                            }
+                        },
+                    ],
+                }
             )
-            technical_jobs = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE category = 'Technical'
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
-            )
-            software_projects = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE category IN ('Software', 'Website')
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
-            )
-            operational_alerts = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM notifications
-                WHERE is_read = 0 AND is_executive = 0;
-                """,
-            )
-            active_work = self._count(
-                connection,
-                "SELECT COUNT(*) FROM tasks WHERE status NOT IN ('Completed', 'Cancelled');",
-            )
-            completed_week = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE status = 'Completed'
-                AND DATE(COALESCE(updated_at, created_date, created_at))
-                    >= DATE('now', 'localtime', '-6 days');
-                """,
-            )
+        )
+
         return BusinessLeadDashboard(
             pending_approvals=pending_approvals,
             rfqs=rfqs,
@@ -195,86 +520,192 @@ class DashboardService:
             technical_jobs=technical_jobs,
             software_projects=software_projects,
             operational_alerts=operational_alerts,
-            business_metrics=f"{active_work} active work items | {completed_week} completed this week",
+            business_metrics=(
+                f"{active_work} active work items | "
+                f"{completed_week} completed this week"
+            ),
         )
 
-    def get_director_dashboard(self) -> DirectorDashboard:
-        """Return the Director's executive brief without operational notifications."""
-        with self._connect() as connection:
-            overdue = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE due_date < DATE('now', 'localtime')
-                AND due_date != '' AND status NOT IN ('Completed', 'Cancelled');
-                """,
+    # ==================================================================
+    # DIRECTOR
+    # ==================================================================
+
+    def get_director_dashboard(
+        self,
+    ) -> DirectorDashboard:
+        """Return the Director's executive dashboard."""
+
+        now = self._now()
+        today_start = self._start_of_today()
+        seven_days = today_start + timedelta(days=7)
+
+        overdue = self._task_count(
+            {
+                "due_date": {
+                    "$lt": now,
+                },
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        compliance = self._safe_int(
+            self.notifications.count_documents(
+                {
+                    "category": "Compliance",
+                    "is_read": False,
+                }
             )
-            compliance = self._count(
-                connection,
-                "SELECT COUNT(*) FROM notifications WHERE category = 'Compliance' AND is_read = 0;",
+        )
+
+        inventory_alerts = self._safe_int(
+            self.notifications.count_documents(
+                {
+                    "category": "Inventory",
+                    "is_read": False,
+                }
             )
-            inventory_alerts = self._count(
-                connection,
-                "SELECT COUNT(*) FROM notifications WHERE category = 'Inventory' AND is_read = 0;",
+        )
+
+        upcoming = self._task_count(
+            {
+                "due_date": {
+                    "$gte": today_start,
+                    "$lt": seven_days,
+                },
+                "status": {
+                    "$nin": list(
+                        self.CLOSED_TASK_STATUSES
+                    )
+                },
+            }
+        )
+
+        financial_requests_waiting = self._safe_int(
+            self.approvals.count_documents(
+                {
+                    "status": "Pending",
+                    "request_type": {
+                        "$in": [
+                            "Equipment",
+                            "Software",
+                            "Purchases",
+                            "Budget",
+                        ]
+                    },
+                }
             )
-            upcoming = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM tasks
-                WHERE due_date BETWEEN DATE('now', 'localtime')
-                    AND DATE('now', 'localtime', '+7 days')
-                AND status NOT IN ('Completed', 'Cancelled');
-                """,
+        )
+
+        total_employees = self._safe_int(
+            self.employees.count_documents(
+                {
+                    "status": "Active",
+                }
             )
-            financial_requests_waiting = self._count(
-                connection,
-                """
-                SELECT COUNT(*) FROM approvals
-                WHERE status = 'Pending'
-                AND request_type IN ('Equipment', 'Software', 'Purchases', 'Budget');
-                """,
+        )
+
+        working = self._safe_int(
+            self.employees.count_documents(
+                {
+                    "status": "Active",
+                    "clocked_in": True,
+                }
             )
-            total_employees = self._count(connection, "SELECT COUNT(*) FROM employees WHERE status = 'Active';")
-            working = self._count(
-                connection, "SELECT COUNT(*) FROM employees WHERE status = 'Active' AND clocked_in = 1;"
+        )
+
+        active_work = self._task_count(
+            self._active_task_query()
+        )
+
+        brief_row = self.notifications.find_one(
+            {
+                "recipient_role": "Director",
+                "is_executive": True,
+            },
+            sort=[
+                ("created_at", -1),
+                ("createdAt", -1),
+                ("_id", -1),
+            ],
+        )
+
+        if brief_row:
+            brief = (
+                brief_row.get("message")
+                or "No executive briefs require attention."
             )
-            active_work = self._count(
-                connection, "SELECT COUNT(*) FROM tasks WHERE status NOT IN ('Completed', 'Cancelled');"
+        else:
+            brief = (
+                "No executive briefs require attention."
             )
-            brief_row = connection.execute(
-                """
-                SELECT message FROM notifications
-                WHERE recipient_role = 'Director' AND is_executive = 1
-                ORDER BY datetime(created_at) DESC, id DESC LIMIT 1;
-                """
-            ).fetchone()
-        brief = brief_row["message"] if brief_row is not None else "No executive briefs require attention."
-        health = "Attention required" if overdue or compliance else "Stable"
+
+        health = (
+            "Attention required"
+            if overdue or compliance
+            else "Stable"
+        )
+
         return DirectorDashboard(
             executive_brief=brief,
             company_health=health,
             compliance=compliance,
-            business_metrics=f"{active_work} active work items | {overdue} overdue",
+            business_metrics=(
+                f"{active_work} active work items | "
+                f"{overdue} overdue"
+            ),
             inventory_alerts=inventory_alerts,
             upcoming_deadlines=upcoming,
-            attendance_summary=f"{working} of {total_employees} active employees currently working",
-            financial_requests_waiting=financial_requests_waiting,
+            attendance_summary=(
+                f"{working} of {total_employees} "
+                "active employees currently working"
+            ),
+            financial_requests_waiting=(
+                financial_requests_waiting
+            ),
         )
 
-    def _connect(self) -> sqlite3.Connection:
-        return self._database.connection()  # type: ignore[return-value]
+    # ==================================================================
+    # ACTIVITY CONVERSION
+    # ==================================================================
 
     @staticmethod
-    def _count(connection: sqlite3.Connection, query: str) -> int:
-        return int(connection.execute(query).fetchone()[0])
+    def _row_to_activity(
+        row: Dict[str, Any],
+    ) -> Activity:
+        """Convert a MongoDB activity document into Activity."""
 
-    @staticmethod
-    def _row_to_activity(row: sqlite3.Row) -> Activity:
+        created_at = (
+            row.get("created_at")
+            or row.get("createdAt")
+        )
+
         return Activity(
-            id=row["id"],
-            category=row["category"],
-            description=row["description"],
-            reference_type=row["reference_type"] or "",
-            reference_id=row["reference_id"],
-            created_at=row["created_at"],
+            id=str(
+                row.get("id")
+                or row.get("_id")
+                or ""
+            ),
+            category=str(
+                row.get("category")
+                or "Activity"
+            ),
+            description=str(
+                row.get("description")
+                or row.get("message")
+                or ""
+            ),
+            reference_type=str(
+                row.get("reference_type")
+                or row.get("referenceType")
+                or ""
+            ),
+            reference_id=row.get(
+                "reference_id",
+                row.get("referenceId"),
+            ),
+            created_at=created_at,
         )

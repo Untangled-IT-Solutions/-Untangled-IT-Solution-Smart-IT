@@ -449,3 +449,23 @@ Notes: {quote.get('notes', 'No notes')}"""
             "Closed": "closed"
         }
         return status_map.get(local_status, "received")
+
+    def sync_quotes(self) -> List[Dict[str, Any]]:
+        """
+        Compatibility method used by the application timer.
+
+        It synchronizes quotes from MongoDB into SQLite and returns
+        the list of synchronized quotes.
+        """
+        try:
+            result = self.sync_quotes_from_mongodb()
+
+            if not result.get("success"):
+                return []
+
+            # Return quotes for any UI that expects a list
+            return self._mongodb.get_quotes(limit=200)
+
+        except Exception as e:
+            print(f"⚠️ Quote sync error: {e}")
+            return []

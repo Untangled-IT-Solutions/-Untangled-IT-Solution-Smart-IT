@@ -30,6 +30,40 @@ function AppContent() {
     }
   }
 
+  // --- NEW: Navigation function that supports data/params ---
+  const handleNavigate = (page: string, data?: any) => {
+    console.log('📍 Navigating with data:', page, data);
+    
+    // Handle track-order with params
+    if (page === 'track-order') {
+      // Set current page and store data in a state or URL
+      setCurrentPage('track-order');
+      // You can pass data via state or URL params
+      // For simplicity, we'll use URL params and let TrackOrderPage read them
+      if (data) {
+        // Update URL with query params
+        const queryString = new URLSearchParams(data).toString();
+        window.history.pushState(null, '', `?page=track-order&${queryString}`);
+      }
+      return;
+    }
+
+    // Handle other pages
+    if (page === 'track-quote') {
+      setCurrentPage('track-quote');
+      if (data) {
+        const queryString = new URLSearchParams(data).toString();
+        window.history.pushState(null, '', `?page=track-quote&${queryString}`);
+      }
+      return;
+    }
+
+    setCurrentPage(page as Page);
+    if (page !== 'quote') {
+      setShowQuote(false);
+    }
+  };
+
   const openQuote = () => {
     console.log('Opening quote modal');
     setShowQuote(true)
@@ -63,7 +97,8 @@ function AppContent() {
       case 'cart':
         return <CartPage onNavigate={navigateTo} />
       case 'checkout':
-        return <CheckoutPage />
+        // ✅ FIX: Pass onNavigate prop to CheckoutPage
+        return <CheckoutPage onNavigate={handleNavigate} />
       case 'quote':
         return (
           <QuotePage 

@@ -26,9 +26,11 @@ import {
   MessageCircle,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
+  Check,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useStore } from '../lib/store-context';
+import LoadingAnimation from '../components/LoadingAnimation';
 
 // Import BOTH light and dark background images from your assets folder
 import showcaseBgLight from '../assets/background.png';
@@ -59,9 +61,10 @@ const PARTNERS = [
 ];
 
 // ============================================
-// PRODUCT DATA
+// PRODUCT DATA WITH UNIQUE IDs
 // ============================================
 interface Product {
+  id: string;
   badge?: string;
   badgeTone?: 'lime' | 'deal';
   name: string;
@@ -73,6 +76,7 @@ interface Product {
 
 const products: Product[] = [
   {
+    id: 'dell-latitude-5410',
     badge: "Ready now!",
     badgeTone: "lime",
     name: "Dell Latitude 5410",
@@ -89,6 +93,7 @@ const products: Product[] = [
     wasPrice: "R18 500.00",
   },
   {
+    id: 'dell-latitude-5420',
     badge: "Ready now!",
     badgeTone: "lime",
     name: "Dell Latitude 5420",
@@ -104,6 +109,7 @@ const products: Product[] = [
     price: "R15 950.00",
   },
   {
+    id: 'dell-latitude-5440',
     badge: "Ready now!",
     badgeTone: "lime",
     name: "Dell Latitude 5440",
@@ -119,6 +125,7 @@ const products: Product[] = [
     price: "R18 950.00",
   },
   {
+    id: 'dell-monitor-p2422h',
     badge: "Special price!",
     badgeTone: "deal",
     name: 'Dell 24" Monitor - P2422H',
@@ -135,30 +142,14 @@ const products: Product[] = [
   },
 ];
 
-const PRODUCT_CATEGORIES = [
-  { icon: Laptop, label: "Laptops", description: "Business laptops for every need" },
-  { icon: MonitorIcon, label: "Desktops", description: "Reliable desktop solutions" },
-  { icon: Server, label: "Workstations", description: "High-performance computing" },
-  { icon: MonitorIcon, label: "Monitors", description: "Professional displays" },
-  { icon: Dock, label: "Docks", description: "Connectivity solutions" },
-  { icon: Mouse, label: "Accessories", description: "Keyboards, mice & more" },
-];
-
-const BUSINESS_BRANDS = ["Dell", "Lenovo", "HP", "Other enterprise brands"];
-const SOFTWARE_SERVICES = ["Website Development", "Web & Mobile Apps", "Custom Software", "Automation & CRM"];
-const SUPPORT_SERVICES = ["Laptop Repair", "Troubleshooting", "Diagnostics", "Endpoint Support"];
-const SOLUTIONS_SERVICES = ["Infrastructure", "Networking", "Licensing", "Cybersecurity"];
-
 // ============================================
 // OPTIMIZED ServiceOrbit COMPONENT
 // ============================================
 const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
-  // Optimized radius calculation with caching
   const getRadius = useCallback(() => {
     if (typeof window === 'undefined') return 155;
     
     const width = window.innerWidth;
-    // Cached values for better performance
     if (width < 400) return 80;
     if (width < 480) return 95;
     if (width < 640) return 110;
@@ -170,7 +161,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
   const [radius, setRadius] = useState(() => getRadius());
   const [isMounted, setIsMounted] = useState(false);
 
-  // Debounced resize handler
   useEffect(() => {
     setIsMounted(true);
     
@@ -178,15 +168,13 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
     let rafId: number;
     
     const handleResize = () => {
-      // Cancel any pending updates
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
       
-      // Use RAF for smoother updates
       rafId = requestAnimationFrame(() => {
         timeoutId = setTimeout(() => {
           setRadius(getRadius());
-        }, 100); // 100ms debounce for better responsiveness
+        }, 100);
       });
     };
 
@@ -200,13 +188,11 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
     };
   }, [getRadius]);
 
-  // Memoize SVG content to prevent unnecessary re-renders
   const svgContent = useMemo(() => {
     const containerSize = radius * 2 + 60;
     const maxContainer = Math.min(containerSize, 480);
     const isSmall = radius < 110;
 
-    // Pre-calculate angles for services
     const serviceAngles = SERVICES.map((_, i) => 
       (i / SERVICES.length) * Math.PI * 2 - Math.PI / 2
     );
@@ -225,7 +211,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
           style={{ color: "#839705" }}
           aria-hidden="true"
         >
-          {/* Outer circle */}
           <circle
             cx={containerSize / 2}
             cy={containerSize / 2}
@@ -237,7 +222,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
             className="animate-dash-flow"
           />
           
-          {/* Inner circle */}
           <circle
             cx={containerSize / 2}
             cy={containerSize / 2}
@@ -250,7 +234,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
             style={{ animationDirection: "reverse", animationDuration: "9s" }}
           />
           
-          {/* Radial lines */}
           {serviceAngles.map((angle, i) => (
             <line
               key={i}
@@ -267,7 +250,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
           ))}
         </svg>
 
-        {/* Service icons */}
         <div className="absolute inset-0 animate-orbit">
           {SERVICES.map((service, i) => {
             const angle = serviceAngles[i];
@@ -303,7 +285,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
           })}
         </div>
 
-        {/* Center medallion */}
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           <span className={`absolute inset-0 rounded-full ${
             theme === "light" ? "bg-[#839705]/30" : "bg-[#839705]/20"
@@ -336,7 +317,6 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
     );
   }, [radius, theme]);
 
-  // Loading placeholder
   if (!isMounted) {
     return (
       <div className="relative mx-auto w-full max-w-[340px] aspect-square">
@@ -353,41 +333,81 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
 ServiceOrbit.displayName = 'ServiceOrbit';
 
 // ============================================
-// PRODUCT CARD COMPONENT - WITH ADD TO CART FUNCTIONALITY
+// UPDATED PRODUCT CARD COMPONENT - Matching your design
 // ============================================
 const ProductCard = memo(({ product, theme }: { product: Product; theme: "light" | "dark" }) => {
-  const { addToCart } = useStore();
+  const { cart, addToCart, setCartQty, removeFromCart } = useStore();
+  
   const badgeColor = product.badgeTone === 'lime' 
     ? 'bg-[#839705] text-white' 
     : 'bg-[#D97706] text-white';
 
-  const handleAddToCart = useCallback(() => {
-    // Create a product object that matches the store's Product type
-    const storeProduct = {
-      id: product.name.toLowerCase().replace(/\s+/g, '-'),
+  // Check if product is in cart
+  const isInCart = cart && cart[product.id] !== undefined;
+  const cartQuantity = isInCart ? cart[product.id].quantity : 0;
+
+  const handleAddToCart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    console.log('🛒 Adding to cart:', product.name);
+    
+    // Parse price
+    const priceValue = parseFloat(product.price.replace(/[^0-9.]/g, ''));
+    console.log('💰 Price:', priceValue);
+    
+    // Create product data object (matches what store expects)
+    const productData = {
+      id: product.id,
       name: product.name,
       brand: product.name.split(' ')[0] || 'Dell',
       category: product.name.includes('Monitor') ? 'Monitors' : 'Laptops',
       segment: 'products' as const,
       shortDescription: product.specs.slice(0, 2).join(', '),
       specs: product.specs,
-      price: parseFloat(product.price.replace(/[^0-9.]/g, '')),
+      price: priceValue,
       availability: 'in-stock' as const,
       quoteOnly: false,
       image: product.image,
     };
-    addToCart(storeProduct.id, 1);
+    
+    console.log('📦 Product data:', productData);
+    
+    // Add to cart with product data
+    addToCart(product.id, 1, productData);
   }, [product, addToCart]);
 
+  const handleRemoveFromCart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log('🗑️ Removing from cart:', product.name);
+    removeFromCart(product.id);
+  }, [product.id, removeFromCart]);
+
+  const handleIncrement = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log('⬆️ Increasing quantity:', product.name);
+    setCartQty(product.id, cartQuantity + 1);
+  }, [product.id, cartQuantity, setCartQty]);
+
+  const handleDecrement = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (cartQuantity > 1) {
+      console.log('⬇️ Decreasing quantity:', product.name);
+      setCartQty(product.id, cartQuantity - 1);
+    } else {
+      console.log('🗑️ Removing from cart (quantity 0):', product.name);
+      removeFromCart(product.id);
+    }
+  }, [product.id, cartQuantity, setCartQty, removeFromCart]);
+
   return (
-    <div className={`group relative flex h-full flex-col rounded-xl border p-4 sm:p-5 pt-6 sm:pt-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
+    <div className={`group relative flex flex-col rounded-xl border p-4 sm:p-5 pt-6 sm:pt-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
       theme === "light"
         ? "border-[#D7E2C8] bg-white hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]"
         : "border-[#3A4331] bg-[#1A1A1A] hover:shadow-[0_8px_30px_rgb(0,0,0,0.3)]"
     }`}>
       {/* Badge */}
       {product.badge && (
-        <span className={`absolute top-0 left-3 z-10 rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-md ${badgeColor}`}>
+        <span className={`absolute -top-2 left-3 z-10 rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide shadow-md ${badgeColor}`}>
           {product.badge}
         </span>
       )}
@@ -407,37 +427,71 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
         {product.name}
       </h3>
       
-      {/* Specs List */}
-      <ul className="mt-2 space-y-0.5 flex-1">
-        {product.specs.map((spec, i) => (
+      {/* Specs List - Using Check icon like your design */}
+      <ul className="mt-2 space-y-1 flex-1">
+        {product.specs.slice(0, 3).map((spec, i) => (
           <li key={i} className="flex items-start gap-1.5 text-[10px] sm:text-xs text-[#6B7280] dark:text-[#9CA3AF]">
-            <span className="mt-1 h-1 w-1 shrink-0 rounded-full bg-[#839705]" />
+            <Check className="mt-0.5 h-3 w-3 shrink-0 text-[#839705]" />
             <span>{spec}</span>
           </li>
         ))}
+        {product.specs.length > 3 && (
+          <li className="text-[10px] sm:text-xs text-[#839705] font-semibold mt-0.5">
+            +{product.specs.length - 3} more specs ▼
+          </li>
+        )}
       </ul>
       
       {/* Price Section */}
-      <div className="mt-3 flex flex-wrap items-baseline gap-2">
+      <div className="mt-3 border-t border-border pt-3">
         {product.wasPrice && (
-          <span className="text-xs text-[#6B7280] line-through dark:text-[#9CA3AF]">
+          <p className="text-xs text-muted-foreground line-through">
             {product.wasPrice}
-          </span>
+          </p>
         )}
-        <span className="text-base font-bold text-[#839705]">{product.price}</span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-bold text-[#839705]">{product.price}</span>
+          <span className="text-[10px] text-green-600 dark:text-green-400 font-medium">
+            In stock
+          </span>
+        </div>
       </div>
       
-      {/* Add to Cart Button */}
-      <button
-        onClick={handleAddToCart}
-        className={`mt-3 w-full rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
-          theme === "light"
-            ? "bg-[#839705] text-white hover:bg-[#98ab06]"
-            : "bg-[#839705] text-white hover:bg-[#98ab06]"
-        }`}
-      >
-        Add to cart
-      </button>
+      {/* Cart Controls */}
+      {isInCart ? (
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={handleDecrement}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#D7E2C8] text-sm font-semibold hover:bg-gray-50 dark:border-[#3A4331] dark:hover:bg-gray-800"
+          >
+            -
+          </button>
+          <span className="w-8 text-center text-sm font-semibold">{cartQuantity}</span>
+          <button
+            onClick={handleIncrement}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#839705] text-sm font-semibold text-white hover:bg-[#98ab06]"
+          >
+            +
+          </button>
+          <button
+            onClick={handleRemoveFromCart}
+            className="ml-1 text-xs text-red-500 hover:text-red-700 font-medium"
+          >
+            Remove
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleAddToCart}
+          className={`mt-3 w-full rounded-lg px-4 py-2 text-xs font-semibold transition-all ${
+            theme === "light"
+              ? "bg-[#839705] text-white hover:bg-[#98ab06] hover:scale-[1.02] active:scale-[0.98]"
+              : "bg-[#839705] text-white hover:bg-[#98ab06] hover:scale-[1.02] active:scale-[0.98]"
+          }`}
+        >
+          Add to cart
+        </button>
+      )}
     </div>
   );
 });
@@ -584,32 +638,54 @@ interface HomeProps {
 
 export default function Home({ onNavigate }: HomeProps) {
   const { theme } = useTheme();
+  const { cart, getCartCount } = useStore();
   const [isInView, setIsInView] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  // Use requestAnimationFrame for smoother initial render
-  useEffect(() => {
-    const rafId = requestAnimationFrame(() => {
+  // Handle loading completion
+  const handleLoadingComplete = useCallback(() => {
+    setIsLoading(false);
+    // Trigger entrance animation
+    requestAnimationFrame(() => {
       setIsInView(true);
     });
-    return () => cancelAnimationFrame(rafId);
   }, []);
 
-  // Memoize navigation handler
+  // Check if this is a first visit or refresh
+  useEffect(() => {
+    // Check if we've already shown the loading animation in this session
+    const hasLoaded = sessionStorage.getItem('homeLoaded');
+    
+    if (hasLoaded) {
+      // Already loaded this session, skip animation
+      setIsLoading(false);
+      setIsInView(true);
+    } else {
+      // First visit or refresh - show animation
+      setIsLoading(true);
+      // Store in session to skip on next navigation
+      sessionStorage.setItem('homeLoaded', 'true');
+    }
+
+    // Cleanup on unmount
+    return () => {
+      // Don't clear sessionStorage on unmount
+    };
+  }, []);
+
   const handleNavigation = useCallback((page: string) => {
     if (onNavigate) {
       onNavigate(page);
     }
   }, [onNavigate]);
 
-  // Scroll function for product carousel
   const scrollBy = useCallback((dir: 1 | -1) => {
     const track = trackRef.current;
     if (!track) return;
     track.scrollBy({ left: dir * track.clientWidth * 0.8, behavior: "smooth" });
   }, []);
 
-  // Memoize hero check items
   const heroCheckItems = useMemo(() => 
     ["IT Support", "Hardware", "Microsoft 365", "Network Solutions"].map((item) => (
       <li key={item} className="flex items-center gap-1 sm:gap-2">
@@ -618,7 +694,6 @@ export default function Home({ onNavigate }: HomeProps) {
     )),
   []);
 
-  // Memoize service cards
   const serviceCards = useMemo(() => 
     offers.map(({ icon, title, body }) => (
       <ServiceCard key={title} icon={icon} title={title} body={body} theme={theme} />
@@ -626,11 +701,10 @@ export default function Home({ onNavigate }: HomeProps) {
     [theme]
   );
 
-  // Memoize product cards
   const productCards = useMemo(() => 
     products.map((product) => (
       <div
-        key={product.name}
+        key={product.id}
         className="w-[85%] shrink-0 snap-start sm:w-[46%] lg:w-[calc(25%-0.94rem)]"
       >
         <ProductCard product={product} theme={theme} />
@@ -639,13 +713,11 @@ export default function Home({ onNavigate }: HomeProps) {
     [theme]
   );
 
-  // Memoize stats
   const statsElements = useMemo(() => 
     stats.map((stat) => <StatItem key={stat.label} stat={stat} />),
     []
   );
 
-  // Memoize partners
   const partnersList = useMemo(() => 
     [...PARTNERS, ...PARTNERS].map((partner, i) => (
       <span
@@ -660,7 +732,6 @@ export default function Home({ onNavigate }: HomeProps) {
     [theme]
   );
 
-  // Memoize pillar items
   const pillarItems = useMemo(() => 
     pillars.map(({ icon: Icon, title, sub }) => (
       <div key={title} className="flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-5">
@@ -677,6 +748,13 @@ export default function Home({ onNavigate }: HomeProps) {
     )),
     [theme]
   );
+
+  const cartCount = getCartCount ? getCartCount() : 0;
+
+  // Show loading animation
+  if (isLoading) {
+    return <LoadingAnimation onComplete={handleLoadingComplete} />;
+  }
 
   return (
     <div className={`flex min-h-screen flex-col ${theme === "light" ? "bg-white" : "bg-black"}`}>
@@ -853,29 +931,46 @@ export default function Home({ onNavigate }: HomeProps) {
                 </h2>
               </div>
 
-              <div className="flex gap-2">
-                <button
-                  onClick={() => scrollBy(-1)}
-                  aria-label="Previous products"
-                  className={`flex size-8 sm:size-10 items-center justify-center border transition-colors ${
-                    theme === "light"
-                      ? "border-[#D7E2C8] bg-white hover:border-[#839705] hover:text-[#839705]"
-                      : "border-[#3A4331] bg-[#1A1A1A] hover:border-[#839705] hover:text-[#839705]"
-                  }`}
-                >
-                  <ChevronLeft className="size-4 sm:size-5" />
-                </button>
-                <button
-                  onClick={() => scrollBy(1)}
-                  aria-label="Next products"
-                  className={`flex size-8 sm:size-10 items-center justify-center border transition-colors ${
-                    theme === "light"
-                      ? "border-[#D7E2C8] bg-white hover:border-[#839705] hover:text-[#839705]"
-                      : "border-[#3A4331] bg-[#1A1A1A] hover:border-[#839705] hover:text-[#839705]"
-                  }`}
-                >
-                  <ChevronRightIcon className="size-4 sm:size-5" />
-                </button>
+              <div className="flex items-center gap-4">
+                {/* Cart count indicator */}
+                {cartCount > 0 && (
+                  <button
+                    onClick={() => handleNavigation('cart')}
+                    className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold transition-all hover:scale-105 ${
+                      theme === "light"
+                        ? "bg-[#839705]/10 text-[#839705] hover:bg-[#839705]/20"
+                        : "bg-[#839705]/20 text-[#839705] hover:bg-[#839705]/30"
+                    }`}
+                  >
+                    <ShoppingCart className="h-4 w-4" />
+                    <span>{cartCount} items</span>
+                  </button>
+                )}
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => scrollBy(-1)}
+                    aria-label="Previous products"
+                    className={`flex size-8 sm:size-10 items-center justify-center border transition-colors ${
+                      theme === "light"
+                        ? "border-[#D7E2C8] bg-white hover:border-[#839705] hover:text-[#839705]"
+                        : "border-[#3A4331] bg-[#1A1A1A] hover:border-[#839705] hover:text-[#839705]"
+                    }`}
+                  >
+                    <ChevronLeft className="size-4 sm:size-5" />
+                  </button>
+                  <button
+                    onClick={() => scrollBy(1)}
+                    aria-label="Next products"
+                    className={`flex size-8 sm:size-10 items-center justify-center border transition-colors ${
+                      theme === "light"
+                        ? "border-[#D7E2C8] bg-white hover:border-[#839705] hover:text-[#839705]"
+                        : "border-[#3A4331] bg-[#1A1A1A] hover:border-[#839705] hover:text-[#839705]"
+                    }`}
+                  >
+                    <ChevronRightIcon className="size-4 sm:size-5" />
+                  </button>
+                </div>
               </div>
             </div>
 

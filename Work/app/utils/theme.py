@@ -13,7 +13,9 @@ class Theme:
     PREFERENCES_PATH = PROJECT_ROOT / "data" / "preferences.json"
     LOGO_PATH = PROJECT_ROOT / "assets" / "logo" / "logo.png"
     LOGO_DARK_PATH = PROJECT_ROOT / "assets" / "logo" / "logo_dark.png"
-    ICON_PATH = PROJECT_ROOT / "assets" / "icons" / "icon.png"
+    
+    # ✅ FIXED: Changed from .png to .ico to match iconbitmap() requirements
+    ICON_PATH = PROJECT_ROOT / "assets" / "icons" / "icon.ico" 
 
     COMPANY_NAME = "Untangled Nexus"
     COMPANY_LEGAL_NAME = "Untangled IT Solutions"

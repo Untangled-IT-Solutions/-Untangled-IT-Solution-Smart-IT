@@ -443,8 +443,16 @@ export const services: ServiceItem[] = [
   { id: "business-technology", name: "Business Technology Solutions", description: "End-to-end solutions built around business outcomes.", group: "solutions" },
 ];
 
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
 export function formatPrice(value: number) {
   return "R " + value.toLocaleString("en-ZA");
+}
+
+export function productById(id: string): Product | undefined {
+  return products.find((p) => p.id === id);
 }
 
 export function searchAll(query: string) {

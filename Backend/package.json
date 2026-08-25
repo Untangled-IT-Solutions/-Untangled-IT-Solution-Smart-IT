@@ -4,19 +4,23 @@
   "type": "module",
   "description": "Untangled IT Solutions Backend API",
   "scripts": {
-     "dev": "tsx server/index-working-v2.ts",
-    "start": "tsx server/index-working-v2.ts"
+    "dev": "concurrently \"cross-env PORT=5001 tsx server/index-working-v2.ts\" \"cross-env PORT=5002 tsx server/index-desktop.ts\"",
+    "dev:working": "tsx server/index-working-v2.ts",
+    "dev:desktop": "tsx server/index-desktop.ts",
+    "start": "tsx server/index-desktop.ts"
   },
   "dependencies": {
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "dotenv": "^17.4.2",
     "h3": "^1.15.11",
     "listhen": "^1.10.1",
-    "mongoose": "^9.9.2"
+    "mongoose": "^9.9.2",
+    "tsx": "^4.23.12"
   },
   "devDependencies": {
     "@types/node": "^20.19.43",
     "nodemon": "^3.1.14",
-    "tsx": "^4.23.12",
     "typescript": "^5.9.3"
   }
 }

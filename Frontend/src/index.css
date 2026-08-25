@@ -378,3 +378,129 @@ select {
 .delay-300 { animation-delay: 300ms; }
 .delay-400 { animation-delay: 400ms; }
 .delay-500 { animation-delay: 500ms; }
+
+/* ============================================
+   LOADING ANIMATION - Fast spin for page load
+   ============================================ */
+
+@keyframes spin-fast {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-fast {
+  animation: spin-fast 0.5s linear infinite;
+}
+
+/* ============================================
+   SLOW PAN ANIMATION FOR HERO BACKGROUND
+   ============================================ */
+
+@keyframes slow-pan {
+  0% {
+    transform: scale(1) translateX(0);
+  }
+  50% {
+    transform: scale(1.05) translateX(-2%);
+  }
+  100% {
+    transform: scale(1) translateX(0);
+  }
+}
+
+.animate-slow-pan {
+  animation: slow-pan 20s ease-in-out infinite;
+}
+
+/* ============================================
+   SHEEN ANIMATION - Light sweep across hero
+   ============================================ */
+
+@keyframes sheen {
+  0% {
+    transform: skewX(12deg) translateX(-150%);
+  }
+  100% {
+    transform: skewX(12deg) translateX(150%);
+  }
+}
+
+.animate-sheen {
+  animation: sheen 8s ease-in-out infinite;
+}
+
+/* ============================================
+   PULSE SCALE ANIMATION - For loading dots
+   ============================================ */
+
+@keyframes pulse-scale {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.animate-pulse-scale {
+  animation: pulse-scale 1s ease-in-out infinite;
+}
+
+/* ============================================
+   SPIN DECELERATE - For loading animation
+   ============================================ */
+
+@keyframes spin-decelerate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-decelerate {
+  animation: spin-decelerate 0.5s cubic-bezier(0.1, 0.8, 0.2, 1) infinite;
+}
+
+/* ============================================
+   FADE IN LOADING - Smooth transition for loading completion
+   ============================================ */
+
+@keyframes fade-in-loading {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-loading {
+  animation: fade-in-loading 0.5s ease-out forwards;
+}
+
+/* ============================================
+   GLOW PULSE - For loading ring glow
+   ============================================ */
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(131, 151, 5, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(131, 151, 5, 0.3);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}

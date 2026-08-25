@@ -1,8 +1,11 @@
-"""Central notification and activity service."""
+"""Central notification and activity service with sound support."""
 
 import sqlite3
 from collections.abc import Iterable
 from pathlib import Path
+import platform
+import subprocess
+import os
 
 from app.database.database import Database
 from app.models.notification import Activity, Notification
@@ -15,10 +18,81 @@ class NotificationService:
 
     def __init__(self, database: Database) -> None:
         self._database = database
+        self._sound_enabled = True
+        self._sound_path = self._get_default_sound_path()
 
     @property
     def db_path(self) -> Path:
         return self._database.db_path
+
+    def _get_default_sound_path(self) -> Path:
+        """Get the default notification sound path."""
+        # Try multiple possible locations
+        possible_paths = [
+            Path(__file__).parent.parent.parent / "assets" / "sounds" / "notification.wav",
+            Path(__file__).parent.parent / "assets" / "sounds" / "notification.wav",
+            Path(__file__).parent / "assets" / "sounds" / "notification.wav",
+            Path("assets/sounds/notification.wav"),
+            Path("/System/Library/Sounds/Glass.aiff"),  # Mac
+            Path("/usr/share/sounds/freedesktop/stereo/complete.oga"),  # Linux
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                return path
+        
+        # Return a default path even if it doesn't exist
+        return possible_paths[0]
+
+    def set_sound_enabled(self, enabled: bool) -> None:
+        """Enable or disable notification sounds."""
+        self._sound_enabled = enabled
+
+    def set_sound_path(self, path: Path) -> None:
+        """Set a custom notification sound path."""
+        if path.exists():
+            self._sound_path = path
+
+    def _play_sound(self) -> None:
+        """Play a notification sound."""
+        if not self._sound_enabled:
+            return
+            
+        try:
+            system = platform.system()
+            
+            if system == "Windows":
+                # Use winsound on Windows
+                try:
+                    import winsound
+                    winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
+                except ImportError:
+                    # Fallback to using the sound file
+                    if self._sound_path.exists():
+                        import winsound
+                        winsound.PlaySound(str(self._sound_path), winsound.SND_FILENAME)
+            elif system == "Darwin":  # macOS
+                if self._sound_path.exists():
+                    # Try using afplay
+                    subprocess.run(["afplay", str(self._sound_path)], capture_output=True)
+                else:
+                    # Fallback to system beep
+                    print("\a", end="", flush=True)
+            elif system == "Linux":
+                if self._sound_path.exists():
+                    # Try using aplay or paplay
+                    try:
+                        subprocess.run(["aplay", str(self._sound_path)], capture_output=True)
+                    except FileNotFoundError:
+                        try:
+                            subprocess.run(["paplay", str(self._sound_path)], capture_output=True)
+                        except FileNotFoundError:
+                            print("\a", end="", flush=True)
+                else:
+                    print("\a", end="", flush=True)
+        except Exception as e:
+            # Silently fail if sound can't be played
+            print(f"⚠️ Could not play notification sound: {e}")
 
     def notify_operational(
         self,
@@ -52,6 +126,45 @@ class NotificationService:
                 ],
             )
             connection.commit()
+        
+        # Play sound for operational notifications
+        self._play_sound()
+
+    def notify_user(
+        self,
+        user_name: str,
+        message: str,
+        category: str = "General",
+        title: str = "",
+    ) -> None:
+        """Send a notification to a specific user."""
+        try:
+            with self._connect() as connection:
+                # Try to find the employee by name
+                employee = connection.execute(
+                    "SELECT id, role FROM employees WHERE full_name = ?",
+                    (user_name,)
+                ).fetchone()
+                
+                if employee:
+                    # Create notification
+                    connection.execute(
+                        """
+                        INSERT INTO notifications (
+                            recipient_role, title, message, category, is_executive, is_read
+                        ) VALUES (?, ?, ?, ?, 0, 0)
+                        """,
+                        (employee["role"], title or category, message, category)
+                    )
+                    connection.commit()
+                    print(f"✅ Notification created for {user_name}")
+                    
+                    # Play sound for user notification
+                    self._play_sound()
+                else:
+                    print(f"⚠️ User '{user_name}' not found in employees")
+        except Exception as e:
+            print(f"⚠️ Failed to send notification: {e}")
 
     def notify_executive(
         self,
@@ -80,6 +193,9 @@ class NotificationService:
                 ),
             )
             connection.commit()
+        
+        # Play sound for executive notifications
+        self._play_sound()
 
     def notify_inventory_alert(self, title: str, message: str) -> None:
         """Expose Inventory as a supported source before its module is introduced."""
