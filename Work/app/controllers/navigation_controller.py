@@ -133,12 +133,21 @@ class NavigationController:
         try:
             collection = self._mongodb.get_collection("quotes")
             
-            # Check for quotes assigned to this user
+            # Match any identity field the assignment endpoint may store
+            uname = str(username).strip().lower()
             query = {
-                "assigned_to.username": username,
-                "status": {"$in": ["assigned", "accepted", "in_progress"]}
+                "status": {"$in": ["assigned", "accepted", "in_progress"]},
+                "$or": [
+                    {"assigned_to.username": uname},
+                    {"assigned_to.email": uname},
+                    {"assigned_to.full_name": uname},
+                    {"assigned_to.display_name": uname},
+                    {"assigned_to.name": uname},
+                    {"assigned_to.employee_id": uname},
+                    {"assigned_to.id": uname},
+                ],
             }
-            
+
             count = collection.count_documents(query)
             return count > 0
 

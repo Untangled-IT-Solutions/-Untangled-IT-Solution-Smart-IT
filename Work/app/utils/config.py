@@ -1,3 +1,4 @@
+
 # app/utils/config.py
 """Application configuration with all constants."""
 

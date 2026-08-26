@@ -584,15 +584,29 @@ class QuoteManagementView(ctk.CTkFrame):
             self._refresh_btn.configure(state="normal", text="🔄")
 
     def _is_assigned_to_user(self, quote: Dict[str, Any], username: str) -> bool:
-        assigned_to = quote.get("assigned_to")
+        """Match staff identity against assigned_to (email, username, name, ids)."""
+        if not username:
+            return False
+        username = str(username).strip().lower()
+        assigned_to = quote.get("assigned_to") or quote.get("assignedTo")
         if not assigned_to:
             return False
         if isinstance(assigned_to, dict):
-            assigned_username = str(assigned_to.get("username", "")).lower()
-            assigned_name = str(assigned_to.get("name", "")).lower()
-            assigned_display = str(assigned_to.get("display_name", "")).lower()
-            return assigned_username == username or assigned_name == username or assigned_display == username
-        return str(assigned_to).lower() == username
+            candidates = [
+                assigned_to.get("username"),
+                assigned_to.get("email"),
+                assigned_to.get("email_address"),
+                assigned_to.get("name"),
+                assigned_to.get("full_name"),
+                assigned_to.get("display_name"),
+                assigned_to.get("employee_id"),
+                assigned_to.get("id"),
+            ]
+            for value in candidates:
+                if value is not None and str(value).strip().lower() == username:
+                    return True
+            return False
+        return str(assigned_to).strip().lower() == username
 
     # ------------------------------------------------------------- list view
 
@@ -1121,6 +1135,9 @@ class QuoteManagementView(ctk.CTkFrame):
                     wraplength=180,
                 ).grid(row=i, column=2, sticky="ew", pady=1)
 
+        # === DIRECTOR AVAILABILITY REVIEW (optional field; old quotes work without it) ===
+        row = self._render_director_review_section(quote, row)
+
         # === HISTORY ===
         history = quote.get("history", [])
         if history:
@@ -1219,23 +1236,10 @@ class QuoteManagementView(ctk.CTkFrame):
 
         # Reply input - for employees assigned to this quote OR managers
         current_status = quote.get("status", "Pending")
-        assigned_to = quote.get("assigned_to")
-        is_assigned_to_me = False
-        
-        # Check if assigned to current user
-        if assigned_to:
-            if isinstance(assigned_to, dict):
-                assigned_username = assigned_to.get("username", "").lower()
-                assigned_display = assigned_to.get("display_name", "").lower()
-                assigned_name = assigned_to.get("name", "").lower()
-                is_assigned_to_me = (
-                    assigned_username == self._current_username.lower() or
-                    assigned_display == self._current_username.lower() or
-                    assigned_name == self._current_username.lower()
-                )
-            else:
-                is_assigned_to_me = str(assigned_to).lower() == self._current_username.lower()
-        
+        is_assigned_to_me = self._is_assigned_to_user(
+            quote, (self._current_username or "").lower()
+        )
+
         # Allow reply if:
         # 1. User is a Manager, OR
         # 2. Employee is assigned to this quote
@@ -1491,40 +1495,117 @@ class QuoteManagementView(ctk.CTkFrame):
                     quote["status"] = self._selected_quote.get("status", quote.get("status"))
                     break
             self._toast(f"{reference} assignment updated.", "success")
+            if assigned:
+                try:
+                    self._notify_quote_assigned(reference, assigned, self._selected_quote)
+                except Exception as notify_exc:
+                    print(f"⚠️ Assignment notification failed: {notify_exc}")
             self._filter_quotes()
             self._show_quote_details(self._selected_quote)
         except Exception as exc:
             print(f"⚠️ Quote assignment failed: {exc}")
             self._toast(f"Assignment failed: {exc}", "error")
 
-    def _send_notification(self, recipient: str, message: str, title: str, reference: str = ""):
-        """Send a notification to a user."""
+    def _resolve_assignee_identity(self, assigned_to) -> str:
+        """Best identity string for existing notify_user lookup."""
+        if not assigned_to:
+            return ""
+        if isinstance(assigned_to, dict):
+            return (
+                assigned_to.get("full_name")
+                or assigned_to.get("display_name")
+                or assigned_to.get("name")
+                or assigned_to.get("email")
+                or assigned_to.get("username")
+                or assigned_to.get("employee_id")
+                or ""
+            )
+        return str(assigned_to)
+
+    def _notify_quote_assigned(self, reference: str, assigned_to, quote: Dict[str, Any] = None):
+        """Notify employee when a quote is assigned."""
+        identity = self._resolve_assignee_identity(assigned_to)
+        if not identity:
+            return
+        customer = (quote or {}).get("customerName") or "customer"
+        self._send_notification(
+            identity,
+            f"Quote {reference} ({customer}) was assigned to you.",
+            "Quote Assigned",
+            reference,
+            category="Quote Assignment",
+        )
+
+    def _notify_director_review_requested(self, reference: str, quote: Dict[str, Any] = None):
+        """Notify Director when staff requests availability check (or resubmits)."""
+        customer = (quote or {}).get("customerName") or "customer"
+        by = self._current_user_name or self._current_username or "Staff"
+        # Detect resubmit from prior reviewed state before overwrite when possible
+        review = (quote or {}).get("director_review") or {}
+        history = (quote or {}).get("director_review_history") or []
+        is_resubmit = bool(history) or (
+            isinstance(review, dict) and review.get("status") in ("reviewed", "pending")
+            and review.get("reviewed_at")
+        )
+        title = "Quote Resubmitted" if is_resubmit else "Quote Availability Check"
+        action = (
+            "resubmitted"
+            if is_resubmit
+            else "requested Director availability review for"
+        )
+        try:
+            if self._notification_controller and hasattr(
+                self._notification_controller, "notify_executive"
+            ):
+                self._notification_controller.notify_executive(
+                    title=title,
+                    message=f"{by} {action} {reference} ({customer}).",
+                    category="Quote Director Review",
+                    reference_type="quote",
+                    reference_id=reference,
+                )
+        except Exception as e:
+            print(f"⚠️ Director review request notification failed: {e}")
+
+    def _notify_director_review_completed(self, reference: str, quote: Dict[str, Any] = None):
+        """Notify assigned employee when Director submits availability reply."""
+        identity = self._resolve_assignee_identity((quote or {}).get("assigned_to"))
+        if not identity:
+            return
+        customer = (quote or {}).get("customerName") or "customer"
+        self._send_notification(
+            identity,
+            f"Director replied on availability for {reference} ({customer}). Open Quote Management to review.",
+            "Director Availability Response",
+            reference,
+            category="Quote Director Review",
+        )
+
+    def _send_notification(
+        self,
+        recipient: str,
+        message: str,
+        title: str,
+        reference: str = "",
+        category: str = "Quote Assignment",
+    ):
+        """Route through the existing notification controller only."""
         if not recipient:
             return
-            
         try:
-            if self._notification_controller:
-                if hasattr(self._notification_controller, 'notify_user'):
-                    self._notification_controller.notify_user(recipient, message, title)
-                    return
-        except Exception:
-            pass
-        
-        try:
-            notifications = self._mongodb.get_collection("notifications")
-            notification = {
-                "recipient": recipient,
-                "recipient_role": "Staff",
-                "title": title,
-                "message": message,
-                "category": "Quote Assignment",
-                "reference": reference,
-                "is_read": False,
-                "created_at": datetime.now(timezone.utc)
-            }
-            notifications.insert_one(notification)
+            if self._notification_controller and hasattr(
+                self._notification_controller, "notify_user"
+            ):
+                self._notification_controller.notify_user(
+                    recipient,
+                    message,
+                    category=category,
+                    title=title,
+                    reference_type="quote" if reference else "",
+                    reference_id=reference or "",
+                )
         except Exception as e:
-            print(f"⚠️ Could not save notification: {e}")
+            print(f"⚠️ Could not send notification via controller: {e}")
 
     def _send_reply(self, quote: Dict[str, Any]):
         """Send a reply to the customer."""
@@ -2112,6 +2193,484 @@ class QuoteManagementView(ctk.CTkFrame):
         self._stats_label.configure(
             text=f"{len(self._quotes)} jobs · {active} active"
         )
+
+    # ------------------------------------------------------------- Director review
+
+    AVAILABILITY_OPTIONS = [
+        "Available",
+        "Partially Available",
+        "Unavailable",
+        "Alternative Required",
+    ]
+
+    def _is_director(self) -> bool:
+        return str(self._current_role or "").strip().lower() == "director"
+
+    def _render_director_review_section(self, quote: Dict[str, Any], row: int) -> int:
+        """Minimal Director availability UI inside existing details panel."""
+        status = quote.get("status", "Pending")
+        if status in ("Completed", "Returned"):
+            return row
+
+        review = quote.get("director_review") or {}
+        review_status = (review.get("status") or "").lower() if isinstance(review, dict) else ""
+        is_assigned_to_me = self._is_assigned_to_user(
+            quote, (self._current_username or "").lower()
+        )
+        is_director = self._is_director()
+
+        row = self._add_divider(row)
+        row = self._add_section_title("Director Availability Check", row)
+
+        box = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
+        box.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        box.grid_columnconfigure(0, weight=1)
+        row += 1
+
+        # --- Employee: Send to Director ---
+        can_send = (
+            (is_assigned_to_me or self._is_manager)
+            and review_status != "pending"
+            and status not in ("Completed", "Returned")
+        )
+        if can_send and not is_director:
+            ctk.CTkLabel(
+                box,
+                text="Ask the Director to confirm whether client items are available.",
+                font=ctk.CTkFont(size=11),
+                text_color=Theme.MUTED_TEXT,
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+            ctk.CTkButton(
+                box,
+                text="Send to Director",
+                height=32,
+                width=160,
+                fg_color="#673AB7",
+                hover_color="#5E35B1",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda: self._send_to_director(quote),
+            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
+
+        # --- Pending banner ---
+        if review_status == "pending":
+            ctk.CTkLabel(
+                box,
+                text="⏳ Awaiting Director availability review",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="#FF9800",
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
+            req_by = (review.get("requested_by") or {}) if isinstance(review, dict) else {}
+            who = req_by.get("full_name") or req_by.get("username") or "employee"
+            ctk.CTkLabel(
+                box,
+                text=f"Requested by {who}",
+                font=ctk.CTkFont(size=11),
+                text_color=Theme.MUTED_TEXT,
+                anchor="w",
+            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
+
+        # --- Director form (when pending or director opening any active quote) ---
+        show_director_form = is_director and (
+            review_status == "pending" or (not review_status and is_assigned_to_me is False)
+        )
+        # Prefer form only when a review was requested
+        show_director_form = is_director and review_status == "pending"
+
+        self._director_item_widgets = []
+        self._director_general_reply = None
+
+        if show_director_form:
+            items = quote.get("items") or []
+            review_items = (review.get("items") if isinstance(review, dict) else None) or []
+            form = ctk.CTkFrame(box, fg_color="transparent")
+            form.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
+            form.grid_columnconfigure(0, weight=2)
+            form.grid_columnconfigure(1, weight=0)
+            form.grid_columnconfigure(2, weight=2)
+
+            ctk.CTkLabel(
+                form, text="Item", font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=Theme.MUTED_TEXT, anchor="w",
+            ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+            ctk.CTkLabel(
+                form, text="Availability", font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=Theme.MUTED_TEXT, anchor="w",
+            ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
+            ctk.CTkLabel(
+                form, text="Comment (qty / alternative)", font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=Theme.MUTED_TEXT, anchor="w",
+            ).grid(row=0, column=2, sticky="w", padx=(8, 0), pady=(0, 4))
+
+            for idx, item in enumerate(items):
+                item_id = str(item.get("id") or item.get("_id") or "")
+                name = item.get("name") or "Item"
+                qty = item.get("qty", 1)
+                prior = next(
+                    (
+                        r for r in review_items
+                        if str(r.get("item_id") or "") == item_id
+                        or str(r.get("item_name") or "").lower() == name.lower()
+                    ),
+                    {},
+                )
+                ctk.CTkLabel(
+                    form,
+                    text=f"{name}  ×{qty}",
+                    font=ctk.CTkFont(size=12),
+                    text_color=Theme.TEXT,
+                    anchor="w",
+                    wraplength=160,
+                ).grid(row=idx + 1, column=0, sticky="w", pady=3)
+
+                avail_menu = ctk.CTkOptionMenu(
+                    form,
+                    values=self.AVAILABILITY_OPTIONS,
+                    width=150,
+                    height=28,
+                    font=ctk.CTkFont(size=11),
+                )
+                avail_menu.set(prior.get("availability") or "Available")
+                avail_menu.grid(row=idx + 1, column=1, sticky="w", padx=(8, 0), pady=3)
+
+                comment_entry = ctk.CTkEntry(
+                    form, placeholder_text="Optional note", height=28, font=ctk.CTkFont(size=11)
+                )
+                if prior.get("comment"):
+                    comment_entry.insert(0, str(prior.get("comment")))
+                comment_entry.grid(row=idx + 1, column=2, sticky="ew", padx=(8, 0), pady=3)
+
+                self._director_item_widgets.append({
+                    "item_id": item_id,
+                    "item_name": name,
+                    "qty_requested": qty,
+                    "availability_menu": avail_menu,
+                    "comment_entry": comment_entry,
+                })
+
+            ctk.CTkLabel(
+                box,
+                text="General Director Reply",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=Theme.TEXT,
+                anchor="w",
+            ).grid(row=3, column=0, sticky="w", padx=12, pady=(6, 2))
+            self._director_general_reply = ctk.CTkTextbox(
+                box, height=70, wrap="word", corner_radius=6, font=ctk.CTkFont(size=12)
+            )
+            self._director_general_reply.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 6))
+
+            ctk.CTkButton(
+                box,
+                text="Send Reply to Employee",
+                height=34,
+                width=200,
+                fg_color="#2196F3",
+                hover_color="#1976D2",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda: self._submit_director_review(quote),
+            ).grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
+
+        # --- Reviewed response (employee + director can view) ---
+        if review_status == "reviewed" and isinstance(review, dict):
+            director = review.get("director") or {}
+            who = director.get("full_name") or director.get("username") or "Director"
+            when = review.get("reviewed_at") or ""
+            ctk.CTkLabel(
+                box,
+                text=f"✅ Director response from {who}" + (f" · {str(when)[:16]}" if when else ""),
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="#4CAF50",
+                anchor="w",
+            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+
+            general = review.get("general_reply") or ""
+            if general:
+                ctk.CTkLabel(
+                    box,
+                    text=general,
+                    font=ctk.CTkFont(size=12),
+                    text_color=Theme.TEXT,
+                    anchor="w",
+                    wraplength=440,
+                    justify="left",
+                ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+
+            items_resp = review.get("items") or []
+            if items_resp:
+                lines = []
+                for it in items_resp:
+                    avail = it.get("availability") or "—"
+                    name = it.get("item_name") or "Item"
+                    comment = it.get("comment") or ""
+                    line = f"• {name}: {avail}"
+                    if comment:
+                        line += f" — {comment}"
+                    lines.append(line)
+                ctk.CTkLabel(
+                    box,
+                    text="\n".join(lines),
+                    font=ctk.CTkFont(size=11),
+                    text_color=Theme.TEXT,
+                    anchor="w",
+                    justify="left",
+                    wraplength=440,
+                ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+
+            # Employee can acknowledge / resubmit after updates
+            if is_assigned_to_me or self._is_staff:
+                ctk.CTkButton(
+                    box,
+                    text="Update / Resubmit to Director",
+                    height=32,
+                    width=220,
+                    fg_color="#673AB7",
+                    hover_color="#5E35B1",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    command=lambda: self._send_to_director(quote),
+                ).grid(row=3, column=0, sticky="w", padx=12, pady=(0, 12))
+
+        # Prior review history (archived)
+        history = quote.get("director_review_history") or []
+        if history:
+            ctk.CTkLabel(
+                box,
+                text=f"Previous director reviews: {len(history)}",
+                font=ctk.CTkFont(size=10),
+                text_color=Theme.MUTED_TEXT,
+                anchor="w",
+            ).grid(row=10, column=0, sticky="w", padx=12, pady=(0, 8))
+
+        return row
+
+    def _send_to_director(self, quote: Dict[str, Any]):
+        """Employee (or manager) sends quote to Director for availability check."""
+        if self._is_destroyed or not quote:
+            return
+        reference = str(quote.get("reference") or "").strip()
+        if not reference:
+            self._toast("No reference found.", "error")
+            return
+        if not messagebox.askyesno(
+            "Send to Director",
+            f"Send {reference} to the Director for item availability checking?",
+        ):
+            return
+        payload = {
+            "username": self._current_username,
+            "full_name": self._current_user_name,
+            "by": self._current_user_name,
+        }
+        try:
+            if self._backend_api:
+                response = self._backend_api.request(
+                    "POST",
+                    f"/api/admin/quotes/{reference}/director-review/request",
+                    payload,
+                )
+                if response and response.get("success"):
+                    q = response.get("quote") or {}
+                    quote["status"] = self._map_mongo_to_display(q.get("status") or "in_review")
+                    quote["director_review"] = q.get("director_review")
+                    for existing in self._quotes:
+                        if existing.get("reference") == reference:
+                            existing["status"] = quote["status"]
+                            existing["director_review"] = quote.get("director_review")
+                            break
+                    try:
+                        self._notify_director_review_requested(reference, quote)
+                    except Exception as notify_exc:
+                        print(f"⚠️ Send-to-Director notification failed: {notify_exc}")
+                    self._toast("Sent to Director for availability review.", "success")
+                    self._filter_quotes()
+                    self._show_quote_details(quote)
+                    return
+                raise RuntimeError((response or {}).get("error") or "Request failed")
+            # Mongo fallback
+            collection = self._get_collection()
+            if collection is None:
+                self._toast("Could not reach quotes storage.", "error")
+                return
+            items = quote.get("items") or []
+            existing = quote.get("director_review")
+            push_hist = {}
+            if isinstance(existing, dict) and existing.get("status") == "reviewed":
+                push_hist = {"director_review_history": existing}
+            review = {
+                "status": "pending",
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+                "requested_by": {
+                    "username": self._current_username,
+                    "full_name": self._current_user_name,
+                },
+                "reviewed_at": None,
+                "director": None,
+                "general_reply": "",
+                "items": [
+                    {
+                        "item_id": str(it.get("id") or it.get("_id") or ""),
+                        "item_name": it.get("name") or "Item",
+                        "qty_requested": it.get("qty", 1),
+                        "availability": "",
+                        "comment": "",
+                    }
+                    for it in items
+                ],
+            }
+            update: Dict[str, Any] = {
+                "$set": {
+                    "director_review": review,
+                    "status": "in_review",
+                    "updated_at": datetime.now(timezone.utc),
+                },
+                "$push": {
+                    "history": {
+                        "action": "sent_to_director",
+                        "by": self._current_user_name,
+                        "username": self._current_username,
+                        "time": datetime.now(timezone.utc).isoformat(),
+                        "note": "Sent to Director for availability check",
+                    }
+                },
+            }
+            if push_hist:
+                update["$push"]["director_review_history"] = push_hist["director_review_history"]
+            collection.update_one({"reference": reference}, update)
+            quote["status"] = "In Review"
+            quote["director_review"] = review
+            try:
+                self._notify_director_review_requested(reference, quote)
+            except Exception as notify_exc:
+                print(f"⚠️ Send-to-Director notification failed: {notify_exc}")
+            self._toast("Sent to Director for availability review.", "success")
+            self._filter_quotes()
+            self._show_quote_details(quote)
+        except Exception as exc:
+            print(f"⚠️ Send to Director failed: {exc}")
+            self._toast(f"Send to Director failed: {exc}", "error")
+
+    def _submit_director_review(self, quote: Dict[str, Any]):
+        """Director submits per-item availability + general reply back to employee."""
+        if self._is_destroyed or not quote:
+            return
+        if not self._is_director():
+            self._toast("Only Directors can submit availability reviews.", "error")
+            return
+        reference = str(quote.get("reference") or "").strip()
+        if not reference:
+            self._toast("No reference found.", "error")
+            return
+
+        items_payload = []
+        for w in getattr(self, "_director_item_widgets", []) or []:
+            items_payload.append({
+                "item_id": w.get("item_id"),
+                "item_name": w.get("item_name"),
+                "qty_requested": w.get("qty_requested", 1),
+                "availability": w["availability_menu"].get() if w.get("availability_menu") else "Unavailable",
+                "comment": (w["comment_entry"].get().strip() if w.get("comment_entry") else ""),
+            })
+        general = ""
+        if self._director_general_reply:
+            general = self._director_general_reply.get("1.0", "end-1c").strip()
+
+        if not messagebox.askyesno(
+            "Send Director Reply",
+            f"Send availability response for {reference} back to the assigned employee?",
+        ):
+            return
+
+        payload = {
+            "general_reply": general,
+            "items": items_payload,
+            "username": self._current_username,
+            "full_name": self._current_user_name,
+            "by": self._current_user_name,
+        }
+        try:
+            if self._backend_api:
+                response = self._backend_api.request(
+                    "PUT",
+                    f"/api/admin/quotes/{reference}/director-review",
+                    payload,
+                )
+                if response and response.get("success"):
+                    q = response.get("quote") or {}
+                    quote["status"] = self._map_mongo_to_display(q.get("status") or "assigned")
+                    quote["director_review"] = q.get("director_review")
+                    quote["director_review_history"] = q.get("director_review_history") or quote.get(
+                        "director_review_history"
+                    ) or []
+                    for existing in self._quotes:
+                        if existing.get("reference") == reference:
+                            existing["status"] = quote["status"]
+                            existing["director_review"] = quote.get("director_review")
+                            existing["director_review_history"] = quote.get("director_review_history")
+                            break
+                    try:
+                        self._notify_director_review_completed(reference, quote)
+                    except Exception as notify_exc:
+                        print(f"⚠️ Director-reply notification failed: {notify_exc}")
+                    self._toast("Director reply sent to employee.", "success")
+                    self._filter_quotes()
+                    self._show_quote_details(quote)
+                    return
+                raise RuntimeError((response or {}).get("error") or "Submit failed")
+
+            collection = self._get_collection()
+            if collection is None:
+                self._toast("Could not reach quotes storage.", "error")
+                return
+            existing = quote.get("director_review") if isinstance(quote.get("director_review"), dict) else {}
+            if existing.get("status") == "reviewed":
+                collection.update_one(
+                    {"reference": reference},
+                    {"$push": {"director_review_history": existing}},
+                )
+            review = {
+                "status": "reviewed",
+                "requested_at": existing.get("requested_at") or datetime.now(timezone.utc).isoformat(),
+                "requested_by": existing.get("requested_by"),
+                "reviewed_at": datetime.now(timezone.utc).isoformat(),
+                "director": {
+                    "username": self._current_username,
+                    "full_name": self._current_user_name,
+                },
+                "general_reply": general,
+                "items": items_payload,
+            }
+            collection.update_one(
+                {"reference": reference},
+                {
+                    "$set": {
+                        "director_review": review,
+                        "status": "assigned",
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                    "$push": {
+                        "history": {
+                            "action": "director_review_submitted",
+                            "by": self._current_user_name,
+                            "username": self._current_username,
+                            "time": datetime.now(timezone.utc).isoformat(),
+                            "note": general[:120] if general else "Director submitted availability review",
+                        }
+                    },
+                },
+            )
+            quote["status"] = "Assigned"
+            quote["director_review"] = review
+            try:
+                self._notify_director_review_completed(reference, quote)
+            except Exception as notify_exc:
+                print(f"⚠️ Director-reply notification failed: {notify_exc}")
+            self._toast("Director reply sent to employee.", "success")
+            self._filter_quotes()
+            self._show_quote_details(quote)
+        except Exception as exc:
+            print(f"⚠️ Director review submit failed: {exc}")
+            self._toast(f"Director review failed: {exc}", "error")
 
     def _toast(self, message: str, kind: str = "info"):
         if self._is_destroyed:

@@ -299,8 +299,8 @@ class AppController:
 
                 print("✅ Main window created successfully")
 
-                # Load dashboard
-                self._on_navigate("Attendance")
+                # Load dashboard (live People Working / KPIs)
+                self._on_navigate("Dashboard")
 
                 # Start sync ONCE
                 self._start_quote_sync()
@@ -531,22 +531,33 @@ class AppController:
             )
 
         elif destination == "Quote Management":
+            # IMPORTANT: wrap the service in NotificationController so
+            # notify_user / notify_executive have a stable interface and
+            # accept reference_type / reference_id without TypeError.
+            quote_notification_controller = NotificationController(
+                self._notification_service,
+                self._mongo_auth_service,
+            )
             return QuoteManagementView(
                 workspace,
                 mongodb_service=self._mongodb_service,
                 people_controller=self._people_controller,
-                notification_controller=self._notification_service,
+                notification_controller=quote_notification_controller,
                 auth_service=self._auth_service,
                 navigation_controller=self._navigation_controller,
                 backend_api=self._backend_api,
             )
 
         elif destination == "Order Management":
+            order_notification_controller = NotificationController(
+                self._notification_service,
+                self._mongo_auth_service,
+            )
             return OrderManagementView(
                 workspace,
                 mongodb_service=self._mongodb_service,
                 people_controller=self._people_controller,
-                notification_controller=self._notification_service,
+                notification_controller=order_notification_controller,
                 auth_service=self._auth_service,
                 navigation_controller=self._navigation_controller,
                 backend_api=self._backend_api,

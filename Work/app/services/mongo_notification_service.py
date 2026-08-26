@@ -96,51 +96,130 @@ class MongoNotificationService:
         
         self._play_sound()
 
+    def _find_employee(self, identity: str) -> Optional[Dict[str, Any]]:
+        """Resolve an employee by full name, email, username, or employee_id."""
+        if not identity or not str(identity).strip():
+            return None
+        key = str(identity).strip()
+        employees_collection = self._mongo.get_collection("employees")
+        query: Dict[str, Any] = {
+            "$or": [
+                {"full_name": key},
+                {"email": key},
+                {"email": key.lower()},
+                {"email_address": key},
+                {"email_address": key.lower()},
+                {"username": key},
+                {"username": key.lower()},
+                {"employee_id": key},
+            ]
+        }
+        if ObjectId.is_valid(key):
+            try:
+                query["$or"].append({"_id": ObjectId(key)})
+            except Exception:
+                pass
+        return employees_collection.find_one(query)
+
+    def _has_unread_duplicate(
+        self,
+        *,
+        category: str,
+        reference_type: str,
+        reference_id: str,
+        recipient_role: str = "",
+        recipient_id: str = "",
+        recipient_name: str = "",
+    ) -> bool:
+        """Skip creating a second unread notification for the same quote event."""
+        if not reference_id:
+            return False
+        collection = self._get_collection()
+        query: Dict[str, Any] = {
+            "is_read": False,
+            "category": category,
+            "reference_type": reference_type or "quote",
+            "reference_id": str(reference_id),
+        }
+        if recipient_id:
+            query["recipient_id"] = str(recipient_id)
+        elif recipient_name:
+            query["recipient_name"] = recipient_name
+        elif recipient_role:
+            query["recipient_role"] = recipient_role
+        try:
+            return collection.find_one(query) is not None
+        except Exception:
+            return False
+
     def notify_user(
         self,
         user_name: str,
         message: str,
         category: str = "General",
         title: str = "",
+        reference_type: str = "",
+        reference_id: str = "",
     ) -> None:
-        """Send a notification to a specific user."""
+        """Send a notification to a specific user (by name, email, or employee id)."""
         try:
-            # Find the user by name
-            employees_collection = self._mongo.get_collection("employees")
-            employee = employees_collection.find_one({"full_name": user_name})
-            
+            employee = self._find_employee(user_name)
             if not employee:
                 print(f"⚠️ User '{user_name}' not found in MongoDB")
                 return
-            
+
+            display_name = (
+                employee.get("full_name")
+                or user_name
+            )
+            recipient_id = str(employee.get("_id") or employee.get("employee_id") or "")
+
             # Get user role
             users_collection = self._mongo.get_collection("users")
-            user = users_collection.find_one({"employee_id": employee["_id"]})
-            
+            user = None
+            try:
+                user = users_collection.find_one({"employee_id": employee["_id"]})
+            except Exception:
+                user = None
+            if not user and employee.get("email"):
+                user = users_collection.find_one(
+                    {"username": str(employee.get("email")).lower()}
+                )
             role = user.get("role", "Staff") if user else "Staff"
-            
+
+            ref_type = reference_type or ("quote" if reference_id else "")
+            if self._has_unread_duplicate(
+                category=category,
+                reference_type=ref_type,
+                reference_id=reference_id,
+                recipient_id=recipient_id,
+                recipient_name=display_name,
+            ):
+                print(f"ℹ️ Skipped duplicate notification for {display_name} ({reference_id})")
+                return
+
             collection = self._get_collection()
             now = datetime.now(timezone.utc)
-            
+
             notification = {
                 "recipient_role": role,
-                "recipient_name": user_name,
-                "recipient_id": str(employee["_id"]),
+                "recipient_name": display_name,
+                "recipient_id": recipient_id,
                 "title": title or category,
                 "message": message,
                 "category": category,
-                "reference_type": "",
-                "reference_id": "",
+                "reference_type": ref_type,
+                "reference_id": str(reference_id or ""),
                 "is_executive": False,
                 "is_read": False,
                 "created_at": now,
-                "updated_at": now
+                "updated_at": now,
             }
             collection.insert_one(notification)
-            print(f"✅ Notification created for {user_name}")
-            
+            print(f"✅ Notification created for {display_name}")
+
             self._play_sound()
-            
+
         except Exception as e:
             print(f"⚠️ Failed to send notification: {e}")
 
@@ -153,23 +232,36 @@ class MongoNotificationService:
         reference_id: str = "",
     ) -> None:
         """Send an executive brief to the Director only."""
-        collection = self._get_collection()
-        now = datetime.now(timezone.utc)
-        
-        notification = {
-            "recipient_role": self.DIRECTOR_ROLE,
-            "title": title,
-            "message": message,
-            "category": category,
-            "reference_type": reference_type,
-            "reference_id": reference_id,
-            "is_executive": True,
-            "is_read": False,
-            "created_at": now,
-            "updated_at": now
-        }
-        collection.insert_one(notification)
-        self._play_sound()
+        try:
+            ref_type = reference_type or ("quote" if reference_id else "")
+            if self._has_unread_duplicate(
+                category=category,
+                reference_type=ref_type,
+                reference_id=reference_id,
+                recipient_role=self.DIRECTOR_ROLE,
+            ):
+                print(f"ℹ️ Skipped duplicate Director notification ({reference_id})")
+                return
+
+            collection = self._get_collection()
+            now = datetime.now(timezone.utc)
+
+            notification = {
+                "recipient_role": self.DIRECTOR_ROLE,
+                "title": title,
+                "message": message,
+                "category": category,
+                "reference_type": ref_type,
+                "reference_id": str(reference_id or ""),
+                "is_executive": True,
+                "is_read": False,
+                "created_at": now,
+                "updated_at": now,
+            }
+            collection.insert_one(notification)
+            self._play_sound()
+        except Exception as e:
+            print(f"⚠️ Failed to send executive notification: {e}")
 
     def record_activity(
         self,

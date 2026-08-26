@@ -41,9 +41,9 @@ class MongoAuthService:
         try:
             data = self._backend.login(username, password)
         except BackendAPIError as exc:
-            if exc.status_code == 401 or exc.code in {"USER_INACTIVE", "EMPLOYEE_INACTIVE", "EMPLOYEE_NOT_FOUND"}:
-                raise PermissionError(str(exc)) from exc
-            raise
+            # Any auth failure from the backend is a credential / account problem
+            # for the desktop user — surface the backend message cleanly.
+            raise PermissionError(str(exc) or "Invalid username or password.") from exc
         user = data.get("user") or {}
         employee = data.get("employee") or {}
         self._current_session = {

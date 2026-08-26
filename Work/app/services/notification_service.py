@@ -1,4 +1,12 @@
-"""Central notification and activity service with sound support."""
+# app/services/notification_service.py
+"""Central notification and activity service with sound support.
+
+Fixed so quote-assignment notifications actually reach employees:
+- Accepts reference_type / reference_id (no more TypeError)
+- Looks up employee by full_name, email, OR username
+- Falls back to Staff role when employee is not in local SQLite
+  (people data now comes from the backend API)
+"""
 
 import sqlite3
 from collections.abc import Iterable
@@ -27,21 +35,19 @@ class NotificationService:
 
     def _get_default_sound_path(self) -> Path:
         """Get the default notification sound path."""
-        # Try multiple possible locations
         possible_paths = [
-            Path(__file__).parent.parent.parent / "assets" / "sounds" / "notification.wav",
+            Path(__file__).parent.parent / "assets" / "notification.wav",
+            Path(__file__).parent.parent.parent / "assets" / "notification.wav",
             Path(__file__).parent.parent / "assets" / "sounds" / "notification.wav",
-            Path(__file__).parent / "assets" / "sounds" / "notification.wav",
+            Path("app/assets/notification.wav"),
+            Path("assets/notification.wav"),
             Path("assets/sounds/notification.wav"),
-            Path("/System/Library/Sounds/Glass.aiff"),  # Mac
-            Path("/usr/share/sounds/freedesktop/stereo/complete.oga"),  # Linux
         ]
-        
+
         for path in possible_paths:
             if path.exists():
                 return path
-        
-        # Return a default path even if it doesn't exist
+
         return possible_paths[0]
 
     def set_sound_enabled(self, enabled: bool) -> None:
@@ -54,33 +60,39 @@ class NotificationService:
             self._sound_path = path
 
     def _play_sound(self) -> None:
-        """Play a notification sound."""
+        """Play a notification sound (client-side only)."""
         if not self._sound_enabled:
             return
-            
+
         try:
+            # Prefer the shared SoundManager if available
+            try:
+                from app.utils.sound import SoundManager
+                SoundManager.play_notification_sound(blocking=False)
+                return
+            except Exception:
+                pass
+
             system = platform.system()
-            
+
             if system == "Windows":
-                # Use winsound on Windows
                 try:
                     import winsound
                     winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
-                except ImportError:
-                    # Fallback to using the sound file
+                except Exception:
                     if self._sound_path.exists():
-                        import winsound
-                        winsound.PlaySound(str(self._sound_path), winsound.SND_FILENAME)
-            elif system == "Darwin":  # macOS
+                        try:
+                            import winsound
+                            winsound.PlaySound(str(self._sound_path), winsound.SND_FILENAME)
+                        except Exception:
+                            pass
+            elif system == "Darwin":
                 if self._sound_path.exists():
-                    # Try using afplay
                     subprocess.run(["afplay", str(self._sound_path)], capture_output=True)
                 else:
-                    # Fallback to system beep
                     print("\a", end="", flush=True)
-            elif system == "Linux":
+            else:
                 if self._sound_path.exists():
-                    # Try using aplay or paplay
                     try:
                         subprocess.run(["aplay", str(self._sound_path)], capture_output=True)
                     except FileNotFoundError:
@@ -91,7 +103,6 @@ class NotificationService:
                 else:
                     print("\a", end="", flush=True)
         except Exception as e:
-            # Silently fail if sound can't be played
             print(f"⚠️ Could not play notification sound: {e}")
 
     def notify_operational(
@@ -101,7 +112,8 @@ class NotificationService:
         message: str,
         category: str,
         reference_type: str = "",
-        reference_id: int | None = None,
+        reference_id=None,
+        **kwargs,
     ) -> None:
         """Notify operational roles, explicitly excluding the Director."""
         recipients = {
@@ -112,23 +124,63 @@ class NotificationService:
         if not recipients:
             return
 
+        # reference_id column is INTEGER – only store numeric ids
+        ref_id = None
+        if reference_id is not None:
+            try:
+                ref_id = int(reference_id)
+            except (TypeError, ValueError):
+                ref_id = None
+
         with self._connect() as connection:
             connection.executemany(
                 """
                 INSERT INTO notifications (
                     recipient_role, title, message, category, reference_type,
-                    reference_id, is_executive
-                ) VALUES (?, ?, ?, ?, ?, ?, 0);
+                    reference_id, is_executive, is_read
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 0)
                 """,
                 [
-                    (role, title, message, category, reference_type, reference_id)
+                    (role, title, message, category, reference_type or None, ref_id)
                     for role in recipients
                 ],
             )
             connection.commit()
-        
-        # Play sound for operational notifications
+
         self._play_sound()
+
+    def _find_local_employee(self, identity: str):
+        """Look up employee in local SQLite by name, email, or username."""
+        if not identity or not str(identity).strip():
+            return None
+        key = str(identity).strip()
+        with self._connect() as connection:
+            # Discover available columns (schema may vary)
+            cols = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(employees)").fetchall()
+            }
+            clauses = []
+            params = []
+            if "full_name" in cols:
+                clauses.append("full_name = ?")
+                params.append(key)
+            if "email" in cols:
+                clauses.append("LOWER(email) = LOWER(?)")
+                params.append(key)
+            if "email_address" in cols:
+                clauses.append("LOWER(email_address) = LOWER(?)")
+                params.append(key)
+            if "username" in cols:
+                clauses.append("LOWER(username) = LOWER(?)")
+                params.append(key)
+            if "employee_id" in cols:
+                clauses.append("CAST(employee_id AS TEXT) = ?")
+                params.append(key)
+            if not clauses:
+                return None
+            sql = f"SELECT * FROM employees WHERE {' OR '.join(clauses)} LIMIT 1"
+            return connection.execute(sql, params).fetchone()
 
     def notify_user(
         self,
@@ -136,35 +188,75 @@ class NotificationService:
         message: str,
         category: str = "General",
         title: str = "",
+        reference_type: str = "",
+        reference_id=None,
+        **kwargs,
     ) -> None:
-        """Send a notification to a specific user."""
+        """Send a notification to a specific user (by name, email, or username).
+
+        Accepts reference_type / reference_id so callers from Quote Management
+        no longer raise TypeError. If the employee is not found in the local
+        SQLite employees table, a Staff-role notification is still created so
+        the employee can see it under the Staff filter.
+        """
         try:
+            # Put quote reference into the message if we cannot store it as int
+            ref_str = str(reference_id).strip() if reference_id else ""
+            full_message = message
+            if ref_str and ref_str not in message:
+                full_message = f"{message} [{ref_str}]"
+
+            ref_id = None
+            if reference_id is not None:
+                try:
+                    ref_id = int(reference_id)
+                except (TypeError, ValueError):
+                    ref_id = None  # quote refs like UQ-Q7GEW7 are strings
+
+            employee = self._find_local_employee(user_name)
+            role = "Staff"
+            if employee:
+                # sqlite3.Row supports dict-style access
+                try:
+                    role = employee["role"] or "Staff"
+                except (KeyError, IndexError, TypeError):
+                    try:
+                        role = employee["Role"] or "Staff"
+                    except Exception:
+                        role = "Staff"
+                print(f"✅ Found local employee for notification: {user_name} → role={role}")
+            else:
+                print(
+                    f"ℹ️ User '{user_name}' not in local SQLite employees – "
+                    f"creating Staff notification as fallback"
+                )
+
             with self._connect() as connection:
-                # Try to find the employee by name
-                employee = connection.execute(
-                    "SELECT id, role FROM employees WHERE full_name = ?",
-                    (user_name,)
-                ).fetchone()
-                
-                if employee:
-                    # Create notification
-                    connection.execute(
-                        """
-                        INSERT INTO notifications (
-                            recipient_role, title, message, category, is_executive, is_read
-                        ) VALUES (?, ?, ?, ?, 0, 0)
-                        """,
-                        (employee["role"], title or category, message, category)
-                    )
-                    connection.commit()
-                    print(f"✅ Notification created for {user_name}")
-                    
-                    # Play sound for user notification
-                    self._play_sound()
-                else:
-                    print(f"⚠️ User '{user_name}' not found in employees")
+                connection.execute(
+                    """
+                    INSERT INTO notifications (
+                        recipient_role, title, message, category,
+                        reference_type, reference_id, is_executive, is_read
+                    ) VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+                    """,
+                    (
+                        role,
+                        title or category,
+                        full_message,
+                        category,
+                        reference_type or None,
+                        ref_id,
+                    ),
+                )
+                connection.commit()
+
+            print(f"✅ Notification created for {user_name} (role={role}, category={category})")
+            self._play_sound()
+
         except Exception as e:
             print(f"⚠️ Failed to send notification: {e}")
+            import traceback
+            traceback.print_exc()
 
     def notify_executive(
         self,
@@ -172,29 +264,38 @@ class NotificationService:
         message: str,
         category: str,
         reference_type: str = "",
-        reference_id: int | None = None,
+        reference_id=None,
+        **kwargs,
     ) -> None:
         """Send an executive brief to the Director only."""
+        ref_id = None
+        if reference_id is not None:
+            try:
+                ref_id = int(reference_id)
+            except (TypeError, ValueError):
+                ref_id = None
+                if reference_id and str(reference_id) not in message:
+                    message = f"{message} [{reference_id}]"
+
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO notifications (
                     recipient_role, title, message, category, reference_type,
-                    reference_id, is_executive
-                ) VALUES (?, ?, ?, ?, ?, ?, 1);
+                    reference_id, is_executive, is_read
+                ) VALUES (?, ?, ?, ?, ?, ?, 1, 0);
                 """,
                 (
                     self.DIRECTOR_ROLE,
                     title,
                     message,
                     category,
-                    reference_type,
-                    reference_id,
+                    reference_type or None,
+                    ref_id,
                 ),
             )
             connection.commit()
-        
-        # Play sound for executive notifications
+
         self._play_sound()
 
     def notify_inventory_alert(self, title: str, message: str) -> None:
@@ -217,16 +318,22 @@ class NotificationService:
         category: str,
         description: str,
         reference_type: str = "",
-        reference_id: int | None = None,
+        reference_id=None,
     ) -> None:
         """Record one source-neutral operational event for dashboards."""
+        ref_id = None
+        if reference_id is not None:
+            try:
+                ref_id = int(reference_id)
+            except (TypeError, ValueError):
+                ref_id = None
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO activity_log (category, description, reference_type, reference_id)
                 VALUES (?, ?, ?, ?);
                 """,
-                (category, description, reference_type, reference_id),
+                (category, description, reference_type or None, ref_id),
             )
             connection.commit()
 
@@ -264,10 +371,28 @@ class NotificationService:
             ).fetchall()
         return tuple(self._row_to_activity(row) for row in rows)
 
-    def mark_read(self, notification_id: int) -> None:
+    def mark_read(self, notification_id) -> None:
         with self._connect() as connection:
-            connection.execute("UPDATE notifications SET is_read = 1 WHERE id = ?;", (notification_id,))
+            connection.execute(
+                "UPDATE notifications SET is_read = 1 WHERE id = ?;",
+                (notification_id,),
+            )
             connection.commit()
+
+    def mark_all_read(self, recipient_role: str = "All") -> int:
+        """Mark all (optionally role-filtered) notifications as read. Returns count updated."""
+        with self._connect() as connection:
+            if recipient_role and recipient_role != "All":
+                cur = connection.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE is_read = 0 AND recipient_role = ?;",
+                    (recipient_role,),
+                )
+            else:
+                cur = connection.execute(
+                    "UPDATE notifications SET is_read = 1 WHERE is_read = 0;"
+                )
+            connection.commit()
+            return int(cur.rowcount or 0)
 
     def count_unread(self, category: str | None = None) -> int:
         query = "SELECT COUNT(*) FROM notifications WHERE is_read = 0"

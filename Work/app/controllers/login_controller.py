@@ -9,6 +9,7 @@ from typing import Any, Optional
 from app.models.account import AuthSession, UserAccount
 from app.services.auth_service import AuthService
 from app.services.mongo_auth_service import MongoAuthService
+from app.services.backend_api_client import BackendAPIError
 
 
 class LoginController:
@@ -43,10 +44,11 @@ class LoginController:
             self._on_success()
             return True, ""
 
-        except ValueError as error:
-            # Authentication failed - wrong password or user doesn't exist
-            return False, str(error)
         except PermissionError as error:
+            return False, str(error)
+        except BackendAPIError as error:
+            return False, str(error)
+        except ValueError as error:
             return False, str(error)
         except Exception as error:
             print(f"MongoDB login error: {error}")
@@ -65,9 +67,11 @@ class LoginController:
         mongo_session = authentication.get("session") or {}
 
         employee_value = (
-            employee.get("sqlite_id")
-            or user.get("sqlite_employee_id")
+            employee.get("employee_id")
+            or employee.get("id")
+            or employee.get("sqlite_id")
             or user.get("employee_id")
+            or user.get("sqlite_employee_id")
             or 0
         )
 
