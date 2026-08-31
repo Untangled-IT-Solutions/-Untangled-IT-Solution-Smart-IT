@@ -85,3 +85,6 @@ export {
   Order, 
   Quote 
 };
+
+export { default as QuoteMessage } from "../models/QuoteMessage";
+export { default as OrderMessage } from "../models/OrderMessage";

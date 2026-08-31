@@ -369,9 +369,10 @@ class AttendanceView(ctk.CTkFrame):
         try:
             if self._is_destroyed:
                 return
-            now = datetime.now()
+            from zoneinfo import ZoneInfo
+            now = datetime.now(ZoneInfo("Africa/Johannesburg"))
             self._datetime_label.configure(
-                text=now.strftime("%A, %d %B %Y • %H:%M:%S")
+                text=now.strftime("%A, %d %B %Y • %H:%M:%S") + " SAST"
             )
             self.after(1000, self._update_datetime)
         except Exception:
@@ -630,22 +631,51 @@ class AttendanceView(ctk.CTkFrame):
 
     @staticmethod
     def _punctuality(record) -> tuple[str, str, str]:
-        """Return status, emoji and label for the 08:00-09:00 policy."""
-        clock_in = record.get("clock_in_at") if isinstance(record, dict) else getattr(record, "clock_in_at", "")
+        """Return status, emoji and label for the 08:00-09:00 SA policy."""
+        from zoneinfo import ZoneInfo
+        from datetime import time as dtime
+
+        if not record:
+            return "absent", "⚫", "Absent"
+        clock_in = record.get("clock_in_at") if isinstance(record, dict) else getattr(record, "clock_in_at", None)
         if not clock_in:
             return "absent", "⚫", "Absent"
+
+        sa = ZoneInfo("Africa/Johannesburg")
+        utc = ZoneInfo("UTC")
+        local = None
         try:
-            from zoneinfo import ZoneInfo
-            local = datetime.strptime(clock_in, "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=ZoneInfo("UTC")
-            ).astimezone(ZoneInfo("Africa/Johannesburg"))
-            if local.time() < datetime.strptime("08:00:00", "%H:%M:%S").time():
-                return "early", "🟡", "Early"
-            if local.time() <= datetime.strptime("09:00:00", "%H:%M:%S").time():
-                return "on_time", "🟢", "On Time"
-            return "late", "🔴", "Late"
-        except (ValueError, TypeError):
+            if isinstance(clock_in, datetime):
+                local = clock_in if clock_in.tzinfo else clock_in.replace(tzinfo=utc)
+                local = local.astimezone(sa)
+            else:
+                s = str(clock_in).strip().replace("Z", "+00:00")
+                # ISO with T
+                if "T" in s:
+                    local = datetime.fromisoformat(s)
+                    if local.tzinfo is None:
+                        local = local.replace(tzinfo=utc)
+                    local = local.astimezone(sa)
+                else:
+                    # "YYYY-MM-DD HH:MM:SS" treated as UTC then to SA
+                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                        try:
+                            local = datetime.strptime(s[:19], fmt).replace(tzinfo=utc).astimezone(sa)
+                            break
+                        except ValueError:
+                            continue
+        except Exception:
+            local = None
+
+        if local is None:
             return "unknown", "⚪", "Unknown"
+
+        t = local.time()
+        if t < dtime(8, 0, 0):
+            return "early", "🟡", "Early"
+        if t <= dtime(9, 0, 0):
+            return "on_time", "🟢", "On Time"
+        return "late", "🔴", "Late"
 
     def _render_calendar(self, employee_id):
         """Render the weekly calendar with error handling."""
@@ -660,10 +690,23 @@ class AttendanceView(ctk.CTkFrame):
             print(f"⚠️ Error loading calendar: {e}")
             records = []
             
-        by_date = {str(r.get("work_date", "")): r for r in records if isinstance(r, dict)}
+        # Normalise work_date keys to YYYY-MM-DD
+        by_date = {}
+        for r in records:
+            if not isinstance(r, dict):
+                continue
+            wd = r.get("work_date", "")
+            if hasattr(wd, "isoformat"):
+                key = wd.isoformat()[:10]
+            else:
+                key = str(wd)[:10]
+            if key:
+                by_date[key] = r
 
+        # Company calendar day = Africa/Johannesburg (not Windows system date)
         from datetime import date, timedelta
-        today = date.today()
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("Africa/Johannesburg")).date()
         start = today - timedelta(days=6)
         row = ctk.CTkFrame(self.calendar_frame, fg_color="transparent")
         row.grid(row=0, column=0, sticky="ew")
@@ -672,16 +715,19 @@ class AttendanceView(ctk.CTkFrame):
             day = start + timedelta(days=i)
             record = by_date.get(day.isoformat())
             status, emoji, _label = self._punctuality(record or {})
+            is_today = day == today
             cell = ctk.CTkFrame(
                 row, fg_color=Theme.PANEL_ALT, corner_radius=8,
-                border_width=1, border_color=self._status_colors.get(status, Theme.BORDER)
+                border_width=2 if is_today else 1,
+                border_color=self._status_colors.get(status, Theme.BORDER),
             )
             cell.grid(row=0, column=i, padx=2, sticky="nsew")
             ctk.CTkLabel(cell, text=day.strftime("%a"), font=ctk.CTkFont(size=9, weight="bold"),
                          text_color=Theme.MUTED_TEXT).pack(pady=(5, 0))
             ctk.CTkLabel(cell, text=emoji, font=ctk.CTkFont(size=17)).pack()
+            day_color = Theme.TEXT if not is_today else "#2196F3"
             ctk.CTkLabel(cell, text=day.strftime("%d"), font=ctk.CTkFont(size=10, weight="bold"),
-                         text_color=Theme.TEXT).pack(pady=(0, 5))
+                         text_color=day_color).pack(pady=(0, 5))
 
     def _render_history(self, employee_id):
         """Render the history with error handling."""
@@ -705,7 +751,7 @@ class AttendanceView(ctk.CTkFrame):
             
             ctk.CTkLabel(
                 empty_frame,
-                text="📭 No records this week",
+                text="📭 No attendance records in the last 7 days",
                 font=ctk.CTkFont(size=13),
                 text_color=Theme.MUTED_TEXT,
             ).grid(row=0, column=0)

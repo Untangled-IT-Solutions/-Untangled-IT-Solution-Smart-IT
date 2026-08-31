@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 # Add project root to path if needed
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # Work/ project root
 
 from app.controllers.app_controller import AppController
 from app.database.database import Database

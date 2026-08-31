@@ -217,7 +217,7 @@ export default function QuotePage({
     setApiError(null);
 
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+      const API_BASE_URL = ((import.meta.env.VITE_API_URL ?? "/api").toString().trim() || "/api").replace(/\/$/, "");
 
       const payload = {
         customerName: details.fullName.trim(),
@@ -240,7 +240,7 @@ export default function QuotePage({
       console.log("📤 Sending quote to API:", payload);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // cold start
 
       try {
         const response = await fetch(`${API_BASE_URL}/quotes`, {
@@ -306,7 +306,7 @@ export default function QuotePage({
 
       if (error instanceof TypeError && error.message.includes("fetch")) {
         errorMessage =
-          "Cannot connect to the server. Please make sure the backend is running on port 5000.";
+          "Cannot connect to the API. Use VITE_API_URL=/api (Vite proxy) or fix CORS on Render.";
       } else if (error instanceof Error) {
         errorMessage = error.message;
       }

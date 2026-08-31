@@ -210,7 +210,33 @@ class MongoAttendanceService:
     def get_live_hours(self, record: Optional[dict[str, Any]]) -> float:
         return self.get_live_seconds(record) / 3600.0
 
+    def get_attendance_history(self, employee_id: Any = None, days: int = 30) -> list[dict[str, Any]]:
+        """Load clock-in history from Backend (Mongo). Default last 30 days."""
+        days = max(1, min(int(days or 30), 90))
+        try:
+            data = self._backend.attendance(f"/api/attendance/history?days={days}")
+        except Exception as exc:
+            print(f"⚠️ attendance history request failed: {exc}")
+            return []
+
+        if not isinstance(data, dict):
+            return []
+        records = data.get("records") or data.get("attendance") or []
+        if not isinstance(records, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for row in records:
+            normalised = self._normalise_record(row if isinstance(row, dict) else None)
+            if normalised:
+                out.append(normalised)
+        return out
+
     def get_weekly_timesheet(self, employee_id: Any):
+        """Recent Activity list: last 7 days of attendance (not only today)."""
+        records = self.get_attendance_history(employee_id, days=7)
+        if records:
+            return records
+        # Fallback: at least show today if history endpoint unavailable
         record = self.get_today_record(employee_id)
         return [record] if record else []
 
@@ -218,10 +244,26 @@ class MongoAttendanceService:
         now = time.monotonic()
         if now - self._summary_cache[0] < 30.0:
             return self._summary_cache[1]
-        record = self.get_today_record(employee_id)
-        value = self.get_live_hours(record)
-        self._summary_cache = (now, value, value)
-        return value
+        records = self.get_attendance_history(employee_id, days=7)
+        total = 0.0
+        for record in records:
+            if record.get("status") == "clocked_out" or record.get("clock_out_at"):
+                total += float(record.get("hours_worked") or 0)
+            else:
+                # Open session today – use live hours
+                if str(record.get("work_date") or "") == str(
+                    datetime.now(self.LOCAL_ZONE).date()
+                ):
+                    total += self.get_live_hours(record)
+                else:
+                    total += float(record.get("hours_worked") or 0)
+        # monthly approx: 30-day sum for cache slot 2
+        monthly_records = self.get_attendance_history(employee_id, days=30)
+        monthly = 0.0
+        for record in monthly_records:
+            monthly += float(record.get("hours_worked") or 0)
+        self._summary_cache = (now, total, monthly)
+        return total
 
     def get_monthly_total(self, employee_id: Any) -> float:
         now = time.monotonic()

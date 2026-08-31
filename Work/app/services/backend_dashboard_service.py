@@ -11,19 +11,46 @@ from typing import Any
 class BackendDashboardService:
     """Fetch dashboard data through the authenticated backend API."""
 
-    def __init__(self, backend_api) -> None:
+    def __init__(self, backend_api: Any) -> None:
         self._backend = backend_api
 
     def get_summary(self) -> dict[str, Any]:
         """Return a flat summary dict matching dashboard_view field names."""
-        data = self._backend.request("GET", "/api/dashboard/summary")
-        # Backend wraps metrics under "summary"
+        try:
+            data = self._backend.request("GET", "/api/dashboard/summary")
+        except Exception as exc:
+            print(f"[dashboard] Backend /api/dashboard/summary failed: {exc}")
+            return {
+                "people_working": 0,
+                "people_on_leave": 0,
+                "people_on_site": 0,
+                "tasks_due_today": 0,
+                "tasks_overdue": 0,
+                "tasks_waiting_review": 0,
+                "completed_this_week": 0,
+                "pending_approvals": 0,
+                "upcoming_deadlines": 0,
+                "tasks_in_progress": 0,
+                "pending_tasks": 0,
+                "total_employees": 0,
+                "active_employees": 0,
+                "latest_activity": (),
+                "error": str(exc),
+            }
+
         if isinstance(data, dict) and isinstance(data.get("summary"), dict):
             summary = dict(data["summary"])
         else:
             summary = dict(data or {})
 
-        # Ensure KPI keys always exist so the view never shows blanks.
+        # Coerce people_working strictly from API; never invent from local state
+        try:
+            summary["people_working"] = int(summary.get("people_working") or 0)
+        except (TypeError, ValueError):
+            summary["people_working"] = 0
+
+        summary["people_on_site"] = summary["people_working"]
+
         defaults = {
             "people_working": 0,
             "people_on_leave": 0,
@@ -43,8 +70,6 @@ class BackendDashboardService:
         for key, value in defaults.items():
             summary.setdefault(key, value)
 
-        # Prefer quote "active" style counts for Active Work card when task
-        # collections are empty on this backend deployment.
         if not summary.get("pending_tasks") and summary.get("total_quotes"):
             qbs = summary.get("quotes_by_status") or {}
             active_quotes = sum(
@@ -54,6 +79,11 @@ class BackendDashboardService:
             summary["pending_tasks"] = active_quotes
             summary.setdefault("tasks_in_progress", int(qbs.get("assigned") or 0))
 
+        print(
+            f"[dashboard] people_working={summary.get('people_working')} "
+            f"work_date={summary.get('_debug_work_date')} "
+            f"open_docs={summary.get('_debug_open_attendance_docs')}"
+        )
         return summary
 
     def get_business_lead_dashboard(self) -> dict[str, Any]:
@@ -61,7 +91,6 @@ class BackendDashboardService:
             data = self._backend.request("GET", "/api/dashboard/business-lead")
             return data.get("summary") or data
         except Exception:
-            # Fallback derived from main summary
             s = self.get_summary()
             return {
                 "pending_approvals": s.get("pending_approvals", 0),

@@ -1,14 +1,34 @@
 // src/lib/api.ts
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+// Default /api → Vite dev proxy forwards to Render (no browser CORS)
+const _raw = (import.meta.env.VITE_API_URL ?? '/api').toString().trim();
+const API_BASE_URL = (_raw || '/api').replace(/\/$/, '');
 
-// Helper to handle fetch responses
+export function getApiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message || 'Something went wrong');
+    const error = await response.json().catch(() => ({} as Record<string, unknown>));
+    const message =
+      (typeof error === 'object' && error && (error as any).message) ||
+      (typeof error === 'object' && error && (error as any).error) ||
+      `Request failed (${response.status})`;
+    throw new Error(String(message));
   }
   return response.json();
+}
+
+export function connectionErrorMessage(err: unknown): string {
+  if (err instanceof TypeError) {
+    return (
+      'Cannot connect to the API. If using direct Render URL, CORS must allow this origin. ' +
+      'Prefer VITE_API_URL=/api with the Vite proxy in dev.'
+    );
+  }
+  if (err instanceof Error) return err.message;
+  return 'Something went wrong talking to the server.';
 }
 
 // ============================================

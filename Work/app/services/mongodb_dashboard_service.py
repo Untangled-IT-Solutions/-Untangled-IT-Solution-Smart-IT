@@ -326,86 +326,58 @@ class MongoDBDashboardService:
 
     def _people_working(self) -> int:
         """
-        Count employees who are actually clocked in.
+        Count distinct employees who are actually clocked in today.
 
-        Attendance is the source of truth.
+        Source of truth: MongoDB attendance only (no SQL, no employee flags).
 
-        A current attendance document is active when:
-            clock_in_at exists
-            AND clock_out_at does not exist / is null / is empty.
+        Open session:
+          - work_date is today
+          - employee_id present
+          - clock_in_at set
+          - clock_out_at missing / null / empty
+          - status is clocked_in / on_break, or status absent while still open
         """
         attendance = self._collection("attendance")
-
         today = self._start_of_today()
 
-        queries = [
-            {
-                "work_date": {
-                    "$in": self._date_variants(today),
+        query = {
+            "work_date": {"$in": self._date_variants(today)},
+            "employee_id": {"$exists": True, "$nin": [None, ""]},
+            "clock_in_at": {"$exists": True, "$nin": [None, ""]},
+            "$and": [
+                {
+                    "$or": [
+                        {"clock_out_at": {"$exists": False}},
+                        {"clock_out_at": None},
+                        {"clock_out_at": ""},
+                    ]
                 },
-                "clock_in_at": {
-                    "$exists": True,
-                    "$ne": None,
-                    "$ne": "",
+                {
+                    "$or": [
+                        {"status": {"$in": ["clocked_in", "on_break", "Clocked In", "On Break"]}},
+                        {"status": {"$exists": False}},
+                        {"status": None},
+                        {"status": ""},
+                    ]
                 },
-                "$or": [
-                    {
-                        "clock_out_at": {
-                            "$exists": False,
-                        }
-                    },
-                    {
-                        "clock_out_at": None,
-                    },
-                    {
-                        "clock_out_at": "",
-                    },
-                ],
-            },
-        ]
+            ],
+        }
 
         try:
-            for query in queries:
-                return self._count(
-                    attendance,
-                    query,
-                )
+            ids = attendance.distinct("employee_id", query)
+            return len(
+                {
+                    str(i).strip()
+                    for i in (ids or [])
+                    if i is not None and str(i).strip() != ""
+                }
+            )
         except Exception:
-            pass
-
-        return 0
-
-    def _people_working_from_employee_state(self) -> int:
-        """
-        Fallback only when attendance documents don't expose the expected
-        clock-in fields.
-
-        This uses the employee's persisted clocked-in flag.
-        """
-        employees = self._collection("employees")
-
-        return self._count(
-            employees,
-            {
-                "status": {
-                    "$in": list(
-                        self.ACTIVE_EMPLOYEE_STATUSES
-                    )
-                },
-                "clocked_in": True,
-            },
-        )
+            return 0
 
     def _get_people_working(self) -> int:
-        """Get current working count without counting registered users."""
-        count = self._people_working()
-
-        if count > 0:
-            return count
-
-        # If nobody is currently working, verify whether employee state
-        # explicitly reports somebody clocked in.
-        return self._people_working_from_employee_state()
+        """Attendance-only count. Never fall back to employees.clocked_in."""
+        return self._people_working()
 
     # ==================================================================
     # EMPLOYEES

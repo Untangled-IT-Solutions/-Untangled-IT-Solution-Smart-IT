@@ -1,4 +1,3 @@
-
 # app/utils/config.py
 """Application configuration with all constants."""
 
@@ -12,9 +11,21 @@ load_dotenv()
 # ============================================================
 # MongoDB Configuration
 # ============================================================
-# Use the database that has your quotes (test database)
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://siyandankosideveloper_db_user:EjWpFrL50jYq5Zdr@untangled-nexus.j0fmkag.mongodb.net/?retryWrites=true&w=majority")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "test")  # Changed to "test" for quotes
+# Prefer API_BASE_URL for shared business data (quotes, orders, users).
+# Direct Mongo access is only for controlled internal operations.
+# There is intentionally no hardcoded credential fallback.
+MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "untangled_its")
+
+if not MONGO_URI:
+    # Soft warning at import time; callers that need Mongo must check.
+    # Prefer Backend API (API_BASE_URL) for production desktop usage.
+    pass
+
+# ============================================================
+# Backend API (preferred for Work desktop app)
+# ============================================================
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:10000")
 
 # ============================================================
 # Password Security
@@ -44,9 +55,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 LOG_DIR = PROJECT_ROOT / "logs"
 
 # ============================================================
-# Company Information (from Theme - kept for compatibility)
+# Company Information
 # ============================================================
 COMPANY_NAME = "Untangled Nexus"
 COMPANY_LEGAL_NAME = "Untangled IT Solutions"
-# app/utils/config.py
-"""Application configuration with all constants."""
