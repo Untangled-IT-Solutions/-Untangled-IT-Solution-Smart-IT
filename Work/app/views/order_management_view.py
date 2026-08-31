@@ -742,21 +742,40 @@ class OrderManagementView(ctk.CTkFrame):
     # ORDERS
     # ==================================================================
 
+    def _get_orders_from_api(self):
+        """Get orders from the backend API (same path as quotes)."""
+        if not self._backend_api:
+            return None
+        try:
+            response = self._backend_api.request("GET", "/api/orders")
+            if response and response.get("success"):
+                return response.get("orders", [])
+            if isinstance(response, dict) and "orders" in response:
+                return response.get("orders") or []
+        except Exception as e:
+            print(f"⚠️ Could not fetch orders from API: {e}")
+        return None
+
+    def _normalize_orders(self, raw_orders):
+        normalized_orders = []
+        for order in raw_orders or []:
+            if not isinstance(order, dict):
+                continue
+            if "_id" in order:
+                order["_id"] = str(order["_id"])
+            mongo_status = str(
+                order.get("status", "pending")
+            ).strip().lower()
+            order["status"] = self._map_mongo_to_display(mongo_status)
+            if not isinstance(order.get("items"), list):
+                order["items"] = []
+            normalized_orders.append(order)
+        return normalized_orders
+
     def _load_orders(self):
-        """Load orders through MongoDBService."""
+        """Load orders via Backend API first (like quotes), MongoDB only as fallback."""
 
         if self._is_destroyed:
-            return
-
-        if (
-            not self._mongodb
-            or not self._mongodb.is_connected
-        ):
-            self._show_list_message(
-                "⚠️ Not connected to MongoDB",
-                "Please check your MongoDB connection.",
-            )
-
             return
 
         try:
@@ -771,52 +790,51 @@ class OrderManagementView(ctk.CTkFrame):
 
             self.update_idletasks()
 
-            # IMPORTANT:
-            # Use the service helper.
-            # It searches the configured DB and then test.orders.
-            self._orders = self._mongodb.get_orders(
-                limit=500
+            # ---- Primary: Backend API (same as Quote Management) ----
+            api_orders = self._get_orders_from_api()
+            if api_orders is not None:
+                self._orders = self._normalize_orders(api_orders)
+                print(
+                    f"✅ Order Management loaded "
+                    f"{len(self._orders)} order(s) from API"
+                )
+                for order in self._orders[:5]:
+                    print(
+                        "   📦",
+                        order.get("reference"),
+                        "|",
+                        order.get("customerName"),
+                        "|",
+                        order.get("status"),
+                    )
+                self._filter_orders()
+                self._update_stats()
+                if self._orders:
+                    self._select_order(self._orders[0])
+                else:
+                    self._selected_order = None
+                    self._show_empty_details()
+                    self._status_bar.configure(text="No orders found.")
+                return
+
+            # ---- Fallback: direct MongoDB (legacy / offline) ----
+            if (
+                not self._mongodb
+                or not self._mongodb.is_connected
+            ):
+                self._show_list_message(
+                    "⚠️ Could not load orders from API",
+                    "Check API_BASE_URL / backend is running. MongoDB is not connected either.",
+                )
+                return
+
+            self._orders = self._normalize_orders(
+                self._mongodb.get_orders(limit=500)
             )
-
-            normalized_orders = []
-
-            for order in self._orders:
-                if not isinstance(order, dict):
-                    continue
-
-                if "_id" in order:
-                    order["_id"] = str(
-                        order["_id"]
-                    )
-
-                mongo_status = str(
-                    order.get(
-                        "status",
-                        "pending",
-                    )
-                ).strip().lower()
-
-                order["status"] = (
-                    self._map_mongo_to_display(
-                        mongo_status
-                    )
-                )
-
-                if not isinstance(
-                    order.get("items"),
-                    list,
-                ):
-                    order["items"] = []
-
-                normalized_orders.append(
-                    order
-                )
-
-            self._orders = normalized_orders
 
             print(
                 f"✅ Order Management loaded "
-                f"{len(self._orders)} order(s)"
+                f"{len(self._orders)} order(s) from MongoDB"
             )
 
             for order in self._orders[:5]:
@@ -2233,27 +2251,38 @@ class OrderManagementView(ctk.CTkFrame):
         )
 
         try:
-            success = (
-                self._mongodb.update_order_status(
+            # Prefer Backend API (desktop should not require direct Mongo)
+            api_ok = False
+            if self._backend_api:
+                try:
+                    response = self._backend_api.request(
+                        "PATCH",
+                        "/api/orders/status",
+                        {
+                            "reference": reference,
+                            "status": mongo_status,
+                        },
+                    )
+                    api_ok = bool(response and response.get("success", True))
+                except Exception as api_exc:
+                    print(f"⚠️ Order status API update failed: {api_exc}")
+
+            if not api_ok:
+                if not self._mongodb or not self._mongodb.is_connected:
+                    self._status_bar.configure(
+                        text=f"❌ Failed to update {reference} (API + Mongo unavailable)"
+                    )
+                    return
+                success = self._mongodb.update_order_status(
                     reference,
                     mongo_status,
                 )
-            )
-
-            if not success:
-                print(
-                    f"❌ Failed to update "
-                    f"order {reference}"
-                )
-
-                self._status_bar.configure(
-                    text=(
-                        f"❌ Failed to update "
-                        f"{reference}"
+                if not success:
+                    print(f"❌ Failed to update order {reference}")
+                    self._status_bar.configure(
+                        text=f"❌ Failed to update {reference}"
                     )
-                )
-
-                return
+                    return
 
             print(
                 f"✅ Order {reference} "
@@ -2326,10 +2355,22 @@ class OrderManagementView(ctk.CTkFrame):
             self._status_bar.configure(text=f"❌ Employee not found: {selected}")
             return
         try:
+            # Prefer stable employee_id; also send _id / id so backend can resolve ObjectIds
+            emp_payload = None
+            if employee:
+                emp_payload = (
+                    employee.get("employee_id")
+                    or employee.get("id")
+                    or employee.get("_id")
+                )
             response = self._backend_api.request(
                 "PUT",
                 f"/api/admin/orders/{reference}/assignment",
-                {"employee_id": employee.get("employee_id") if employee else None},
+                {
+                    "employee_id": emp_payload,
+                    "employeeId": emp_payload,
+                    "assigned_to": emp_payload,
+                },
             )
             if not response.get("success"):
                 raise RuntimeError(response.get("error") or "Assignment failed")

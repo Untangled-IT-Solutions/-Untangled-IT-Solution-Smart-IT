@@ -69,7 +69,7 @@ class BackendAPIClient:
     def __init__(
         self,
         base_url: Optional[str] = None,
-        timeout: float = 15.0,
+        timeout: float = 60.0,  # Render free tier cold starts
     ):
         env_url = os.getenv("API_BASE_URL", "").strip()
 
