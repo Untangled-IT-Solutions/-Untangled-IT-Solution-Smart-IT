@@ -1,0 +1,70 @@
+# Dependencies
+node_modules/
+Backend/node_modules/
+Frontend/node_modules/
+
+# Build output
+dist/
+build/
+out/
+Frontend/dist/
+Backend/dist/
+Work/dist/
+*.tsbuildinfo
+
+# Python cache and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+Work/__pycache__/
+Work/.pytest_cache/
+Work/.venv/
+Work/venv/
+Work/env/
+
+# Local databases and generated runtime data
+*.db
+*.sqlite
+*.sqlite3
+*.db-*
+Work/untangled_nexus.db
+Work/data/*.db
+Work/data/*.db-*
+mongodb-data/
+dump/
+*.dump
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+Backend/.env
+Backend/.env.*
+Frontend/.env
+Frontend/.env.*
+Work/.env
+Work/.env.*
+
+# Logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+.vite/
+.eslintcache
+.prettiercache
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
