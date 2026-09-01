@@ -2269,6 +2269,38 @@ function serialiseApproval(request: any) {
   };
 }
 
+const OFFICE_REQUEST_ITEMS = [
+  'Printer Paper',
+  'Pens',
+  'Staples',
+  'Printer Toner',
+  'RFQ Dividers',
+  'Stationery',
+  'Ethernet Cable',
+  'Mouse',
+  'Keyboard',
+  'Laptop',
+  'Monitor',
+];
+
+function serialiseOfficeRequest(request: any, approval: any = null) {
+  if (!request) return null;
+  const approvalStatus = approval?.status || request.approval_status || 'Pending';
+  return {
+    id: request._id?.toString?.() ?? request._id,
+    item_name: request.item_name || '',
+    quantity: Number(request.quantity || 0),
+    requested_by: request.requested_by || '',
+    department: request.department || '',
+    notes: request.notes || '',
+    approval_id: request.approval_id?.toString?.() ?? request.approval_id ?? null,
+    approval_status: approvalStatus,
+    requires_director: Boolean(request.requires_director),
+    created_at: request.created_at || request.createdAt || null,
+    updated_at: request.updated_at || request.updatedAt || null,
+  };
+}
+
 function cleanPriority(priority: any): string {
   const value = String(priority || 'Medium').trim();
   return ['Low', 'Medium', 'High', 'Critical'].includes(value) ? value : 'Medium';
@@ -3226,6 +3258,139 @@ app.use('/api/approvals', eventHandler(async (event) => {
   } catch (error: any) {
     event.node.res.statusCode = error?.statusCode || 500;
     return { success: false, error: error?.message || 'Approval operation failed.' };
+  }
+}));
+
+app.use('/api/office-requests', eventHandler(async (event) => {
+  try {
+    const subpath = apiSubpath(event, '/api/office-requests');
+    if (subpath[0] === 'items') {
+      if (event.method !== 'GET') {
+        event.node.res.statusCode = 405;
+        return { success: false, error: 'Method not allowed' };
+      }
+      return { success: true, items: OFFICE_REQUEST_ITEMS };
+    }
+
+    const { db, user, employee } = await requireDesktopSession(event);
+    const role = roleName(user, employee);
+    const collection = db.collection('office_requests');
+    const approvals = db.collection('approvals');
+    const me = employeeDisplayName(employee, user);
+
+    if (event.method === 'POST') {
+      const body = await readBody(event);
+      const itemName = String(body?.item_name || body?.item || '').trim();
+      const quantity = Number(body?.quantity || 0);
+      const requestedBy = String(body?.requested_by || me).trim();
+      const department = String(body?.department || employee?.department || '').trim();
+      const notes = String(body?.notes || '').trim();
+      const requiresDirector = Boolean(body?.requires_director);
+
+      if (!OFFICE_REQUEST_ITEMS.includes(itemName)) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'Select a valid office item.' };
+      }
+      if (!Number.isFinite(quantity) || quantity < 1) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'Quantity must be at least one.' };
+      }
+      if (!requestedBy || !department) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'Requestor and department are required.' };
+      }
+
+      const now = new Date();
+      const approvalDoc = {
+        title: `Office request: ${quantity} x ${itemName}`,
+        request_type: 'Office Supplies',
+        description: notes || `Request for ${quantity} x ${itemName}`,
+        requested_by: requestedBy,
+        department,
+        amount: 0,
+        status: 'Pending',
+        current_stage: 'Operations Manager',
+        requires_director: requiresDirector,
+        due_date: '',
+        reference_type: 'OfficeRequest',
+        reference_id: null,
+        manager_approved_by: '',
+        business_approved_by: '',
+        director_approved_by: '',
+        rejection_reason: '',
+        created_by: user?._id || null,
+        created_by_name: me,
+        submitted_at: now,
+        created_at: now,
+        updated_at: now,
+        history: [{
+          action: 'submitted',
+          by: me,
+          role,
+          next_stage: 'Operations Manager',
+          at: now,
+        }],
+      };
+
+      const approvalInsert = await approvals.insertOne(approvalDoc);
+      const doc = {
+        item_name: itemName,
+        quantity,
+        requested_by: requestedBy,
+        department,
+        notes,
+        approval_id: approvalInsert.insertedId,
+        approval_status: 'Pending',
+        requires_director: requiresDirector,
+        created_by: user?._id || null,
+        created_by_name: me,
+        created_at: now,
+        updated_at: now,
+      };
+      const inserted = await collection.insertOne(doc);
+      await approvals.updateOne(
+        { _id: approvalInsert.insertedId },
+        { $set: { reference_id: inserted.insertedId, updated_at: now } },
+      );
+
+      return {
+        success: true,
+        request: serialiseOfficeRequest(
+          { ...doc, _id: inserted.insertedId },
+          { ...approvalDoc, _id: approvalInsert.insertedId },
+        ),
+      };
+    }
+
+    if (event.method === 'GET') {
+      const query = getQuery(event);
+      const status = String(query.status || 'All');
+      const filter: any = {};
+
+      if (!canReviewApprovals(role)) {
+        filter.$or = [
+          { requested_by: me },
+          { created_by: user?._id },
+          { created_by_name: me },
+        ];
+      }
+
+      const rows = await collection.find(filter).sort({ updated_at: -1, created_at: -1 }).limit(300).toArray();
+      const approvalRows = await Promise.all(
+        rows.map((row: any) => row.approval_id ? approvals.findOne({ _id: taskObjectId(row.approval_id) || row.approval_id }) : null),
+      );
+      const requests = rows
+        .map((row: any, index: number) => serialiseOfficeRequest(row, approvalRows[index]))
+        .filter((row: any) => status === 'All' || row.approval_status === cleanApprovalStatus(status));
+
+      return { success: true, requests, count: requests.length, role };
+    }
+
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Office request operation failed.' };
   }
 }));
 

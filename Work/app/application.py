@@ -14,18 +14,16 @@ from app.utils.theme import Theme
 
 # SQLite services still used by other parts of the application
 from app.services.auth_service import AuthService
-from app.services.approval_service import ApprovalService
 from app.services.attendance_service import AttendanceService
-from app.services.office_request_service import OfficeRequestService
 from app.services.backend_people_service import BackendPeopleService
 from app.services.backend_work_service import BackendWorkService
 from app.services.backend_calendar_service import BackendCalendarService
 from app.services.backend_hr_service import BackendHRService
 from app.services.backend_approval_service import BackendApprovalService
+from app.services.backend_office_request_service import BackendOfficeRequestService
 from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
 from app.services.search_service import SearchService
-from app.services.work_service import WorkService
 from app.services.notification_service import NotificationService
 from app.services.backend_api_client import BackendAPIClient
 from app.services.backend_dashboard_service import BackendDashboardService
@@ -137,11 +135,6 @@ class Application:
         # Approvals
         # ---------------------------------------------------------
 
-        self.local_approval_service = ApprovalService(
-            self.database,
-            self.mongo_notification,
-        )
-
         self.approval_service = BackendApprovalService(
             self.backend_api
         )
@@ -150,10 +143,8 @@ class Application:
         # Office Requests
         # ---------------------------------------------------------
 
-        self.office_request_service = OfficeRequestService(
-            self.database,
-            self.local_approval_service,
-            self.mongo_notification,
+        self.office_request_service = BackendOfficeRequestService(
+            self.backend_api
         )
 
         # ---------------------------------------------------------
