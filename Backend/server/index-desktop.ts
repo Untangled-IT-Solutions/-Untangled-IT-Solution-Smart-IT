@@ -2153,6 +2153,15 @@ function canViewAllTasks(role: string): boolean {
   return ['Director', 'Business Lead', 'Operations Manager'].includes(role);
 }
 
+function canReviewApprovals(role: string): boolean {
+  return ['Operations Manager', 'Business Lead', 'Director'].includes(role);
+}
+
+function canReviewApprovalStage(role: string, stage: string): boolean {
+  if (role === 'Director') return stage === 'Director';
+  return role === stage;
+}
+
 function employeeIdValues(employee: any): any[] {
   return employeeReferenceValues(employee?._id)
     .concat(employeeReferenceValues(employee?.employee_id))
@@ -2178,6 +2187,19 @@ function taskFilter(id: any) {
   return oid ? { _id: oid } : { task_number: String(id) };
 }
 
+function apiSubpath(event: any, prefix: string): string[] {
+  const url = new URL(event.node.req.url || '', `http://${event.node.req.headers.host}`);
+  const pathname = url.pathname.replace(/\/+$/, '');
+  const cleanPrefix = prefix.replace(/\/+$/, '');
+  if (pathname === cleanPrefix) return [];
+  if (pathname.startsWith(`${cleanPrefix}/`)) {
+    return pathname.slice(cleanPrefix.length + 1).split('/').filter(Boolean).map(decodeURIComponent);
+  }
+
+  const mountedPath = pathname.replace(/^\/+/, '');
+  return mountedPath ? mountedPath.split('/').filter(Boolean).map(decodeURIComponent) : [];
+}
+
 function cleanTaskStatus(status: any, fallback = 'Dumped'): string {
   const value = String(status || fallback).trim();
   const allowed = new Set([
@@ -2191,6 +2213,60 @@ function cleanTaskStatus(status: any, fallback = 'Dumped'): string {
     'Cancelled',
   ]);
   return allowed.has(value) ? value : fallback;
+}
+
+function cleanApprovalType(value: any): string {
+  const requestType = String(value || 'General').trim();
+  const allowed = new Set([
+    'General',
+    'Office Supplies',
+    'Equipment',
+    'Leave',
+    'Sick Leave',
+    'Software',
+    'Purchases',
+    'Budget',
+    'Task Approval',
+    'Director Review',
+  ]);
+  return allowed.has(requestType) ? requestType : 'General';
+}
+
+function cleanApprovalStatus(value: any, fallback = 'Pending'): string {
+  const status = String(value || fallback).trim();
+  return ['Pending', 'Approved', 'Rejected', 'Cancelled'].includes(status) ? status : fallback;
+}
+
+function nextApprovalStage(request: any, stage: string): string {
+  if (stage === 'Operations Manager') return 'Business Lead';
+  if (stage === 'Business Lead') return request.requires_director ? 'Director' : 'Completed';
+  return 'Completed';
+}
+
+function serialiseApproval(request: any) {
+  if (!request) return null;
+  return {
+    id: request._id?.toString?.() ?? request._id,
+    title: request.title || '',
+    request_type: request.request_type || 'General',
+    description: request.description || '',
+    requested_by: request.requested_by || request.created_by_name || '',
+    department: request.department || '',
+    amount: Number(request.amount || 0),
+    status: request.status || 'Pending',
+    current_stage: request.current_stage || 'Operations Manager',
+    requires_director: Boolean(request.requires_director),
+    due_date: request.due_date || '',
+    reference_type: request.reference_type || '',
+    reference_id: request.reference_id?.toString?.() ?? request.reference_id ?? null,
+    manager_approved_by: request.manager_approved_by || '',
+    business_approved_by: request.business_approved_by || '',
+    director_approved_by: request.director_approved_by || '',
+    rejection_reason: request.rejection_reason || '',
+    submitted_at: request.submitted_at || request.created_at || request.createdAt || null,
+    updated_at: request.updated_at || request.updatedAt || null,
+    history: request.history || [],
+  };
 }
 
 function cleanPriority(priority: any): string {
@@ -2216,6 +2292,9 @@ function serialiseTask(task: any) {
     assigned_by: task.assigned_by || '',
     dumped_by: task.dumped_by || task.created_by_name || '',
     evaluated_by: task.evaluated_by || '',
+    director_approval_id: task.director_approval_id?.toString?.() ?? task.director_approval_id ?? null,
+    director_approval_status: task.director_approval_status || '',
+    returned_reason: task.returned_reason || '',
     due_date: task.due_date || '',
     start_date: task.start_date || '',
     estimated_hours: Number(task.estimated_hours || 0),
@@ -2314,6 +2393,625 @@ function serialiseHrRequest(request: any) {
 function dateInRange(value: any, start: string, end: string): boolean {
   const text = String(value || '');
   return Boolean(text) && text >= start && text <= end;
+}
+
+async function handleApprovalById(event: any, approvalId: any) {
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  const oid = taskObjectId(approvalId);
+  if (!oid) {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Approval id is invalid.' };
+  }
+
+  const collection = db.collection('approvals');
+  const existing = await collection.findOne({ _id: oid });
+  if (!existing) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'Approval request not found.' };
+  }
+
+  const me = employeeDisplayName(employee, user);
+
+  if (event.method === 'GET') {
+    return { success: true, approval: serialiseApproval(existing) };
+  }
+
+  if (event.method === 'PATCH' || event.method === 'PUT') {
+    if (!canReviewApprovals(role)) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'Only management can review approvals.' };
+    }
+
+    const body = await readBody(event);
+    const decision = String(body?.decision || body?.action || '').trim().toLowerCase();
+    const stage = String(body?.stage || existing.current_stage || 'Operations Manager');
+    const note = String(body?.reason || body?.note || '').trim();
+    const now = new Date();
+
+    if (existing.status !== 'Pending') {
+      event.node.res.statusCode = 409;
+      return { success: false, error: 'Only pending approval requests can be reviewed.' };
+    }
+    if (!canReviewApprovalStage(role, stage) || existing.current_stage !== stage) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: `This request is awaiting ${existing.current_stage} review.` };
+    }
+
+    if (decision === 'approve' || decision === 'approved') {
+      const approvalField: Record<string, string> = {
+        'Operations Manager': 'manager_approved_by',
+        'Business Lead': 'business_approved_by',
+        Director: 'director_approved_by',
+      };
+      const nextStage = nextApprovalStage(existing, stage);
+      const status = nextStage === 'Completed' ? 'Approved' : 'Pending';
+      const update: any = {
+        current_stage: nextStage,
+        status,
+        updated_at: now,
+      };
+      update[approvalField[stage]] = me;
+
+      await collection.updateOne(
+        { _id: oid },
+        {
+          $set: update,
+          $push: {
+            history: {
+              action: 'approved',
+              by: me,
+              role,
+              stage,
+              next_stage: nextStage,
+              at: now,
+            },
+          },
+        } as any,
+      );
+
+      if (existing.reference_type === 'Task' && status === 'Approved' && existing.reference_id) {
+        await db.collection('work_assignments').updateOne(
+          taskFilter(existing.reference_id),
+          {
+            $set: {
+              director_approval_status: 'Approved',
+              status: 'Completed',
+              updated_at: now,
+            },
+            $push: {
+              history: {
+                action: 'director_approved',
+                by: me,
+                role,
+                note: 'Director approval completed.',
+                at: now,
+              },
+            },
+          } as any,
+        );
+      }
+
+      return { success: true, approval: serialiseApproval(await collection.findOne({ _id: oid })) };
+    }
+
+    if (decision === 'reject' || decision === 'rejected') {
+      if (!note) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'A rejection reason is required.' };
+      }
+
+      await collection.updateOne(
+        { _id: oid },
+        {
+          $set: {
+            status: 'Rejected',
+            current_stage: 'Completed',
+            rejection_reason: `${me}: ${note}`,
+            updated_at: now,
+          },
+          $push: {
+            history: {
+              action: 'rejected',
+              by: me,
+              role,
+              stage,
+              note,
+              at: now,
+            },
+          },
+        } as any,
+      );
+
+      if (existing.reference_type === 'Task' && existing.reference_id) {
+        await db.collection('work_assignments').updateOne(
+          taskFilter(existing.reference_id),
+          {
+            $set: {
+              director_approval_status: 'Rejected',
+              status: 'In Progress',
+              returned_reason: note,
+              updated_at: now,
+            },
+            $push: {
+              history: {
+                action: 'director_rejected',
+                by: me,
+                role,
+                note,
+                at: now,
+              },
+            },
+          } as any,
+        );
+      }
+
+      return { success: true, approval: serialiseApproval(await collection.findOne({ _id: oid })) };
+    }
+
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Unknown approval decision.' };
+  }
+
+  event.node.res.statusCode = 405;
+  return { success: false, error: 'Method not allowed' };
+}
+
+async function handleWorkTaskById(event: any, taskId: any) {
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  const collection = db.collection('work_assignments');
+  const filter = taskFilter(taskId);
+  const task = await collection.findOne(filter);
+
+  if (!task) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'Task not found.' };
+  }
+
+  const me = employeeDisplayName(employee, user);
+  const mine = task.assigned_employee === me || employeeIdValues(employee).some(v => String(v) === String(task.assigned_employee_id));
+  if (!canViewAllTasks(role) && !mine) {
+    event.node.res.statusCode = 403;
+    return { success: false, error: 'You can only view your assigned tasks.' };
+  }
+
+  if (event.method === 'GET') {
+    return { success: true, task: serialiseTask(task) };
+  }
+
+  if (event.method === 'PUT' || event.method === 'PATCH') {
+    const body = await readBody(event);
+    const now = new Date();
+    const update: any = { updated_at: now };
+    const history: any = {
+      action: 'updated',
+      by: me,
+      role,
+      at: now,
+      note: 'Task details updated.',
+    };
+
+    const managerFields = ['title', 'description', 'category', 'department', 'priority', 'due_date', 'start_date', 'estimated_hours', 'comments'];
+    if (canTriageTasks(role)) {
+      for (const key of managerFields) {
+        if (body[key] !== undefined) update[key] = key === 'estimated_hours' ? Number(body[key] || 0) : body[key];
+      }
+      if (body.checklist !== undefined) update.checklist = Array.isArray(body.checklist) ? body.checklist : [];
+      if (body.attachments !== undefined) update.attachments = Array.isArray(body.attachments) ? body.attachments : [];
+    } else if (!mine) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'Only Operations Manager or Director can edit task details.' };
+    }
+
+    if (body.status !== undefined) {
+      const next = cleanTaskStatus(body.status, task.status || 'Assigned');
+      if (!canTriageTasks(role) && !['In Progress', 'Waiting Review', 'Completed'].includes(next)) {
+        event.node.res.statusCode = 403;
+        return { success: false, error: 'Staff can only move assigned work through progress/review/completed states.' };
+      }
+      update.status = next;
+      history.action = 'status_changed';
+      history.note = `Status changed to ${next}.`;
+    }
+
+    if (body.actual_hours !== undefined) {
+      update.actual_hours = Math.max(0, Number(body.actual_hours || 0));
+      history.action = 'time_updated';
+      history.note = `Actual hours updated to ${update.actual_hours}.`;
+    }
+
+    await collection.updateOne(filter, { $set: update, $push: { history } });
+    return { success: true, task: serialiseTask(await collection.findOne(filter)) };
+  }
+
+  if (event.method === 'DELETE') {
+    if (!canTriageTasks(role)) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'Only Operations Manager or Director can delete tasks.' };
+    }
+    await collection.deleteOne(filter);
+    return { success: true };
+  }
+
+  event.node.res.statusCode = 405;
+  return { success: false, error: 'Method not allowed' };
+}
+
+async function handleWorkTaskAssign(event: any, taskId: any) {
+  if (event.method !== 'POST') {
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  }
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  if (!canTriageTasks(role)) {
+    event.node.res.statusCode = 403;
+    return { success: false, error: 'Only Operations Manager or Director can assign tasks.' };
+  }
+
+  const body = await readBody(event);
+  const now = new Date();
+  const me = employeeDisplayName(employee, user);
+  const filter = taskFilter(taskId);
+  const assignedName = String(body?.assigned_employee || body?.employee_name || '').trim();
+
+  if (!assignedName) {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Assigned employee is required.' };
+  }
+
+  const assignedEmployee = await db.collection('employees').findOne({
+    $or: [
+      { full_name: assignedName },
+      { email: normaliseLogin(body?.username || body?.email || assignedName) },
+      { employee_id: taskIdentity(body?.employee_id || body?.assigned_employee_id) },
+    ],
+  });
+
+  const assignedUser = assignedEmployee
+    ? await db.collection('users').findOne({
+        $or: [
+          { employee_id: assignedEmployee._id },
+          { employee_id: assignedEmployee.employee_id },
+          { email: assignedEmployee.email },
+        ],
+      })
+    : null;
+
+  const assignedDisplay = assignedEmployee ? employeeDisplayName(assignedEmployee, assignedUser) : assignedName;
+  await db.collection('work_assignments').updateOne(
+    filter,
+    {
+      $set: {
+        assigned_employee: assignedDisplay,
+        assigned_employee_id: assignedEmployee?._id || taskIdentity(body?.employee_id || body?.assigned_employee_id),
+        assigned_by: me,
+        status: 'Assigned',
+        evaluated_by: me,
+        updated_at: now,
+      },
+      $push: {
+        history: {
+          action: 'assigned',
+          by: me,
+          role,
+          employee: assignedDisplay,
+          note: `Assigned to ${assignedDisplay}.`,
+          at: now,
+        },
+      },
+    } as any,
+  );
+
+  return { success: true, task: serialiseTask(await db.collection('work_assignments').findOne(filter)) };
+}
+
+async function handleWorkTaskDecision(event: any, taskId: any) {
+  if (event.method !== 'POST') {
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  }
+
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  if (!canTriageTasks(role)) {
+    event.node.res.statusCode = 403;
+    return { success: false, error: 'Only Operations Manager or Director can make task decisions.' };
+  }
+
+  const collection = db.collection('work_assignments');
+  const filter = taskFilter(taskId);
+  const task = await collection.findOne(filter);
+
+  if (!task) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'Task not found.' };
+  }
+
+  const body = await readBody(event);
+  const action = String(body?.action || '').trim().toLowerCase();
+  const note = String(body?.note || body?.reason || '').trim();
+  const now = new Date();
+  const me = employeeDisplayName(employee, user);
+  const update: any = { updated_at: now };
+  const unset: any = {};
+  let history: any = {
+    action: 'decision_recorded',
+    by: me,
+    role,
+    note: note || 'Task decision recorded.',
+    at: now,
+  };
+
+  if (action === 'approve_review' || action === 'approve') {
+    if (task.status !== 'Waiting Review' && task.status !== 'In Progress') {
+      event.node.res.statusCode = 409;
+      return { success: false, error: 'Only reviewed or active work can be approved.' };
+    }
+    update.status = 'Completed';
+    update.evaluated_by = me;
+    update.completed_at = now;
+    unset.active_timer_started_at = '';
+    history = { action: 'review_approved', by: me, role, note: note || 'Reviewed work approved and completed.', at: now };
+  } else if (action === 'return_to_work' || action === 'return') {
+    if (!note) {
+      event.node.res.statusCode = 400;
+      return { success: false, error: 'A return reason is required.' };
+    }
+    update.status = 'In Progress';
+    update.returned_reason = note;
+    update.evaluated_by = me;
+    unset.active_timer_started_at = '';
+    history = { action: 'returned_to_work', by: me, role, note, at: now };
+  } else if (action === 'needs_triage') {
+    update.status = 'Needs Triage';
+    update.assigned_employee = '';
+    update.assigned_employee_id = null;
+    update.assigned_by = '';
+    update.evaluated_by = me;
+    unset.active_timer_started_at = '';
+    history = { action: 'marked_needs_triage', by: me, role, note: note || 'Moved back to operations triage.', at: now };
+  } else if (action === 'cancel') {
+    update.status = 'Cancelled';
+    update.evaluated_by = me;
+    update.cancelled_at = now;
+    unset.active_timer_started_at = '';
+    history = { action: 'cancelled', by: me, role, note: note || 'Task cancelled.', at: now };
+  } else if (action === 'escalate_director' || action === 'escalate') {
+    const existingApproval = task.director_approval_id
+      ? await db.collection('approvals').findOne(taskFilter(task.director_approval_id))
+      : null;
+    const approvalDoc = {
+      title: `Director review: ${task.title || task.task_number || 'Task'}`,
+      request_type: 'Director Review',
+      description: note || task.description || 'Task requires director approval.',
+      requested_by: me,
+      department: task.department || employee?.department || '',
+      amount: 0,
+      status: 'Pending',
+      current_stage: 'Director',
+      requires_director: true,
+      due_date: task.due_date || '',
+      reference_type: 'Task',
+      reference_id: task._id,
+      manager_approved_by: me,
+      business_approved_by: '',
+      director_approved_by: '',
+      rejection_reason: '',
+      created_by: user?._id || null,
+      created_by_name: me,
+      submitted_at: now,
+      created_at: now,
+      updated_at: now,
+      history: [{ action: 'submitted', by: me, role, next_stage: 'Director', at: now }],
+    };
+
+    let approvalId = existingApproval?._id || null;
+    if (!approvalId || existingApproval?.status !== 'Pending') {
+      const inserted = await db.collection('approvals').insertOne(approvalDoc);
+      approvalId = inserted.insertedId;
+    }
+
+    update.status = 'Waiting Review';
+    update.director_approval_id = approvalId;
+    update.director_approval_status = 'Pending';
+    update.director_approval_requested_at = now;
+    update.evaluated_by = me;
+    unset.active_timer_started_at = '';
+    history = {
+      action: 'director_review_requested',
+      by: me,
+      role,
+      note: note || 'Escalated to director for approval.',
+      approval_id: approvalId,
+      at: now,
+    };
+  } else {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Unknown task decision.' };
+  }
+
+  const operation: any = { $set: update, $push: { history } };
+  if (Object.keys(unset).length) operation.$unset = unset;
+  await collection.updateOne(filter, operation);
+  return { success: true, task: serialiseTask(await collection.findOne(filter)) };
+}
+
+async function handleWorkTaskTime(event: any, taskId: any) {
+  if (event.method !== 'POST') {
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  }
+
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  const collection = db.collection('work_assignments');
+  const filter = taskFilter(taskId);
+  const task = await collection.findOne(filter);
+
+  if (!task) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'Task not found.' };
+  }
+
+  const me = employeeDisplayName(employee, user);
+  const mine = task.assigned_employee === me || employeeIdValues(employee).some(v => String(v) === String(task.assigned_employee_id));
+  if (!canTriageTasks(role) && !mine) {
+    event.node.res.statusCode = 403;
+    return { success: false, error: 'You can only track time on your assigned tasks.' };
+  }
+
+  const body = await readBody(event);
+  const action = String(body?.action || '').trim().toLowerCase();
+  const note = String(body?.note || '').trim();
+  const now = new Date();
+  const baseHours = Math.max(0, Number(task.actual_hours || 0));
+  const update: any = { updated_at: now };
+  const unset: any = {};
+  let history = taskTimeEntry('time_updated', me, role, note || 'Time updated.');
+
+  if (action === 'start') {
+    if (task.active_timer_started_at) {
+      return { success: true, task: serialiseTask(task), message: 'Task timer is already running.' };
+    }
+    update.status = 'In Progress';
+    update.active_timer_started_at = now;
+    if (!task.start_date) update.start_date = todaySouthAfrica();
+    history = taskTimeEntry('work_started', me, role, note || 'Work timer started.');
+  } else if (action === 'pause' || action === 'stop') {
+    if (!task.active_timer_started_at) {
+      return { success: true, task: serialiseTask(task), message: 'Task timer is not running.' };
+    }
+    const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
+    update.actual_hours = Math.round((baseHours + addedHours) * 100) / 100;
+    unset.active_timer_started_at = '';
+    history = taskTimeEntry('work_paused', me, role, note || 'Work timer paused.', addedHours);
+  } else if (action === 'log') {
+    const hours = Math.max(0, Number(body?.hours || 0));
+    if (!hours) {
+      event.node.res.statusCode = 400;
+      return { success: false, error: 'Hours must be greater than zero.' };
+    }
+    update.actual_hours = Math.round((baseHours + hours) * 100) / 100;
+    history = taskTimeEntry('time_logged', me, role, note || `Logged ${hours} hours.`, hours);
+  } else if (action === 'submit_review') {
+    let totalHours = baseHours;
+    if (task.active_timer_started_at) {
+      const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
+      totalHours += addedHours;
+      unset.active_timer_started_at = '';
+    }
+    update.actual_hours = Math.round(totalHours * 100) / 100;
+    update.status = 'Waiting Review';
+    history = taskTimeEntry('submitted_review', me, role, note || 'Submitted for review.');
+  } else if (action === 'complete') {
+    if (!canTriageTasks(role) && task.status !== 'Waiting Review') {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'Submit the task for review before completing it.' };
+    }
+    let totalHours = baseHours;
+    if (task.active_timer_started_at) {
+      const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
+      totalHours += addedHours;
+      unset.active_timer_started_at = '';
+    }
+    update.actual_hours = Math.round(totalHours * 100) / 100;
+    update.status = 'Completed';
+    history = taskTimeEntry('completed', me, role, note || 'Task completed.');
+  } else {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'Unknown time action.' };
+  }
+
+  const operation: any = { $set: update, $push: { history } };
+  if (Object.keys(unset).length) operation.$unset = unset;
+  await collection.updateOne(filter, operation);
+  return { success: true, task: serialiseTask(await collection.findOne(filter)) };
+}
+
+async function handleHrRequestById(event: any, requestId: any) {
+  const { db, user, employee } = await requireDesktopSession(event);
+  const role = roleName(user, employee);
+  const oid = taskObjectId(requestId);
+  if (!oid) {
+    event.node.res.statusCode = 400;
+    return { success: false, error: 'HR request id is invalid.' };
+  }
+
+  const collection = db.collection('hr_leave_requests');
+  const existing = await collection.findOne({ _id: oid });
+  if (!existing) {
+    event.node.res.statusCode = 404;
+    return { success: false, error: 'HR request not found.' };
+  }
+
+  if (event.method === 'GET') {
+    return { success: true, request: serialiseHrRequest(existing) };
+  }
+
+  if (event.method === 'PATCH' || event.method === 'PUT') {
+    if (!canReviewHr(role)) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'Only Operations Manager or Director can review HR requests.' };
+    }
+
+    const body = await readBody(event);
+    const status = cleanHrStatus(body?.status, existing.status || 'Pending');
+    const now = new Date();
+    const reviewer = employeeDisplayName(employee, user);
+    const update: any = {
+      status,
+      current_stage: status === 'Pending' ? 'Operations Manager' : 'Completed',
+      reviewed_by: reviewer,
+      reviewed_at: now,
+      evaluation_notes: String(body?.evaluation_notes || body?.review_notes || ''),
+      updated_at: now,
+    };
+
+    if (existing.request_type === 'Sick Leave' && existing.sick_note) {
+      update['sick_note.status'] = status === 'Approved' ? 'Accepted' : status === 'Rejected' ? 'Rejected' : existing.sick_note.status;
+      update['sick_note.evaluated_by'] = reviewer;
+      update['sick_note.evaluated_at'] = now;
+    }
+
+    await collection.updateOne(
+      { _id: oid },
+      {
+        $set: update,
+        $push: {
+          history: {
+            action: status.toLowerCase(),
+            by: reviewer,
+            role,
+            note: update.evaluation_notes,
+            at: now,
+          },
+        },
+      } as any,
+    );
+    return { success: true, request: serialiseHrRequest(await collection.findOne({ _id: oid })) };
+  }
+
+  if (event.method === 'DELETE') {
+    const requesterValues = employeeIdValues(employee).concat(employeeReferenceValues(user?._id));
+    const isOwnRequest = requesterValues.some(value => String(value) === String(existing.employee_id));
+    if (!canReviewHr(role) && !isOwnRequest) {
+      event.node.res.statusCode = 403;
+      return { success: false, error: 'You can only cancel your own HR requests.' };
+    }
+    await collection.updateOne(
+      { _id: oid },
+      {
+        $set: { status: 'Cancelled', current_stage: 'Completed', updated_at: new Date() },
+        $push: { history: { action: 'cancelled', by: employeeDisplayName(employee, user), role, at: new Date() } },
+      } as any,
+    );
+    return { success: true };
+  }
+
+  event.node.res.statusCode = 405;
+  return { success: false, error: 'Method not allowed' };
 }
 
 async function nextTaskNumber(db: any): Promise<string> {
@@ -2438,8 +3136,190 @@ app.use('/api/auth/logout', eventHandler(async (event) => {
 // DESKTOP EXE API - PHASE 1 WORK SPINE
 // ============================================
 
+app.use('/api/approvals', eventHandler(async (event) => {
+  try {
+    const subpath = apiSubpath(event, '/api/approvals');
+    if (subpath[0]) {
+      return await handleApprovalById(event, subpath[0]);
+    }
+
+    const { db, user, employee } = await requireDesktopSession(event);
+    const role = roleName(user, employee);
+    const collection = db.collection('approvals');
+    const me = employeeDisplayName(employee, user);
+
+    if (event.method === 'POST') {
+      const body = await readBody(event);
+      const now = new Date();
+      const title = String(body?.title || '').trim();
+      const requestedBy = String(body?.requested_by || me).trim();
+      const department = String(body?.department || employee?.department || '').trim();
+
+      if (!title) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'Approval title is required.' };
+      }
+      if (!requestedBy || !department) {
+        event.node.res.statusCode = 400;
+        return { success: false, error: 'Requestor and department are required.' };
+      }
+
+      const doc = {
+        title,
+        request_type: cleanApprovalType(body?.request_type),
+        description: String(body?.description || '').trim(),
+        requested_by: requestedBy,
+        department,
+        amount: Math.max(0, Number(body?.amount || 0)),
+        status: 'Pending',
+        current_stage: 'Operations Manager',
+        requires_director: Boolean(body?.requires_director),
+        due_date: String(body?.due_date || '').trim(),
+        reference_type: String(body?.reference_type || '').trim(),
+        reference_id: body?.reference_id || null,
+        manager_approved_by: '',
+        business_approved_by: '',
+        director_approved_by: '',
+        rejection_reason: '',
+        created_by: user?._id || null,
+        created_by_name: me,
+        submitted_at: now,
+        created_at: now,
+        updated_at: now,
+        history: [{
+          action: 'submitted',
+          by: me,
+          role,
+          next_stage: 'Operations Manager',
+          at: now,
+        }],
+      };
+
+      const inserted = await collection.insertOne(doc);
+      return { success: true, approval: serialiseApproval({ ...doc, _id: inserted.insertedId }) };
+    }
+
+    if (event.method === 'GET') {
+      const query = getQuery(event);
+      const status = String(query.status || 'All');
+      const stage = String(query.stage || 'All');
+      const scope = String(query.scope || 'auto');
+      const filter: any = {};
+
+      if (status !== 'All') filter.status = cleanApprovalStatus(status);
+      if (stage !== 'All') filter.current_stage = stage;
+
+      if (!canReviewApprovals(role) || scope === 'mine') {
+        filter.$or = [
+          { requested_by: me },
+          { created_by: user?._id },
+          { created_by_name: me },
+        ];
+      }
+
+      const rows = await collection.find(filter).sort({ updated_at: -1, submitted_at: -1 }).limit(300).toArray();
+      return { success: true, approvals: rows.map(serialiseApproval), count: rows.length, role };
+    }
+
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Approval operation failed.' };
+  }
+}));
+
+app.use('/api/work/decision-queue', eventHandler(async (event) => {
+  if (event.method !== 'GET') {
+    event.node.res.statusCode = 405;
+    return { success: false, error: 'Method not allowed' };
+  }
+
+  try {
+    const { db, user, employee } = await requireDesktopSession(event);
+    const role = roleName(user, employee);
+    const today = todaySouthAfrica();
+    const tasks = db.collection('work_assignments');
+    const approvals = db.collection('approvals');
+    const hr = db.collection('hr_leave_requests');
+
+    const [
+      operationsInbox,
+      waitingReview,
+      overdue,
+      businessApprovals,
+      directorApprovals,
+      hrReviews,
+    ] = await Promise.all([
+      canTriageTasks(role)
+        ? tasks.find({
+            status: { $in: ['Dumped', 'Needs Triage', 'New'] },
+            $or: [{ assigned_employee: { $in: ['', null] } }, { assigned_employee: { $exists: false } }],
+          }).sort({ priority: -1, due_date: 1, created_at: -1 }).limit(50).toArray()
+        : [],
+      canViewAllTasks(role)
+        ? tasks.find({ status: 'Waiting Review' }).sort({ due_date: 1, updated_at: -1 }).limit(50).toArray()
+        : [],
+      canViewAllTasks(role)
+        ? tasks.find({ status: { $nin: ['Completed', 'Cancelled'] }, due_date: { $lt: today, $ne: '' } }).sort({ due_date: 1 }).limit(50).toArray()
+        : [],
+      canReviewApprovals(role)
+        ? approvals.find({ status: 'Pending', current_stage: 'Business Lead' }).sort({ updated_at: -1 }).limit(50).toArray()
+        : [],
+      canReviewApprovals(role)
+        ? approvals.find({ status: 'Pending', current_stage: 'Director' }).sort({ updated_at: -1 }).limit(50).toArray()
+        : [],
+      canReviewHr(role)
+        ? hr.find({ status: 'Pending' }).sort({ updated_at: -1 }).limit(50).toArray()
+        : [],
+    ]);
+
+    const myStage = role === 'Director' ? 'Director' : role === 'Business Lead' ? 'Business Lead' : role === 'Operations Manager' ? 'Operations Manager' : '';
+    const myApprovalItems = myStage
+      ? await approvals.find({ status: 'Pending', current_stage: myStage }).sort({ updated_at: -1 }).limit(50).toArray()
+      : [];
+
+    return {
+      success: true,
+      role,
+      summary: {
+        operations_inbox: operationsInbox.length,
+        waiting_review: waitingReview.length,
+        overdue: overdue.length,
+        my_approvals: myApprovalItems.length,
+        business_approvals: businessApprovals.length,
+        director_approvals: directorApprovals.length,
+        hr_reviews: hrReviews.length,
+      },
+      queues: {
+        operations_inbox: operationsInbox.map(serialiseTask),
+        waiting_review: waitingReview.map(serialiseTask),
+        overdue: overdue.map(serialiseTask),
+        my_approvals: myApprovalItems.map(serialiseApproval),
+        business_approvals: businessApprovals.map(serialiseApproval),
+        director_approvals: directorApprovals.map(serialiseApproval),
+        hr_reviews: hrReviews.map(serialiseHrRequest),
+      },
+    };
+  } catch (error: any) {
+    event.node.res.statusCode = error?.statusCode || 500;
+    return { success: false, error: error?.message || 'Unable to load decision queue.' };
+  }
+}));
+
 app.use('/api/work/tasks', eventHandler(async (event) => {
   try {
+    const subpath = apiSubpath(event, '/api/work/tasks');
+    if (subpath[0]) {
+      const [taskId, action] = subpath;
+      if (!action) return await handleWorkTaskById(event, taskId);
+      if (action === 'assign') return await handleWorkTaskAssign(event, taskId);
+      if (action === 'decision') return await handleWorkTaskDecision(event, taskId);
+      if (action === 'time') return await handleWorkTaskTime(event, taskId);
+      event.node.res.statusCode = 404;
+      return { success: false, error: 'Task endpoint not found.' };
+    }
+
     const { db, user, employee } = await requireDesktopSession(event);
     const role = roleName(user, employee);
     const collection = db.collection('work_assignments');
@@ -2569,265 +3449,6 @@ app.use('/api/work/tasks', eventHandler(async (event) => {
   }
 }));
 
-app.use('/api/work/tasks/:id', eventHandler(async (event) => {
-  try {
-    const { db, user, employee } = await requireDesktopSession(event);
-    const role = roleName(user, employee);
-    const collection = db.collection('work_assignments');
-    const id = event.context.params?.id;
-    const filter = taskFilter(id);
-    const task = await collection.findOne(filter);
-
-    if (!task) {
-      event.node.res.statusCode = 404;
-      return { success: false, error: 'Task not found.' };
-    }
-
-    const me = employeeDisplayName(employee, user);
-    const mine = task.assigned_employee === me || employeeIdValues(employee).some(v => String(v) === String(task.assigned_employee_id));
-    if (!canViewAllTasks(role) && !mine) {
-      event.node.res.statusCode = 403;
-      return { success: false, error: 'You can only view your assigned tasks.' };
-    }
-
-    if (event.method === 'GET') {
-      return { success: true, task: serialiseTask(task) };
-    }
-
-    if (event.method === 'PUT' || event.method === 'PATCH') {
-      const body = await readBody(event);
-      const now = new Date();
-      const update: any = { updated_at: now };
-      const history: any = {
-        action: 'updated',
-        by: me,
-        role,
-        at: now,
-        note: 'Task details updated.',
-      };
-
-      const managerFields = ['title', 'description', 'category', 'department', 'priority', 'due_date', 'start_date', 'estimated_hours', 'comments'];
-      if (canTriageTasks(role)) {
-        for (const key of managerFields) {
-          if (body[key] !== undefined) update[key] = key === 'estimated_hours' ? Number(body[key] || 0) : body[key];
-        }
-        if (body.checklist !== undefined) update.checklist = Array.isArray(body.checklist) ? body.checklist : [];
-        if (body.attachments !== undefined) update.attachments = Array.isArray(body.attachments) ? body.attachments : [];
-      } else if (!mine) {
-        event.node.res.statusCode = 403;
-        return { success: false, error: 'Only Operations Manager or Director can edit task details.' };
-      }
-
-      if (body.status !== undefined) {
-        const next = cleanTaskStatus(body.status, task.status || 'Assigned');
-        if (!canTriageTasks(role) && !['In Progress', 'Waiting Review', 'Completed'].includes(next)) {
-          event.node.res.statusCode = 403;
-          return { success: false, error: 'Staff can only move assigned work through progress/review/completed states.' };
-        }
-        update.status = next;
-        history.action = 'status_changed';
-        history.note = `Status changed to ${next}.`;
-      }
-
-      if (body.actual_hours !== undefined) {
-        update.actual_hours = Math.max(0, Number(body.actual_hours || 0));
-        history.action = 'time_updated';
-        history.note = `Actual hours updated to ${update.actual_hours}.`;
-      }
-
-      await collection.updateOne(filter, { $set: update, $push: { history } });
-      return { success: true, task: serialiseTask(await collection.findOne(filter)) };
-    }
-
-    if (event.method === 'DELETE') {
-      if (!canTriageTasks(role)) {
-        event.node.res.statusCode = 403;
-        return { success: false, error: 'Only Operations Manager or Director can delete tasks.' };
-      }
-      await collection.deleteOne(filter);
-      return { success: true };
-    }
-
-    event.node.res.statusCode = 405;
-    return { success: false, error: 'Method not allowed' };
-  } catch (error: any) {
-    event.node.res.statusCode = error?.statusCode || 500;
-    return { success: false, error: error?.message || 'Task operation failed.' };
-  }
-}));
-
-app.use('/api/work/tasks/:id/assign', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    event.node.res.statusCode = 405;
-    return { success: false, error: 'Method not allowed' };
-  }
-  try {
-    const { db, user, employee } = await requireDesktopSession(event);
-    const role = roleName(user, employee);
-    if (!canTriageTasks(role)) {
-      event.node.res.statusCode = 403;
-      return { success: false, error: 'Only Operations Manager or Director can assign tasks.' };
-    }
-
-    const body = await readBody(event);
-    const now = new Date();
-    const me = employeeDisplayName(employee, user);
-    const taskId = event.context.params?.id;
-    const filter = taskFilter(taskId);
-    const assignedName = String(body?.assigned_employee || body?.employee_name || '').trim();
-
-    if (!assignedName) {
-      event.node.res.statusCode = 400;
-      return { success: false, error: 'Assigned employee is required.' };
-    }
-
-    const assignedEmployee = await db.collection('employees').findOne({
-      $or: [
-        { full_name: assignedName },
-        { email: normaliseLogin(body?.username || body?.email || assignedName) },
-        { employee_id: taskIdentity(body?.employee_id || body?.assigned_employee_id) },
-      ],
-    });
-
-    const assignedUser = assignedEmployee
-      ? await db.collection('users').findOne({
-          $or: [
-            { employee_id: assignedEmployee._id },
-            { employee_id: assignedEmployee.employee_id },
-            { email: assignedEmployee.email },
-          ],
-        })
-      : null;
-
-    await db.collection('work_assignments').updateOne(
-      filter,
-      {
-        $set: {
-          assigned_employee: assignedEmployee ? employeeDisplayName(assignedEmployee, assignedUser) : assignedName,
-          assigned_employee_id: assignedEmployee?._id || taskIdentity(body?.employee_id || body?.assigned_employee_id),
-          assigned_by: me,
-          status: 'Assigned',
-          evaluated_by: me,
-          updated_at: now,
-        },
-        $push: {
-          history: {
-            action: 'assigned',
-            by: me,
-            role,
-            employee: assignedEmployee ? employeeDisplayName(assignedEmployee, assignedUser) : assignedName,
-            note: `Assigned to ${assignedEmployee ? employeeDisplayName(assignedEmployee, assignedUser) : assignedName}.`,
-            at: now,
-          },
-        },
-      } as any,
-    );
-
-    const task = await db.collection('work_assignments').findOne(filter);
-    return { success: true, task: serialiseTask(task) };
-  } catch (error: any) {
-    event.node.res.statusCode = error?.statusCode || 500;
-    return { success: false, error: error?.message || 'Task assignment failed.' };
-  }
-}));
-
-app.use('/api/work/tasks/:id/time', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    event.node.res.statusCode = 405;
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const { db, user, employee } = await requireDesktopSession(event);
-    const role = roleName(user, employee);
-    const collection = db.collection('work_assignments');
-    const filter = taskFilter(event.context.params?.id);
-    const task = await collection.findOne(filter);
-
-    if (!task) {
-      event.node.res.statusCode = 404;
-      return { success: false, error: 'Task not found.' };
-    }
-
-    const me = employeeDisplayName(employee, user);
-    const mine = task.assigned_employee === me || employeeIdValues(employee).some(v => String(v) === String(task.assigned_employee_id));
-    if (!canTriageTasks(role) && !mine) {
-      event.node.res.statusCode = 403;
-      return { success: false, error: 'You can only track time on your assigned tasks.' };
-    }
-
-    const body = await readBody(event);
-    const action = String(body?.action || '').trim().toLowerCase();
-    const note = String(body?.note || '').trim();
-    const now = new Date();
-    const baseHours = Math.max(0, Number(task.actual_hours || 0));
-    const update: any = { updated_at: now };
-    const unset: any = {};
-    let history = taskTimeEntry('time_updated', me, role, note || 'Time updated.');
-
-    if (action === 'start') {
-      if (task.active_timer_started_at) {
-        return { success: true, task: serialiseTask(task), message: 'Task timer is already running.' };
-      }
-      update.status = 'In Progress';
-      update.active_timer_started_at = now;
-      if (!task.start_date) update.start_date = todaySouthAfrica();
-      history = taskTimeEntry('work_started', me, role, note || 'Work timer started.');
-    } else if (action === 'pause' || action === 'stop') {
-      if (!task.active_timer_started_at) {
-        return { success: true, task: serialiseTask(task), message: 'Task timer is not running.' };
-      }
-      const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
-      update.actual_hours = Math.round((baseHours + addedHours) * 100) / 100;
-      unset.active_timer_started_at = '';
-      history = taskTimeEntry('work_paused', me, role, note || 'Work timer paused.', addedHours);
-    } else if (action === 'log') {
-      const hours = Math.max(0, Number(body?.hours || 0));
-      if (!hours) {
-        event.node.res.statusCode = 400;
-        return { success: false, error: 'Hours must be greater than zero.' };
-      }
-      update.actual_hours = Math.round((baseHours + hours) * 100) / 100;
-      history = taskTimeEntry('time_logged', me, role, note || `Logged ${hours} hours.`, hours);
-    } else if (action === 'submit_review') {
-      let totalHours = baseHours;
-      if (task.active_timer_started_at) {
-        const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
-        totalHours += addedHours;
-        unset.active_timer_started_at = '';
-      }
-      update.actual_hours = Math.round(totalHours * 100) / 100;
-      update.status = 'Waiting Review';
-      history = taskTimeEntry('submitted_review', me, role, note || 'Submitted for review.');
-    } else if (action === 'complete') {
-      if (!canTriageTasks(role) && task.status !== 'Waiting Review') {
-        event.node.res.statusCode = 403;
-        return { success: false, error: 'Submit the task for review before completing it.' };
-      }
-      let totalHours = baseHours;
-      if (task.active_timer_started_at) {
-        const addedHours = elapsedSeconds(task.active_timer_started_at, now) / 3600;
-        totalHours += addedHours;
-        unset.active_timer_started_at = '';
-      }
-      update.actual_hours = Math.round(totalHours * 100) / 100;
-      update.status = 'Completed';
-      history = taskTimeEntry('completed', me, role, note || 'Task completed.');
-    } else {
-      event.node.res.statusCode = 400;
-      return { success: false, error: 'Unknown time action.' };
-    }
-
-    const operation: any = { $set: update, $push: { history } };
-    if (Object.keys(unset).length) operation.$unset = unset;
-    await collection.updateOne(filter, operation);
-    return { success: true, task: serialiseTask(await collection.findOne(filter)) };
-  } catch (error: any) {
-    event.node.res.statusCode = error?.statusCode || 500;
-    return { success: false, error: error?.message || 'Task time action failed.' };
-  }
-}));
-
 app.use('/api/work/workload', eventHandler(async (event) => {
   try {
     const { db, user, employee } = await requireDesktopSession(event);
@@ -2894,6 +3515,11 @@ app.use('/api/work/workload', eventHandler(async (event) => {
 
 app.use('/api/hr/leave-requests', eventHandler(async (event) => {
   try {
+    const subpath = apiSubpath(event, '/api/hr/leave-requests');
+    if (subpath[0]) {
+      return await handleHrRequestById(event, subpath[0]);
+    }
+
     const { db, user, employee } = await requireDesktopSession(event);
     const role = roleName(user, employee);
     const collection = db.collection('hr_leave_requests');
@@ -2986,95 +3612,6 @@ app.use('/api/hr/leave-requests', eventHandler(async (event) => {
   }
 }));
 
-app.use('/api/hr/leave-requests/:id', eventHandler(async (event) => {
-  try {
-    const { db, user, employee } = await requireDesktopSession(event);
-    const role = roleName(user, employee);
-    const oid = taskObjectId(event.context.params?.id);
-    if (!oid) {
-      event.node.res.statusCode = 400;
-      return { success: false, error: 'HR request id is invalid.' };
-    }
-
-    const collection = db.collection('hr_leave_requests');
-    const existing = await collection.findOne({ _id: oid });
-    if (!existing) {
-      event.node.res.statusCode = 404;
-      return { success: false, error: 'HR request not found.' };
-    }
-
-    if (event.method === 'GET') {
-      return { success: true, request: serialiseHrRequest(existing) };
-    }
-
-    if (event.method === 'PATCH' || event.method === 'PUT') {
-      if (!canReviewHr(role)) {
-        event.node.res.statusCode = 403;
-        return { success: false, error: 'Only Operations Manager or Director can review HR requests.' };
-      }
-
-      const body = await readBody(event);
-      const status = cleanHrStatus(body?.status, existing.status || 'Pending');
-      const now = new Date();
-      const reviewer = employeeDisplayName(employee, user);
-      const update: any = {
-        status,
-        current_stage: status === 'Pending' ? 'Operations Manager' : 'Completed',
-        reviewed_by: reviewer,
-        reviewed_at: now,
-        evaluation_notes: String(body?.evaluation_notes || body?.review_notes || ''),
-        updated_at: now,
-      };
-
-      if (existing.request_type === 'Sick Leave' && existing.sick_note) {
-        update['sick_note.status'] = status === 'Approved' ? 'Accepted' : status === 'Rejected' ? 'Rejected' : existing.sick_note.status;
-        update['sick_note.evaluated_by'] = reviewer;
-        update['sick_note.evaluated_at'] = now;
-      }
-
-      await collection.updateOne(
-        { _id: oid },
-        {
-          $set: update,
-          $push: {
-            history: {
-              action: status.toLowerCase(),
-              by: reviewer,
-              role,
-              note: update.evaluation_notes,
-              at: now,
-            },
-          },
-        } as any,
-      );
-      return { success: true, request: serialiseHrRequest(await collection.findOne({ _id: oid })) };
-    }
-
-    if (event.method === 'DELETE') {
-      const requesterValues = employeeIdValues(employee).concat(employeeReferenceValues(user?._id));
-      const isOwnRequest = requesterValues.some(value => String(value) === String(existing.employee_id));
-      if (!canReviewHr(role) && !isOwnRequest) {
-        event.node.res.statusCode = 403;
-        return { success: false, error: 'You can only cancel your own HR requests.' };
-      }
-      await collection.updateOne(
-        { _id: oid },
-        {
-          $set: { status: 'Cancelled', current_stage: 'Completed', updated_at: new Date() },
-          $push: { history: { action: 'cancelled', by: employeeDisplayName(employee, user), role, at: new Date() } },
-        } as any,
-      );
-      return { success: true };
-    }
-
-    event.node.res.statusCode = 405;
-    return { success: false, error: 'Method not allowed' };
-  } catch (error: any) {
-    event.node.res.statusCode = error?.statusCode || 500;
-    return { success: false, error: error?.message || 'HR request review failed.' };
-  }
-}));
-
 app.use('/api/dashboard/summary', eventHandler(async (event) => {
   try {
     const { db, user, employee } = await requireDesktopSession(event);
@@ -3095,6 +3632,9 @@ app.use('/api/dashboard/summary', eventHandler(async (event) => {
       dueToday,
       completedThisWeek,
       pendingApprovals,
+      operationsApprovalStage,
+      businessApprovalStage,
+      directorApprovalStage,
       pendingHrReviews,
       sickNotesPending,
       peopleOnLeave,
@@ -3112,6 +3652,9 @@ app.use('/api/dashboard/summary', eventHandler(async (event) => {
         updated_at: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
       }),
       db.collection('approvals').countDocuments({ status: { $in: ['Pending', 'pending'] } }).catch(() => 0),
+      db.collection('approvals').countDocuments({ status: 'Pending', current_stage: 'Operations Manager' }).catch(() => 0),
+      db.collection('approvals').countDocuments({ status: 'Pending', current_stage: 'Business Lead' }).catch(() => 0),
+      db.collection('approvals').countDocuments({ status: 'Pending', current_stage: 'Director' }).catch(() => 0),
       hrRequests.countDocuments({ status: 'Pending' }).catch(() => 0),
       hrRequests.countDocuments({ request_type: 'Sick Leave', status: 'Pending' }).catch(() => 0),
       hrRequests.countDocuments({ status: 'Approved', start_date: { $lte: today }, end_date: { $gte: today } }).catch(() => 0),
@@ -3136,6 +3679,10 @@ app.use('/api/dashboard/summary', eventHandler(async (event) => {
         tasks_due_today: dueToday,
         completed_this_week: completedThisWeek,
         pending_approvals: pendingApprovals + pendingHrReviews,
+        operations_approval_queue: operationsApprovalStage,
+        business_lead_approval_queue: businessApprovalStage,
+        director_approval_queue: directorApprovalStage,
+        total_decision_queue: operationsInbox + waitingReview + overdue + pendingApprovals + pendingHrReviews,
         pending_hr_reviews: pendingHrReviews,
         sick_notes_pending: sickNotesPending,
         people_working: 0,

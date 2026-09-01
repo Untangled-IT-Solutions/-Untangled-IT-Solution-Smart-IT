@@ -30,7 +30,7 @@ class TaskView(ctk.CTkFrame):
         header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(header, text="Tasks", text_color=Theme.TEXT, font=Theme.FONT_TITLE).grid(row=0, column=0, sticky="w")
         self.scope = ctk.CTkSegmentedButton(
-            header, values=["Inbox", "All", "Personal", "Department"], command=lambda _value: self.refresh(),
+            header, values=["Inbox", "Reviews", "Overdue", "All", "Personal", "Department"], command=lambda _value: self.refresh(),
             selected_color=Theme.ACCENT, selected_hover_color=Theme.ACCENT_HOVER,
             unselected_color=Theme.PANEL_ALT, unselected_hover_color=Theme.BORDER,
         )
@@ -88,7 +88,24 @@ class TaskView(ctk.CTkFrame):
             extra = f", {active} active now" if active else ""
             leaders.append(f"{employee}: {task_count} tasks, {actual:g}/{estimated:g}h{extra}")
 
-        self.workload_label.configure(text="Team workload | " + " | ".join(leaders))
+        queue_text = ""
+        try:
+            queue = self._controller.get_decision_queue()
+            summary = queue.get("summary") or {}
+            queue_text = (
+                "Decision queue | "
+                f"Inbox {int(summary.get('operations_inbox') or 0)} | "
+                f"Reviews {int(summary.get('waiting_review') or 0)} | "
+                f"Overdue {int(summary.get('overdue') or 0)} | "
+                f"Approvals {int(summary.get('my_approvals') or 0)}"
+            )
+        except Exception:
+            queue_text = ""
+
+        text = "Team workload | " + " | ".join(leaders)
+        if queue_text:
+            text = f"{queue_text}\n{text}"
+        self.workload_label.configure(text=text)
 
 
 class TaskActionModal(ctk.CTkToplevel):
@@ -106,7 +123,7 @@ class TaskActionModal(ctk.CTkToplevel):
         self._task = task
         self._on_updated = on_updated
         self.title("Task")
-        self.geometry("620x620")
+        self.geometry("660x760")
         self.configure(fg_color=Theme.BG)
         self.transient(master)
         self.grab_set()
@@ -137,6 +154,10 @@ class TaskActionModal(ctk.CTkToplevel):
         )
         if self._task.active_timer_started_at:
             details += "\nTimer: running"
+        if self._task.director_approval_status:
+            details += f"\nDirector approval: {self._task.director_approval_status}"
+        if self._task.returned_reason:
+            details += f"\nReturned reason: {self._task.returned_reason}"
 
         ctk.CTkLabel(
             panel,
@@ -195,8 +216,38 @@ class TaskActionModal(ctk.CTkToplevel):
         )
         self.note_entry.grid(row=5, column=0, padx=20, pady=(0, 12), sticky="ew")
 
+        assignment = ctk.CTkFrame(panel, fg_color="transparent")
+        assignment.grid(row=6, column=0, padx=20, pady=(0, 12), sticky="ew")
+        assignment.grid_columnconfigure(0, weight=1)
+        people = self._controller.get_people_names() or [self._task.assigned_employee or ""]
+        self.assignee_entry = ctk.CTkOptionMenu(
+            assignment,
+            values=people,
+            fg_color=Theme.PANEL_ALT,
+            button_color=Theme.ACCENT,
+            button_hover_color=Theme.ACCENT_HOVER,
+            text_color=Theme.TEXT,
+            dropdown_text_color=Theme.TEXT,
+            dropdown_fg_color=Theme.PANEL,
+            dropdown_hover_color=Theme.PANEL_ALT,
+        )
+        if self._task.assigned_employee and self._task.assigned_employee in people:
+            self.assignee_entry.set(self._task.assigned_employee)
+        elif people:
+            self.assignee_entry.set(people[0])
+        self.assignee_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            assignment,
+            text="Assign",
+            width=110,
+            height=38,
+            fg_color=Theme.ACCENT,
+            hover_color=Theme.ACCENT_HOVER,
+            command=self._assign,
+        ).grid(row=0, column=1, sticky="e")
+
         actions = ctk.CTkFrame(panel, fg_color="transparent")
-        actions.grid(row=6, column=0, padx=20, pady=(0, 18), sticky="ew")
+        actions.grid(row=7, column=0, padx=20, pady=(0, 18), sticky="ew")
         actions.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         ctk.CTkButton(
@@ -232,6 +283,43 @@ class TaskActionModal(ctk.CTkToplevel):
             command=lambda: self._run_action("complete"),
         ).grid(row=0, column=3, padx=(6, 0), sticky="ew")
 
+        decisions = ctk.CTkFrame(panel, fg_color="transparent")
+        decisions.grid(row=8, column=0, padx=20, pady=(0, 18), sticky="ew")
+        decisions.grid_columnconfigure((0, 1, 2, 3), weight=1)
+
+        ctk.CTkButton(
+            decisions,
+            text="Approve Review",
+            height=38,
+            fg_color=Theme.SUCCESS,
+            hover_color=Theme.SUCCESS_HOVER,
+            command=lambda: self._run_decision("approve_review"),
+        ).grid(row=0, column=0, padx=(0, 6), sticky="ew")
+        ctk.CTkButton(
+            decisions,
+            text="Return",
+            height=38,
+            fg_color=Theme.WARNING,
+            hover_color=Theme.WARNING,
+            command=lambda: self._run_decision("return_to_work"),
+        ).grid(row=0, column=1, padx=6, sticky="ew")
+        ctk.CTkButton(
+            decisions,
+            text="Ask Director",
+            height=38,
+            fg_color=Theme.INFO,
+            hover_color=Theme.INFO,
+            command=lambda: self._run_decision("escalate_to_director"),
+        ).grid(row=0, column=2, padx=6, sticky="ew")
+        ctk.CTkButton(
+            decisions,
+            text="Cancel",
+            height=38,
+            fg_color=Theme.DANGER,
+            hover_color=Theme.DANGER_HOVER,
+            command=lambda: self._run_decision("cancel"),
+        ).grid(row=0, column=3, padx=(6, 0), sticky="ew")
+
         self.error_label = ctk.CTkLabel(
             panel,
             text="",
@@ -239,7 +327,7 @@ class TaskActionModal(ctk.CTkToplevel):
             font=("Segoe UI", 12),
             anchor="w",
         )
-        self.error_label.grid(row=7, column=0, padx=20, pady=(0, 16), sticky="ew")
+        self.error_label.grid(row=9, column=0, padx=20, pady=(0, 16), sticky="ew")
 
     def _note(self) -> str:
         return self.note_entry.get("1.0", "end").strip()
@@ -248,6 +336,14 @@ class TaskActionModal(ctk.CTkToplevel):
         try:
             hours = float(self.hours_entry.get() or 0)
             self._controller.log_time(self._task.id, hours, self._note())
+        except Exception as error:
+            self.error_label.configure(text=str(error))
+            return
+        self._finish()
+
+    def _assign(self) -> None:
+        try:
+            self._controller.assign_task(self._task.id, self.assignee_entry.get())
         except Exception as error:
             self.error_label.configure(text=str(error))
             return
@@ -263,6 +359,21 @@ class TaskActionModal(ctk.CTkToplevel):
                 self._controller.submit_for_review(self._task.id, self._note())
             elif action == "complete":
                 self._controller.complete_work(self._task.id, self._note())
+        except Exception as error:
+            self.error_label.configure(text=str(error))
+            return
+        self._finish()
+
+    def _run_decision(self, action: str) -> None:
+        try:
+            if action == "approve_review":
+                self._controller.approve_review(self._task.id, self._note())
+            elif action == "return_to_work":
+                self._controller.return_to_work(self._task.id, self._note())
+            elif action == "escalate_to_director":
+                self._controller.escalate_to_director(self._task.id, self._note())
+            elif action == "cancel":
+                self._controller.cancel_task(self._task.id, self._note())
         except Exception as error:
             self.error_label.configure(text=str(error))
             return

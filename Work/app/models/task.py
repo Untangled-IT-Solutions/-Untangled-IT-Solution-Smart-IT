@@ -26,6 +26,9 @@ class Task:
     checklist: str = "[]"
     attachments: str = "[]"
     active_timer_started_at: str | None = None
+    director_approval_id: Any | None = None
+    director_approval_status: str = ""
+    returned_reason: str = ""
 
 
 @dataclass(frozen=True)

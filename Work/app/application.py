@@ -21,6 +21,7 @@ from app.services.backend_people_service import BackendPeopleService
 from app.services.backend_work_service import BackendWorkService
 from app.services.backend_calendar_service import BackendCalendarService
 from app.services.backend_hr_service import BackendHRService
+from app.services.backend_approval_service import BackendApprovalService
 from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
 from app.services.search_service import SearchService
@@ -136,9 +137,13 @@ class Application:
         # Approvals
         # ---------------------------------------------------------
 
-        self.approval_service = ApprovalService(
+        self.local_approval_service = ApprovalService(
             self.database,
             self.mongo_notification,
+        )
+
+        self.approval_service = BackendApprovalService(
+            self.backend_api
         )
 
         # ---------------------------------------------------------
@@ -147,7 +152,7 @@ class Application:
 
         self.office_request_service = OfficeRequestService(
             self.database,
-            self.approval_service,
+            self.local_approval_service,
             self.mongo_notification,
         )
 

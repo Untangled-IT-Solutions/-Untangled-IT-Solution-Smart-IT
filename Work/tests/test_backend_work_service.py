@@ -32,6 +32,33 @@ class FakeBackend:
         if method == "POST" and path.endswith("/assign"):
             assigned = payload["assigned_employee"]
             return {"success": True, "task": {**self.task, "assigned_employee": assigned, "status": "Assigned"}}
+        if method == "GET" and path == "/api/work/decision-queue":
+            return {
+                "success": True,
+                "summary": {
+                    "operations_inbox": 1,
+                    "waiting_review": 1,
+                    "overdue": 0,
+                    "my_approvals": 0,
+                },
+                "queues": {
+                    "operations_inbox": [self.task],
+                    "waiting_review": [{**self.task, "status": "Waiting Review"}],
+                    "overdue": [],
+                    "my_approvals": [],
+                    "business_approvals": [],
+                    "director_approvals": [],
+                    "hr_reviews": [],
+                },
+            }
+        if method == "POST" and path.endswith("/decision"):
+            status = {
+                "approve_review": "Completed",
+                "return_to_work": "In Progress",
+                "escalate_director": "Waiting Review",
+                "cancel": "Cancelled",
+            }.get(payload["action"], self.task["status"])
+            return {"success": True, "task": {**self.task, "status": status}}
         if method == "POST" and path.endswith("/time"):
             status = {
                 "start": "In Progress",
@@ -120,4 +147,26 @@ def test_backend_work_service_tracks_task_time() -> None:
         "POST",
         "/api/work/tasks/task-1/time",
         {"action": "log", "hours": 2.25, "note": "Worked on supplier documents."},
+    )
+
+
+def test_backend_work_service_reads_and_updates_decision_queue() -> None:
+    backend = FakeBackend()
+    service = BackendWorkService(backend)
+
+    queue = service.get_decision_queue()
+    approved = service.approve_review("task-1", "Reviewed with client.")
+    returned = service.return_to_work("task-1", "Please attach the supplier docs.")
+    escalated = service.escalate_to_director("task-1", "Needs executive sign-off.")
+
+    assert queue["summary"]["operations_inbox"] == 1
+    assert queue["waiting_review"][0].status == "Waiting Review"
+    assert approved.status == "Completed"
+    assert returned.status == "In Progress"
+    assert escalated.status == "Waiting Review"
+    assert backend.calls[0] == ("GET", "/api/work/decision-queue", None)
+    assert backend.calls[1] == (
+        "POST",
+        "/api/work/tasks/task-1/decision",
+        {"action": "approve_review", "note": "Reviewed with client."},
     )

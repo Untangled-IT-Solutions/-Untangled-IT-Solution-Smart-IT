@@ -1,6 +1,8 @@
 # app/controllers/task_controller.py
 """Task controller."""
 
+from datetime import date
+
 from app.services.work_service import WorkService
 from app.services.people_service import PeopleService
 from app.models.task import Task
@@ -23,6 +25,15 @@ class TaskController:
             return self._service.get_all_work()
         elif scope == "Inbox" and hasattr(self._service, "get_operations_inbox"):
             return self._service.get_operations_inbox()
+        elif scope == "Reviews":
+            return self._service.get_all_work(status="Waiting Review")
+        elif scope == "Overdue":
+            today = date.today().isoformat()
+            return [
+                task for task in self._service.get_all_work()
+                if task.due_date and task.status not in ("Completed", "Cancelled")
+                and task.due_date < today
+            ]
         elif scope == "Personal":
             return self._service.get_personal_work()
         elif scope == "Department":
@@ -78,9 +89,41 @@ class TaskController:
         """Complete a task after review."""
         return self._service.complete_work(task_id, note)
 
+    def assign_task(self, task_id: int, assigned_employee: str) -> None:
+        """Assign or reassign a task."""
+        self._service.assign_work(task_id, assigned_employee)
+
+    def approve_review(self, task_id: int, note: str = ""):
+        """Approve reviewed work."""
+        return self._service.approve_review(task_id, note)
+
+    def return_to_work(self, task_id: int, note: str = ""):
+        """Return reviewed work for changes."""
+        return self._service.return_to_work(task_id, note)
+
+    def escalate_to_director(self, task_id: int, note: str = ""):
+        """Send a task to Director approval."""
+        return self._service.escalate_to_director(task_id, note)
+
+    def cancel_task(self, task_id: int, note: str = ""):
+        """Cancel a task."""
+        return self._service.cancel_work(task_id, note)
+
+    def get_decision_queue(self) -> dict:
+        """Get action-oriented queues for management users."""
+        if hasattr(self._service, "get_decision_queue"):
+            return self._service.get_decision_queue()
+        return {}
+
     def get_workload(self) -> list:
         """Get team workload summary."""
         return self._service.get_workload() if hasattr(self._service, "get_workload") else []
+
+    def get_people_names(self) -> list[str]:
+        """Get assignable employee names."""
+        if hasattr(self._people_service, "get_employee_names"):
+            return self._people_service.get_employee_names()
+        return [person.full_name for person in self._people_service.get_employees()]
 
     def delete_task(self, task_id: int) -> None:
         """Delete a task."""

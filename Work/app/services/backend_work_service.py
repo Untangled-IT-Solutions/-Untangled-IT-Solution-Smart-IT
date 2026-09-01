@@ -124,6 +124,48 @@ class BackendWorkService:
             {"assigned_employee": assigned_employee},
         )
 
+    def get_decision_queue(self) -> dict[str, Any]:
+        data = self._backend.request("GET", "/api/work/decision-queue")
+        queues = data.get("queues") or {}
+        return {
+            "summary": data.get("summary") or {},
+            "operations_inbox": [
+                self._task_from_dict(task)
+                for task in queues.get("operations_inbox") or []
+            ],
+            "waiting_review": [
+                self._task_from_dict(task)
+                for task in queues.get("waiting_review") or []
+            ],
+            "overdue": [
+                self._task_from_dict(task)
+                for task in queues.get("overdue") or []
+            ],
+            "my_approvals": queues.get("my_approvals") or [],
+            "business_approvals": queues.get("business_approvals") or [],
+            "director_approvals": queues.get("director_approvals") or [],
+            "hr_reviews": queues.get("hr_reviews") or [],
+        }
+
+    def decide_work(self, task_id: Any, action: str, note: str = "") -> Task:
+        payload = {"action": action}
+        if note:
+            payload["note"] = note
+        data = self._backend.request("POST", f"/api/work/tasks/{task_id}/decision", payload)
+        return self._task_from_dict(data.get("task") or {})
+
+    def approve_review(self, task_id: Any, note: str = "") -> Task:
+        return self.decide_work(task_id, "approve_review", note)
+
+    def return_to_work(self, task_id: Any, note: str = "") -> Task:
+        return self.decide_work(task_id, "return_to_work", note)
+
+    def escalate_to_director(self, task_id: Any, note: str = "") -> Task:
+        return self.decide_work(task_id, "escalate_director", note)
+
+    def cancel_work(self, task_id: Any, note: str = "") -> Task:
+        return self.decide_work(task_id, "cancel", note)
+
     def delete_work(self, task_id: Any) -> None:
         self._backend.request("DELETE", f"/api/work/tasks/{task_id}")
 
@@ -225,6 +267,9 @@ class BackendWorkService:
             checklist=str(data.get("checklist") or "[]"),
             attachments=str(data.get("attachments") or "[]"),
             active_timer_started_at=str(data.get("active_timer_started_at") or "") or None,
+            director_approval_id=data.get("director_approval_id") or None,
+            director_approval_status=str(data.get("director_approval_status") or ""),
+            returned_reason=str(data.get("returned_reason") or ""),
         )
         object.__setattr__(task, "_history", data.get("history") or [])
         return task
