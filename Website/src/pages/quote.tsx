@@ -1,4 +1,6 @@
 // src/pages/quote.tsx
+// Professional quote request — collects contact + delivery details so the
+// operations team does not start work with incomplete client information.
 import { useState } from "react";
 import {
   ArrowLeft,
@@ -14,6 +16,8 @@ import {
   RotateCcw,
   Copy,
   CheckCircle2,
+  MapPin,
+  Calendar,
 } from "lucide-react";
 import { useStore, productById } from "../lib/store-context";
 import { SALES_EMAIL } from "../lib/catalog";
@@ -31,6 +35,12 @@ type Details = {
   email: string;
   company?: string;
   message?: string;
+  /** Delivery / site address — required for a complete quotation */
+  address?: string;
+  /** Preferred delivery or site-visit date (free text / ISO date) */
+  deliveryDate?: string;
+  /** Gate / parking / access notes */
+  siteNotes?: string;
 };
 
 const EMPTY: Details = {
@@ -39,10 +49,13 @@ const EMPTY: Details = {
   email: "",
   company: "",
   message: "",
+  address: "",
+  deliveryDate: "",
+  siteNotes: "",
 };
 
-// Target email for quotes
-const QUOTE_EMAIL = "siyanda.nkosi.developer@gmail.com";
+// Target email for quotes (fallback mailto)
+const QUOTE_EMAIL = SALES_EMAIL || "sales@untangledits.co.za";
 
 export default function QuotePage({
   onClose,
@@ -63,12 +76,11 @@ export default function QuotePage({
   const [copySuccess, setCopySuccess] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
 
-  // --- FIX: Store submitted items before clearing ---
+  // Keep submitted items after cart is cleared so success screen still works
   const [submittedItems, setSubmittedItems] = useState<
     { id: string; qty: number; kind: string; name: string }[]
   >([]);
 
-  // --- FIXED: Build summary using quote or saved submittedItems ---
   const buildSummary = () => {
     const itemsToUse = quote.length > 0 ? quote : submittedItems;
     const lines = itemsToUse.map((item) => {
@@ -88,11 +100,15 @@ export default function QuotePage({
       `Cell: ${details.cellphone}`,
       `Email: ${details.email}`,
       ...(details.company ? [`Company: ${details.company}`] : []),
+      ...(details.address ? [`Delivery address: ${details.address}`] : []),
+      ...(details.deliveryDate
+        ? [`Preferred delivery / site date: ${details.deliveryDate}`]
+        : []),
+      ...(details.siteNotes ? [`Site notes: ${details.siteNotes}`] : []),
       ...(details.message ? ["", `Additional Notes: ${details.message}`] : []),
     ].join("\n");
   };
 
-  // --- FIXED: Build full formatted quote text for email ---
   const buildFullQuoteText = () => {
     const itemsToUse = quote.length > 0 ? quote : submittedItems;
     const lines = itemsToUse.map((item) => {
@@ -123,6 +139,11 @@ export default function QuotePage({
       `Cell: ${details.cellphone}`,
       `Email: ${details.email}`,
       ...(details.company ? [`Company: ${details.company}`] : []),
+      ...(details.address ? [`Delivery address: ${details.address}`] : []),
+      ...(details.deliveryDate
+        ? [`Preferred delivery / site date: ${details.deliveryDate}`]
+        : []),
+      ...(details.siteNotes ? [`Site notes: ${details.siteNotes}`] : []),
       ...(details.message ? ["", "Additional Notes:", details.message] : []),
       "",
       "=".repeat(50),
@@ -132,16 +153,13 @@ export default function QuotePage({
     ].join("\n");
   };
 
-  // --- NEW: Copy ONLY the reference ---
   const handleCopyReference = async () => {
     if (!reference) return;
-    
     try {
       await navigator.clipboard.writeText(reference);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 3000);
-    } catch (err) {
-      // Fallback for older browsers
+    } catch {
       const textarea = document.createElement("textarea");
       textarea.value = reference;
       document.body.appendChild(textarea);
@@ -153,14 +171,13 @@ export default function QuotePage({
     }
   };
 
-  // --- KEEP: Full quote copy for email (if needed elsewhere) ---
   const handleCopyFullQuote = async () => {
     const text = buildFullQuoteText();
     try {
       await navigator.clipboard.writeText(text);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 3000);
-    } catch (err) {
+    } catch {
       const textarea = document.createElement("textarea");
       textarea.value = text;
       document.body.appendChild(textarea);
@@ -201,6 +218,11 @@ export default function QuotePage({
       newErrors.message = "Message is too long";
     }
 
+    // Address strongly recommended — soft require for delivery-capable items
+    if (details.address && details.address.trim().length > 200) {
+      newErrors.address = "Address is too long";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -217,7 +239,26 @@ export default function QuotePage({
     setApiError(null);
 
     try {
-      const API_BASE_URL = ((import.meta.env.VITE_API_URL ?? "/api").toString().trim() || "/api").replace(/\/$/, "");
+      const API_BASE_URL = (
+        (import.meta.env.VITE_API_URL ?? "/api").toString().trim() || "/api"
+      ).replace(/\/$/, "");
+
+      // Enrich items with optional catalogue price so operations can seed quotation
+      const items = quote.map((item) => {
+        const product = productById(item.id);
+        const note = specNotes[item.id] || "";
+        return {
+          id: item.id,
+          name: item.name,
+          kind: item.kind || "product",
+          qty: item.qty,
+          image: product?.image || null,
+          // Seed unit price when catalogue has a fixed price (null = quote-only)
+          price: product?.price ?? null,
+          specs: product?.specs || [],
+          note: note || undefined,
+        };
+      });
 
       const payload = {
         customerName: details.fullName.trim(),
@@ -225,22 +266,21 @@ export default function QuotePage({
         email: details.email.trim().toLowerCase(),
         phone: details.cellphone.trim(),
         notes: details.message?.trim() || "",
-        items: quote.map((item) => {
-          const product = productById(item.id);
-          return {
-            id: item.id,
-            name: item.name,
-            kind: item.kind || "product",
-            qty: item.qty,
-            image: product?.image || null,
-          };
-        }),
+        // Delivery / site fields — stops “Not provided” on the desktop
+        address: details.address?.trim() || "",
+        delivery_address: details.address?.trim() || "",
+        delivery_date: details.deliveryDate?.trim() || "",
+        preferred_delivery_date: details.deliveryDate?.trim() || "",
+        site_notes: details.siteNotes?.trim() || "",
+        items,
+        // Initial status for professional workflow
+        status: "received",
       };
 
       console.log("📤 Sending quote to API:", payload);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // cold start
+      const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       try {
         const response = await fetch(`${API_BASE_URL}/quotes`, {
@@ -265,22 +305,16 @@ export default function QuotePage({
 
         console.log("✅ Quote saved with reference:", data.reference);
 
-        // --- FIX: Save items BEFORE clearing ---
         setSubmittedItems([...quote]);
-
         setReference(data.reference);
 
-        // ============================================================
-        // OPEN MAILTO IN SAME WINDOW (NO NEW TAB)
-        // ============================================================
+        // Open mailto so the client also has a copy of the request
         const summary = buildSummary();
         const subject = `Quote Request ${data.reference} — ${details.fullName}`;
-        const body = summary;
-
         const mailtoUrl = `mailto:${QUOTE_EMAIL}?cc=${encodeURIComponent(
           details.email
         )}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(
-          body
+          summary
         )}`;
 
         window.location.href = mailtoUrl;
@@ -322,12 +356,8 @@ export default function QuotePage({
   };
 
   const handleBrowseStore = () => {
-    if (onNavigateToStore) {
-      onNavigateToStore();
-    }
-    if (onClose) {
-      onClose();
-    }
+    if (onNavigateToStore) onNavigateToStore();
+    if (onClose) onClose();
   };
 
   const handleSpecChange = (id: string, value: string) => {
@@ -345,8 +375,8 @@ export default function QuotePage({
           Quotation request sent
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Free and no-obligation. We'll come back to you with pricing within 24
-          hours.
+          Free and no-obligation. We&apos;ll come back to you with pricing within
+          24 hours.
         </p>
         {emailSent && (
           <p className="mt-1 text-xs text-green-600">
@@ -358,16 +388,13 @@ export default function QuotePage({
           <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Your quote reference
           </p>
-          <p className="text-2xl font-extrabold text-foreground">
-            {reference}
-          </p>
+          <p className="text-2xl font-extrabold text-foreground">{reference}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Keep this — use it with your email to track the quote.
           </p>
         </div>
 
         <div className="mt-4 flex flex-wrap justify-center gap-2">
-          {/* --- FIXED: Copy ONLY the reference --- */}
           <button
             onClick={handleCopyReference}
             className={`h-12 rounded-xl px-6 text-sm font-semibold transition-colors inline-flex items-center gap-2 ${
@@ -386,15 +413,19 @@ export default function QuotePage({
               </>
             )}
           </button>
+          <button
+            onClick={handleCopyFullQuote}
+            className="h-12 rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground hover:bg-muted inline-flex items-center gap-2"
+          >
+            <FileText className="h-4 w-4" /> Copy full request
+          </button>
         </div>
 
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
               if (onClose) onClose();
-              if (onNavigate) {
-                onNavigate("track-quote");
-              }
+              if (onNavigate) onNavigate("track-quote");
             }}
             className="h-12 rounded-xl bg-[#839705] px-6 text-sm font-semibold text-white hover:bg-[#98ab06] transition-colors"
           >
@@ -429,7 +460,7 @@ export default function QuotePage({
       </div>
       <h3 className="text-xl font-bold text-foreground">No items selected</h3>
       <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-        You haven't added any items to your quote request yet. Browse our
+        You haven&apos;t added any items to your quote request yet. Browse our
         products or refurbished devices to get started.
       </p>
 
@@ -503,10 +534,10 @@ export default function QuotePage({
       {quote.length > 0 && (
         <>
           <p className="mt-2 text-muted-foreground">
-            Step {step} of 3 · takes about 30 seconds.
+            Step {step} of 2 · takes about 45 seconds.
           </p>
           <div className="mt-4 flex gap-2" aria-hidden>
-            {[1, 2, 3].map((s) => (
+            {[1, 2].map((s) => (
               <span
                 key={s}
                 className={`h-1.5 flex-1 rounded-full ${
@@ -564,9 +595,9 @@ export default function QuotePage({
                         onClick={() => {
                           removeFromQuote(item.id);
                           setSpecNotes((prev) => {
-                            const newNotes = { ...prev };
-                            delete newNotes[item.id];
-                            return newNotes;
+                            const next = { ...prev };
+                            delete next[item.id];
+                            return next;
                           });
                         }}
                         className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-destructive transition-colors"
@@ -645,11 +676,11 @@ export default function QuotePage({
       {step === 2 && (
         <section className="mt-8">
           <h2 className="text-lg font-bold text-foreground">
-            Where should we send the quote?
+            Contact &amp; delivery details
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            We'll open your email client so you can send the quote request
-            directly.
+            Complete details help us prepare an accurate quotation the first
+            time — including delivery or site access where needed.
           </p>
           <form
             className="mt-4 space-y-4"
@@ -659,7 +690,10 @@ export default function QuotePage({
             }}
           >
             <div>
-              <label htmlFor="fullName" className="text-sm font-medium text-foreground">
+              <label
+                htmlFor="fullName"
+                className="text-sm font-medium text-foreground"
+              >
                 Full name *
               </label>
               <input
@@ -674,14 +708,15 @@ export default function QuotePage({
                 autoComplete="name"
               />
               {errors.fullName && (
-                <p className="mt-1 text-xs text-destructive">
-                  {errors.fullName}
-                </p>
+                <p className="mt-1 text-xs text-destructive">{errors.fullName}</p>
               )}
             </div>
 
             <div>
-              <label htmlFor="cellphone" className="text-sm font-medium text-foreground">
+              <label
+                htmlFor="cellphone"
+                className="text-sm font-medium text-foreground"
+              >
                 Cellphone (WhatsApp) *
               </label>
               <input
@@ -703,7 +738,10 @@ export default function QuotePage({
             </div>
 
             <div>
-              <label htmlFor="email" className="text-sm font-medium text-foreground">
+              <label
+                htmlFor="email"
+                className="text-sm font-medium text-foreground"
+              >
                 Email *
               </label>
               <input
@@ -723,7 +761,10 @@ export default function QuotePage({
             </div>
 
             <div>
-              <label htmlFor="company" className="text-sm font-medium text-foreground">
+              <label
+                htmlFor="company"
+                className="text-sm font-medium text-foreground"
+              >
                 Company (optional)
               </label>
               <input
@@ -737,10 +778,79 @@ export default function QuotePage({
                 autoComplete="organization"
               />
               {errors.company && (
-                <p className="mt-1 text-xs text-destructive">
-                  {errors.company}
-                </p>
+                <p className="mt-1 text-xs text-destructive">{errors.company}</p>
               )}
+            </div>
+
+            {/* Delivery / site — reduces “Awaiting Details” on the operations side */}
+            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-[#839705]" />
+                Delivery or site details
+              </p>
+              <p className="text-xs text-muted-foreground -mt-2">
+                Optional but recommended — we can quote delivery and schedule
+                accurately when this is filled in.
+              </p>
+
+              <div>
+                <label
+                  htmlFor="address"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Delivery / site address
+                </label>
+                <input
+                  id="address"
+                  type="text"
+                  value={details.address ?? ""}
+                  onChange={(e) => field("address", e.target.value)}
+                  placeholder="12 Smith Street, Sandton, Johannesburg"
+                  className={`mt-1.5 h-11 w-full rounded-lg border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${
+                    errors.address ? "border-destructive" : "border-border"
+                  }`}
+                  autoComplete="street-address"
+                />
+                {errors.address && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors.address}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="deliveryDate"
+                  className="text-sm font-medium text-foreground flex items-center gap-2"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  Preferred delivery / site date
+                </label>
+                <input
+                  id="deliveryDate"
+                  type="date"
+                  value={details.deliveryDate ?? ""}
+                  onChange={(e) => field("deliveryDate", e.target.value)}
+                  className="mt-1.5 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="siteNotes"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Access / site notes
+                </label>
+                <input
+                  id="siteNotes"
+                  type="text"
+                  value={details.siteNotes ?? ""}
+                  onChange={(e) => field("siteNotes", e.target.value)}
+                  placeholder="e.g. Access through the back gate, parking in basement"
+                  className="mt-1.5 h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
             </div>
 
             <div>
@@ -752,23 +862,21 @@ export default function QuotePage({
                 Anything else we should know?
               </label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Let us know about your timeline, delivery preferences, budget
-                range, or any special requirements.
+                Timeline, budget range, brand preferences, or special
+                requirements.
               </p>
               <textarea
                 id="message"
                 value={details.message ?? ""}
                 onChange={(e) => field("message", e.target.value)}
-                placeholder="e.g., Need delivery by end of month, prefer Dell over HP, budget is around R50,000..."
+                placeholder="e.g., Need delivery by end of month, prefer Dell over HP, budget around R50,000..."
                 className={`mt-1.5 w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 ${
                   errors.message ? "border-destructive" : "border-border"
                 }`}
                 rows={4}
               />
               {errors.message && (
-                <p className="mt-1 text-xs text-destructive">
-                  {errors.message}
-                </p>
+                <p className="mt-1 text-xs text-destructive">{errors.message}</p>
               )}
             </div>
 
@@ -786,12 +894,12 @@ export default function QuotePage({
                 className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-2 flex-1 sm:flex-none justify-center"
               >
                 <Mail className="h-5 w-5" />
-                {isSending ? "Opening email..." : "Open email client"}
+                {isSending ? "Sending..." : "Submit quote request"}
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Your quote will be saved with a reference number. We'll open your
-              email client so you can send the request.
+              Your quote is saved with a reference number. We&apos;ll open your
+              email client so you can send a copy of the request.
             </p>
           </form>
         </section>

@@ -1,0 +1,30 @@
+# Continuous checks on main / pull requests – no installer, no release.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run tests
+        run: python -m pytest tests/ -q --tb=short
+      - name: Import check
+        run: |
+          python -c "from app.__version__ import __version__; from app.utils.config import APP_VERSION; assert __version__==APP_VERSION; print(__version__)"
+          python -c "from app.services.backend_api_client import BackendAPIClient; from app.services.backend_auth_service import BackendAuthService; print('ok')"

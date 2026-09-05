@@ -1,1 +1,1 @@
-"""View layer for CustomTkinter screens."""
+"""Views package."""

@@ -1,35 +1,24 @@
 import { defineEventHandler } from 'h3';
-import { Product } from '../../db';
+import { Product } from '../../db/index.js';
 
 export default defineEventHandler(async (event) => {
   try {
-    const id = event.context.params?.id;
-    
+    const id = event.context.params?.id?.trim();
     if (!id) {
-      return {
-        success: false,
-        error: 'Product ID is required',
-      };
+      event.node.res.statusCode = 400;
+      return { success: false, error: 'Product ID is required' };
     }
-    
-    const product = await Product.findOne({ id }).lean();
-    
+
+    const product = await Product.findOne({ id }).lean().exec();
     if (!product) {
-      return {
-        success: false,
-        error: 'Product not found',
-      };
+      event.node.res.statusCode = 404;
+      return { success: false, error: 'Product not found' };
     }
-    
-    return {
-      success: true,
-      data: product,
-    };
+
+    return { success: true, data: product };
   } catch (error) {
     console.error('Error fetching product:', error);
-    return {
-      success: false,
-      error: 'Failed to fetch product',
-    };
+    event.node.res.statusCode = 500;
+    return { success: false, error: 'Failed to fetch product' };
   }
 });

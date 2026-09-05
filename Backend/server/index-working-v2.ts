@@ -5,6 +5,10 @@ import crypto from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { config as sharedConfig, assertProductionConfig } from './config/index.js';
+import { securityMiddleware, rateLimitOrNull } from './middleware/security.js';
+import { performanceMiddleware } from './middleware/performance.js';
+import { createQuoteService } from './services/quote.service.js';
 
 // Load environment variables
 dotenv.config();
@@ -28,17 +32,16 @@ console.log(`   FRONTEND_URL: ${config.frontendUrl}`);
 console.log(`   NODE_ENV: ${config.nodeEnv}`);
 
 // ============================================
-// MONGODB MODELS - UPDATED
+// MONGODB MODELS
 // ============================================
 
 const quoteSchema = new mongoose.Schema({
-  reference: { type: String, unique: true, required: true, index: true },
+  reference: { type: String, unique: true, required: true },
   customerName: { type: String, required: true },
   company: String,
-  email: { type: String, required: true, index: true },
+  email: { type: String, required: true },
   phone: { type: String, required: true },
   notes: String,
-
   items: [{
     id: String,
     name: String,
@@ -46,174 +49,113 @@ const quoteSchema = new mongoose.Schema({
     qty: Number,
     image: String
   }],
-
-  status: {
-    type: String,
-    enum: [
-      'received',
-      'in_review',
-      'quoted',
-      'closed',
-      'pending',
-      'waiting_feedback',
-      'in_touch',
-      'approved',
-      'payment',
-      'assigned',
-      'accepted',
-      'in_progress',
-      'awaiting_client',
-      'awaiting_payment',
-      'paid',
-      'completed',
-      'returned'
-    ],
+  status: { 
+    type: String, 
+    enum: ['received', 'in_review', 'quoted', 'closed', 'pending', 'waiting_feedback', 'in_touch', 'approved', 'payment'],
     default: 'received'
   },
-
   replyMessage: String,
   repliedAt: Date,
   createdAt: { type: Date, default: Date.now },
-
-  // Assignment
-  assigned_to: { type: mongoose.Schema.Types.Mixed, default: null, index: true },
-  assigned_name: { type: String, default: null },
-  assigned_by: { type: mongoose.Schema.Types.Mixed, default: null },
-  assigned_at: { type: Date, default: null },
-
-  // Missing client information
-  missing_details: {
-    type: [String],
-    default: []
-  },
-
-  // Payment
   paymentRequired: { type: Boolean, default: false },
-  paymentAmount: Number,
-  paymentStatus: {
-    type: String,
+  paymentAmount: { type: Number },
+  paymentStatus: { 
+    type: String, 
     enum: ['pending', 'paid', 'failed'],
     default: 'pending'
   },
-  paymentReference: String,
-  paymentReady: { type: Boolean, default: false },
-
-  // Feedback
+  paymentReference: { type: String },
   feedback: {
     rating: { type: Number, min: 1, max: 5 },
-    comment: String,
+    comment: { type: String },
     submitted: { type: Boolean, default: false },
-    submittedAt: Date
+    submittedAt: { type: Date }
   }
 });
 
+// ✅ FIXED: Removed orderId - using reference as unique identifier
 const orderSchema = new mongoose.Schema({
   reference: { type: String, unique: true, required: true, index: true },
-
   customerName: { type: String, required: true },
   company: String,
   email: { type: String, required: true, index: true },
   phone: { type: String, required: true },
   address: { type: String, required: true },
   notes: String,
-
   items: [{
     id: String,
     name: String,
     qty: Number,
     price: Number
   }],
-
   total: { type: Number, required: true },
-
-  status: {
-    type: String,
-    enum: [
-      'pending',
-      'confirmed',
-      'processing',
-      'assigned',
-      'awaiting_client',
-      'awaiting_payment',
-      'ready_for_collection',
-      'shipped',
-      'delivered',
-      'completed',
-      'cancelled'
-    ],
+  status: { 
+    type: String, 
+    enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'],
     default: 'pending'
   },
-
   trackingNumber: String,
   carrier: String,
   estimatedDelivery: Date,
-
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-
-  // Assignment
-  assigned_to: { type: mongoose.Schema.Types.Mixed, default: null, index: true },
-  assigned_name: { type: String, default: null },
-  assigned_by: { type: mongoose.Schema.Types.Mixed, default: null },
-  assigned_at: { type: Date, default: null },
-
-  // Missing details requested from client
-  missing_details: {
-    type: [String],
-    default: []
-  },
-
-  // Workflow
-  stockAvailable: { type: Boolean, default: false },
-  paymentReady: { type: Boolean, default: false }
-});
-
-// Message schemas
-const quoteMessageSchema = new mongoose.Schema({
-  quoteReference: { type: String, required: true, index: true },
-  senderType: String,
-  senderName: String,
-  recipientType: String,
-  message: String,
-  read: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const orderMessageSchema = new mongoose.Schema({
-  orderReference: { type: String, required: true, index: true },
-  senderType: String,
-  senderName: String,
-  recipientType: String,
-  message: String,
-  read: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const internalMessageSchema = new mongoose.Schema({
-  reference: String,
-  referenceType: {
-    type: String,
-    enum: ['quote', 'order']
-  },
-  sender: String,
-  recipient: String,
-  message: String,
-  read: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now }
 });
 
 // Create models
 const Quote = mongoose.models.Quote || mongoose.model('Quote', quoteSchema);
 const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
-const QuoteMessage = mongoose.models.QuoteMessage || mongoose.model('QuoteMessage', quoteMessageSchema);
-const OrderMessage = mongoose.models.OrderMessage || mongoose.model('OrderMessage', orderMessageSchema);
-const InternalMessage = mongoose.models.InternalMessage || mongoose.model('InternalMessage', internalMessageSchema);
 
 // ============================================
 // CONNECT TO MONGODB
 // ============================================
 
 let isMongoConnected = false;
+
+
+async function ensurePerformanceIndexes() {
+  const db = mongoose.connection.db;
+  if (!db) return;
+
+  // Atlas may already contain indexes created by the previous API version.
+  // Match indexes by key pattern before creating anything, so a different
+  // index name (for example status_1 vs approvals_status_1) never causes
+  // IndexOptionsConflict and never forces the API into in-memory mode.
+  const ensureIndex = async (collectionName: string, keys: Record<string, 1 | -1>, name: string) => {
+    const collection = db.collection(collectionName);
+    const existing = await collection.listIndexes().toArray();
+    const key = JSON.stringify(keys);
+    const sameKey = existing.find((index: any) => JSON.stringify(index.key) === key);
+    if (sameKey) return sameKey.name;
+    try {
+      return await collection.createIndex(keys, { name });
+    } catch (error: any) {
+      // Another API process may create the same index at the same time.
+      // Treat an existing equivalent index as success instead of falling
+      // back to in-memory storage.
+      if (error?.code === 85 || error?.codeName === 'IndexOptionsConflict' || error?.codeName === 'IndexKeySpecsConflict') {
+        const after = await collection.listIndexes().toArray();
+        const equivalent = after.find((index: any) => JSON.stringify(index.key) === key);
+        if (equivalent) return equivalent.name;
+      }
+      throw error;
+    }
+  };
+
+  await Promise.all([
+    ensureIndex('users', { username: 1 }, 'users_username_1'),
+    ensureIndex('users', { email: 1 }, 'users_email_1'),
+    ensureIndex('users', { employee_id: 1 }, 'users_employee_id_1'),
+    ensureIndex('api_sessions', { token: 1 }, 'api_sessions_token_1'),
+    ensureIndex('api_sessions', { user_id: 1, status: 1 }, 'api_sessions_user_status'),
+    ensureIndex('employees', { employee_id: 1 }, 'employees_employee_id_1'),
+    ensureIndex('employees', { email: 1 }, 'employees_email_1'),
+    ensureIndex('employees', { status: 1 }, 'employees_status_1'),
+    ensureIndex('attendance', { employee_id: 1, work_date: 1 }, 'attendance_employee_date'),
+    ensureIndex('attendance', { work_date: 1, clock_out_at: 1, status: 1 }, 'attendance_open_today'),
+    ensureIndex('work_assignments', { due_date: 1, status: 1 }, 'work_due_status'),
+    ensureIndex('approvals', { status: 1 }, 'approvals_status_1'),
+  ]);
+}
 
 async function connectDB() {
   try {
@@ -230,11 +172,20 @@ async function connectDB() {
     console.log(`🔗 Using URI: ${maskedUri}`);
     
     const mongoOptions: any = {
-      serverSelectionTimeoutMS: 8000,
-      socketTimeoutMS: 10000,
-      tls: true,
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
+      maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE || 20),
+      minPoolSize: Number(process.env.MONGODB_MIN_POOL_SIZE || 5),
+      maxIdleTimeMS: Number(process.env.MONGODB_MAX_IDLE_TIME_MS || 30000),
+      serverSelectionTimeoutMS: Number(process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS || 5000),
+      socketTimeoutMS: Number(process.env.MONGODB_SOCKET_TIMEOUT_MS || 10000),
+      connectTimeoutMS: Number(process.env.MONGODB_CONNECT_TIMEOUT_MS || 5000),
+      family: 4,
+      // Local MongoDB does not use TLS; Atlas SRV connections can enable it via
+      // the connection URI itself. Keep TLS configurable instead of forcing it.
+      ...(process.env.MONGODB_TLS === 'true' ? {
+        tls: true,
+        tlsAllowInvalidCertificates: false,
+        tlsAllowInvalidHostnames: false,
+      } : {}),
     };
 
     console.log('🔧 Connection options:', {
@@ -245,6 +196,7 @@ async function connectDB() {
     });
 
     await mongoose.connect(config.mongoUri, mongoOptions);
+    await ensurePerformanceIndexes();
     
     isMongoConnected = true;
     console.log('✅ MongoDB connected successfully');
@@ -269,24 +221,13 @@ async function connectDB() {
 
 const app = createApp();
 
-// CORS middleware
+// Security middleware (CORS allow-list + security headers)
 app.use(eventHandler(async (event) => {
-  const origin = event.node.req.headers.origin || '';
-  const allowedOrigins = [config.frontendUrl, 'http://localhost:5173', 'http://localhost:5174'];
-  
-  if (allowedOrigins.includes(origin) || config.nodeEnv === 'development') {
-    event.node.res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  }
-  
-  event.node.res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  event.node.res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  event.node.res.setHeader('Access-Control-Allow-Credentials', 'true');
-  
-  if (event.method === 'OPTIONS') {
-    event.node.res.statusCode = 200;
-    event.node.res.end();
-    return;
-  }
+  await securityMiddleware(event);
+}));
+
+app.use(eventHandler((event) => {
+  performanceMiddleware(event);
 }));
 
 // Health check
@@ -307,7 +248,6 @@ app.use('/api/health', eventHandler(() => ({
 
 const inMemoryQuotes: any[] = [];
 const inMemoryOrders: any[] = [];
-const inMemoryMessages: any[] = [];
 
 // ============================================
 // HELPERS
@@ -353,111 +293,43 @@ function extractPaymentAmount(replyMessage: string): number | null {
   return null;
 }
 
+
+// ============================================
+// QUOTE SERVICE (extracted business logic)
+// ============================================
+
+const quoteService = createQuoteService({
+  QuoteModel: Quote,
+  isMongoConnected: () => isMongoConnected,
+  inMemoryQuotes,
+  generateReference,
+  extractPaymentAmount,
+});
+
 // ============================================
 // TRACK QUOTE API - MUST COME FIRST BEFORE /api/quotes
 // ============================================
 
 app.use('/api/quotes/track', eventHandler(async (event) => {
+  const limited = rateLimitOrNull(event, 'track');
+  if (limited) {
+    event.node.res.statusCode = limited.statusCode;
+    return limited.body;
+  }
+
   console.log(`🔍 Track quote request received: ${event.method}`);
-  
+
   try {
     const url = new URL(event.node.req.url || '', `http://${event.node.req.headers.host}`);
-    const ref = url.searchParams.get('ref');
-    const email = url.searchParams.get('email');
-    
-    console.log(`🔍 ===== TRACK QUOTE REQUEST =====`);
-    console.log(`🔍 Reference: ${ref}`);
-    console.log(`🔍 Email: ${email}`);
-    
-    if (!ref || !email) {
-      return {
-        success: false,
-        error: 'Reference and email are required',
-        quote: null
-      };
+    const ref = url.searchParams.get('ref') || '';
+    const email = url.searchParams.get('email') || '';
+
+    const result = await quoteService.trackQuote(ref, email);
+    if (!result.ok) {
+      if (result.status) event.node.res.statusCode = result.status;
+      return { success: false, error: result.error, quote: null };
     }
-    
-    const cleanRef = ref.trim().toUpperCase();
-    const cleanEmail = email.trim().toLowerCase();
-    
-    console.log(`🔍 Cleaned Reference: ${cleanRef}`);
-    console.log(`🔍 Cleaned Email: ${cleanEmail}`);
-    console.log(`🔍 MongoDB connected: ${isMongoConnected}`);
-    
-    let quote = null;
-    
-    if (isMongoConnected) {
-      console.log(`🔍 Searching MongoDB for quote...`);
-      quote = await Quote.findOne({ reference: cleanRef, email: cleanEmail });
-      
-      if (quote) {
-        console.log(`✅ Found exact match: ${quote.reference}`);
-      }
-    }
-    
-    if (!quote) {
-      quote = inMemoryQuotes.find(q => q.reference === cleanRef && q.email === cleanEmail);
-      if (quote) {
-        console.log(`✅ Found in-memory match: ${quote.reference}`);
-      }
-    }
-    
-    if (!quote) {
-      console.log(`❌ Quote NOT FOUND: ${cleanRef} | ${cleanEmail}`);
-      return {
-        success: false,
-        error: 'Quote not found. Check your reference and email.',
-        quote: null
-      };
-    }
-    
-    console.log(`✅ ===== QUOTE FOUND =====`);
-    console.log(`✅ Reference: ${quote.reference}`);
-    console.log(`✅ Customer: ${quote.customerName}`);
-    console.log(`✅ Status: ${quote.status}`);
-    console.log(`✅ Items: ${quote.items.length}`);
-    
-    let paymentRequired = quote.paymentRequired || false;
-    let paymentAmount = quote.paymentAmount || 0;
-    
-    if (!paymentRequired && quote.replyMessage) {
-      const extractedAmount = extractPaymentAmount(quote.replyMessage);
-      if (extractedAmount) {
-        paymentRequired = true;
-        paymentAmount = extractedAmount;
-        console.log(`💰 Auto-extracted payment amount: R${extractedAmount}`);
-      }
-    }
-    
-    return {
-      success: true,
-      quote: {
-        id: quote._id?.toString() || `mem_${Date.now()}`,
-        reference: quote.reference,
-        customerName: quote.customerName,
-        email: quote.email,
-        phone: quote.phone,
-        status: quote.status,
-        items: quote.items.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          qty: item.qty,
-          image: item.image || null
-        })),
-        replyMessage: quote.replyMessage || null,
-        repliedAt: quote.repliedAt || null,
-        createdAt: quote.createdAt,
-        paymentRequired: paymentRequired,
-        paymentAmount: paymentAmount,
-        paymentStatus: quote.paymentStatus || 'pending',
-        paymentReady: quote.paymentReady || false,
-        feedback: quote.feedback || null,
-        assigned_to: quote.assigned_to || null,
-        assigned_name: quote.assigned_name || null,
-        assigned_at: quote.assigned_at || null,
-        missing_details: quote.missing_details || []
-      }
-    };
+    return { success: true, quote: result.quote };
   } catch (error) {
     console.error('❌ Error tracking quote:', error);
     return {
@@ -473,115 +345,56 @@ app.use('/api/quotes/track', eventHandler(async (event) => {
 // ============================================
 
 app.use('/api/quotes', eventHandler(async (event) => {
+  const limited = rateLimitOrNull(event, 'write');
+  if (limited) {
+    event.node.res.statusCode = limited.statusCode;
+    return limited.body;
+  }
+
   console.log(`📋 Quotes request received: ${event.method}`);
-  
+
   // Handle POST - Create quote
   if (event.method === 'POST') {
     try {
       const body = await readBody(event);
       console.log('📥 Quote received:', JSON.stringify(body, null, 2));
-      
-      const { customerName, company, email, phone, notes, items } = body;
-      
-      if (!customerName || !email || !phone || !items || items.length === 0) {
-        return { success: false, error: 'Missing required fields' };
+
+      const result = await quoteService.createQuote({
+        customerName: body.customerName,
+        company: body.company,
+        email: body.email,
+        phone: body.phone,
+        notes: body.notes,
+        items: body.items || [],
+      });
+
+      if (!result.ok) {
+        if (result.status) event.node.res.statusCode = result.status;
+        return { success: false, error: result.error };
       }
-      
-      const reference = generateReference('UQ');
-      console.log(`🔑 Generated reference: ${reference}`);
-      
-      const quoteData = {
-        reference,
-        customerName,
-        company: company || '',
-        email: email.toLowerCase().trim(),
-        phone,
-        notes: notes || '',
-        items: items.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          kind: item.kind || 'product',
-          qty: item.qty,
-          image: item.image || null
-        })),
-        status: 'received',
-        paymentRequired: false,
-        paymentAmount: 0,
-        paymentStatus: 'pending',
-        paymentReady: false,
-        feedback: { submitted: false },
-        missing_details: [],
-        assigned_to: null,
-        assigned_name: null,
-        assigned_by: null,
-        assigned_at: null
-      };
-      
-      let savedQuote;
-      
-      if (isMongoConnected) {
-        try {
-          const quote = new Quote(quoteData);
-          savedQuote = await quote.save();
-          console.log(`✅ Quote SAVED TO MONGODB with reference: ${reference}`);
-        } catch (dbError) {
-          console.error('❌ Failed to save to MongoDB:', dbError);
-          savedQuote = { ...quoteData, _id: `mem_${Date.now()}` };
-          inMemoryQuotes.push(savedQuote);
-          console.log(`💾 Quote saved in-memory: ${reference}`);
-        }
-      } else {
-        savedQuote = { ...quoteData, _id: `mem_${Date.now()}` };
-        inMemoryQuotes.push(savedQuote);
-        console.log(`💾 Quote saved in-memory: ${reference}`);
-      }
-      
-      return { success: true, reference: savedQuote.reference };
+      console.log(`🔑 Generated reference: ${result.reference}`);
+      return { success: true, reference: result.reference };
     } catch (error) {
       console.error('❌ Error:', error);
       return { success: false, error: 'Failed to process quote' };
     }
   }
-  
+
   // Handle GET - List all quotes
   if (event.method === 'GET') {
     try {
-      let quotes = [];
-      if (isMongoConnected) {
-        quotes = await Quote.find({}).sort({ createdAt: -1 }).limit(50).lean();
-        console.log(`📋 Found ${quotes.length} quotes in MongoDB`);
-      } else {
-        quotes = inMemoryQuotes;
-        console.log(`📋 Found ${quotes.length} quotes in memory`);
-      }
-      
+      const result = await quoteService.listQuotes(50);
       return {
         success: true,
-        count: quotes.length,
-        quotes: quotes.map(q => ({
-          reference: q.reference,
-          customerName: q.customerName,
-          email: q.email,
-          status: q.status,
-          createdAt: q.createdAt,
-          items: q.items,
-          paymentRequired: q.paymentRequired || false,
-          paymentAmount: q.paymentAmount || 0,
-          paymentStatus: q.paymentStatus || 'pending',
-          paymentReady: q.paymentReady || false,
-          feedback: q.feedback || { submitted: false },
-          replyMessage: q.replyMessage || null,
-          assigned_to: q.assigned_to || null,
-          assigned_name: q.assigned_name || null,
-          missing_details: q.missing_details || []
-        }))
+        count: result.count,
+        quotes: result.quotes,
       };
     } catch (error) {
       console.error('❌ Error fetching quotes:', error);
       return { success: false, error: 'Failed to fetch quotes' };
     }
   }
-  
+
   return { success: false, error: 'Method not allowed' };
 }));
 
@@ -590,6 +403,12 @@ app.use('/api/quotes', eventHandler(async (event) => {
 // ============================================
 
 app.use('/api/orders/track', eventHandler(async (event) => {
+  const limited = rateLimitOrNull(event, 'track');
+  if (limited) {
+    event.node.res.statusCode = limited.statusCode;
+    return limited.body;
+  }
+
   console.log(`🔍 Track order request received: ${event.method}`);
   
   try {
@@ -694,11 +513,6 @@ app.use('/api/orders/track', eventHandler(async (event) => {
         estimatedDelivery: order.estimatedDelivery || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt || order.createdAt,
-        assigned_to: order.assigned_to || null,
-        assigned_name: order.assigned_name || null,
-        missing_details: order.missing_details || [],
-        stockAvailable: order.stockAvailable || false,
-        paymentReady: order.paymentReady || false
       }
     };
   } catch (error) {
@@ -716,6 +530,12 @@ app.use('/api/orders/track', eventHandler(async (event) => {
 // ============================================
 
 app.use('/api/orders', eventHandler(async (event) => {
+  const limited = rateLimitOrNull(event, 'write');
+  if (limited) {
+    event.node.res.statusCode = limited.statusCode;
+    return limited.body;
+  }
+
   console.log(`📋 Orders request received: ${event.method}`);
   
   // Handle GET - List all orders
@@ -738,14 +558,18 @@ app.use('/api/orders', eventHandler(async (event) => {
         orders: orders.map(o => ({
           reference: o.reference,
           customerName: o.customerName,
+          company: o.company || '',
           email: o.email,
+          phone: o.phone || '',
+          address: o.address || '',
+          notes: o.notes || '',
           status: o.status,
           total: o.total,
           createdAt: o.createdAt,
+          updatedAt: o.updatedAt || o.createdAt,
           items: o.items,
-          assigned_to: o.assigned_to || null,
-          assigned_name: o.assigned_name || null,
-          missing_details: o.missing_details || []
+          trackingNumber: o.trackingNumber || null,
+          carrier: o.carrier || null
         }))
       };
     } catch (error) {
@@ -786,14 +610,7 @@ app.use('/api/orders', eventHandler(async (event) => {
           price: item.price || 0
         })),
         total: total || 0,
-        status: 'pending',
-        assigned_to: null,
-        assigned_name: null,
-        assigned_by: null,
-        assigned_at: null,
-        missing_details: [],
-        stockAvailable: false,
-        paymentReady: false
+        status: 'pending'
       };
       
       let savedOrder;
@@ -830,434 +647,6 @@ app.use('/api/orders', eventHandler(async (event) => {
     success: false,
     error: `Method ${event.method} not allowed for /api/orders`
   };
-}));
-
-// ============================================
-// ASSIGNMENT ENDPOINTS
-// ============================================
-
-// Assign a quote to an employee
-app.use('/api/quotes/:reference/assign', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    const body = await readBody(event);
-    const { assigned_to, assigned_name, assigned_by } = body;
-
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    if (!assigned_to) {
-      return { success: false, error: 'assigned_to is required' };
-    }
-
-    let quote = null;
-
-    if (isMongoConnected) {
-      quote = await Quote.findOne({ reference: reference.toUpperCase() });
-      
-      if (!quote) {
-        return { success: false, error: 'Quote not found' };
-      }
-
-      quote.assigned_to = assigned_to;
-      quote.assigned_name = assigned_name || null;
-      quote.assigned_by = assigned_by || null;
-      quote.assigned_at = new Date();
-      
-      // Update status if currently 'received' or 'in_review'
-      if (quote.status === 'received' || quote.status === 'in_review') {
-        quote.status = 'assigned';
-      }
-
-      await quote.save();
-      console.log(`✅ Quote ${reference} assigned to ${assigned_name || assigned_to}`);
-    } else {
-      // In-memory fallback
-      quote = inMemoryQuotes.find(q => q.reference === reference.toUpperCase());
-      if (!quote) {
-        return { success: false, error: 'Quote not found' };
-      }
-      quote.assigned_to = assigned_to;
-      quote.assigned_name = assigned_name || null;
-      quote.assigned_by = assigned_by || null;
-      quote.assigned_at = new Date();
-      if (quote.status === 'received' || quote.status === 'in_review') {
-        quote.status = 'assigned';
-      }
-    }
-
-    return {
-      success: true,
-      message: 'Quote assigned successfully',
-      quote: {
-        reference: quote.reference,
-        assigned_to: quote.assigned_to,
-        assigned_name: quote.assigned_name,
-        assigned_at: quote.assigned_at,
-        status: quote.status
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error assigning quote:', error);
-    return { success: false, error: 'Failed to assign quote' };
-  }
-}));
-
-// Assign an order to an employee
-app.use('/api/orders/:reference/assign', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    const body = await readBody(event);
-    const { assigned_to, assigned_name, assigned_by } = body;
-
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    if (!assigned_to) {
-      return { success: false, error: 'assigned_to is required' };
-    }
-
-    let order = null;
-
-    if (isMongoConnected) {
-      order = await Order.findOne({ reference: reference.toUpperCase() });
-      
-      if (!order) {
-        return { success: false, error: 'Order not found' };
-      }
-
-      order.assigned_to = assigned_to;
-      order.assigned_name = assigned_name || null;
-      order.assigned_by = assigned_by || null;
-      order.assigned_at = new Date();
-      
-      // Update status if currently 'pending' or 'confirmed'
-      if (order.status === 'pending' || order.status === 'confirmed') {
-        order.status = 'assigned';
-      }
-
-      await order.save();
-      console.log(`✅ Order ${reference} assigned to ${assigned_name || assigned_to}`);
-    } else {
-      // In-memory fallback
-      order = inMemoryOrders.find(o => o.reference === reference.toUpperCase());
-      if (!order) {
-        return { success: false, error: 'Order not found' };
-      }
-      order.assigned_to = assigned_to;
-      order.assigned_name = assigned_name || null;
-      order.assigned_by = assigned_by || null;
-      order.assigned_at = new Date();
-      if (order.status === 'pending' || order.status === 'confirmed') {
-        order.status = 'assigned';
-      }
-    }
-
-    return {
-      success: true,
-      message: 'Order assigned successfully',
-      order: {
-        reference: order.reference,
-        assigned_to: order.assigned_to,
-        assigned_name: order.assigned_name,
-        assigned_at: order.assigned_at,
-        status: order.status
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error assigning order:', error);
-    return { success: false, error: 'Failed to assign order' };
-  }
-}));
-
-// ============================================
-// MESSAGING ENDPOINTS
-// ============================================
-
-// Get messages for a quote
-app.use('/api/quotes/:reference/messages', eventHandler(async (event) => {
-  if (event.method !== 'GET') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    let messages = [];
-
-    if (isMongoConnected) {
-      messages = await QuoteMessage.find({ quoteReference: reference.toUpperCase() })
-        .sort({ createdAt: 1 })
-        .lean();
-    } else {
-      messages = inMemoryMessages.filter(m => 
-        m.referenceType === 'quote' && m.reference === reference.toUpperCase()
-      );
-    }
-
-    return {
-      success: true,
-      messages: messages.map(m => ({
-        id: m._id?.toString() || m.id,
-        senderType: m.senderType,
-        senderName: m.senderName,
-        recipientType: m.recipientType,
-        message: m.message,
-        read: m.read || false,
-        createdAt: m.createdAt
-      }))
-    };
-  } catch (error) {
-    console.error('❌ Error fetching messages:', error);
-    return { success: false, error: 'Failed to fetch messages' };
-  }
-}));
-
-// Send a message for a quote
-app.use('/api/quotes/:reference/messages', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    const body = await readBody(event);
-    const { senderType, senderName, recipientType, message } = body;
-
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    if (!message || !senderType || !senderName) {
-      return { success: false, error: 'Message, senderType, and senderName are required' };
-    }
-
-    let savedMessage;
-
-    if (isMongoConnected) {
-      // Verify quote exists
-      const quote = await Quote.findOne({ reference: reference.toUpperCase() });
-      if (!quote) {
-        return { success: false, error: 'Quote not found' };
-      }
-
-      const msgData = {
-        quoteReference: reference.toUpperCase(),
-        senderType,
-        senderName,
-        recipientType: recipientType || 'employee',
-        message,
-        read: false,
-        createdAt: new Date()
-      };
-
-      const msg = new QuoteMessage(msgData);
-      savedMessage = await msg.save();
-      console.log(`✅ Message saved for quote ${reference}`);
-    } else {
-      // In-memory fallback
-      savedMessage = {
-        id: `msg_${Date.now()}`,
-        referenceType: 'quote',
-        reference: reference.toUpperCase(),
-        senderType,
-        senderName,
-        recipientType: recipientType || 'employee',
-        message,
-        read: false,
-        createdAt: new Date()
-      };
-      inMemoryMessages.push(savedMessage);
-    }
-
-    return {
-      success: true,
-      message: 'Message sent',
-      data: {
-        id: savedMessage._id?.toString() || savedMessage.id,
-        senderType: savedMessage.senderType,
-        senderName: savedMessage.senderName,
-        recipientType: savedMessage.recipientType,
-        message: savedMessage.message,
-        createdAt: savedMessage.createdAt
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error sending message:', error);
-    return { success: false, error: 'Failed to send message' };
-  }
-}));
-
-// Mark quote messages as read
-app.use('/api/quotes/:reference/messages/read', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    const body = await readBody(event);
-    const { messageIds } = body;
-
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    if (!messageIds || !Array.isArray(messageIds) || messageIds.length === 0) {
-      return { success: false, error: 'messageIds array is required' };
-    }
-
-    if (isMongoConnected) {
-      await QuoteMessage.updateMany(
-        { 
-          quoteReference: reference.toUpperCase(),
-          _id: { $in: messageIds }
-        },
-        { $set: { read: true } }
-      );
-    } else {
-      inMemoryMessages
-        .filter(m => m.reference === reference.toUpperCase() && messageIds.includes(m.id))
-        .forEach(m => m.read = true);
-    }
-
-    return { success: true, message: 'Messages marked as read' };
-  } catch (error) {
-    console.error('❌ Error marking messages as read:', error);
-    return { success: false, error: 'Failed to mark messages as read' };
-  }
-}));
-
-// Get messages for an order
-app.use('/api/orders/:reference/messages', eventHandler(async (event) => {
-  if (event.method !== 'GET') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    let messages = [];
-
-    if (isMongoConnected) {
-      messages = await OrderMessage.find({ orderReference: reference.toUpperCase() })
-        .sort({ createdAt: 1 })
-        .lean();
-    } else {
-      messages = inMemoryMessages.filter(m => 
-        m.referenceType === 'order' && m.reference === reference.toUpperCase()
-      );
-    }
-
-    return {
-      success: true,
-      messages: messages.map(m => ({
-        id: m._id?.toString() || m.id,
-        senderType: m.senderType,
-        senderName: m.senderName,
-        recipientType: m.recipientType,
-        message: m.message,
-        read: m.read || false,
-        createdAt: m.createdAt
-      }))
-    };
-  } catch (error) {
-    console.error('❌ Error fetching messages:', error);
-    return { success: false, error: 'Failed to fetch messages' };
-  }
-}));
-
-// Send a message for an order
-app.use('/api/orders/:reference/messages', eventHandler(async (event) => {
-  if (event.method !== 'POST') {
-    return { success: false, error: 'Method not allowed' };
-  }
-
-  try {
-    const reference = event.context.params?.reference;
-    const body = await readBody(event);
-    const { senderType, senderName, recipientType, message } = body;
-
-    if (!reference) {
-      return { success: false, error: 'Reference is required' };
-    }
-
-    if (!message || !senderType || !senderName) {
-      return { success: false, error: 'Message, senderType, and senderName are required' };
-    }
-
-    let savedMessage;
-
-    if (isMongoConnected) {
-      // Verify order exists
-      const order = await Order.findOne({ reference: reference.toUpperCase() });
-      if (!order) {
-        return { success: false, error: 'Order not found' };
-      }
-
-      const msgData = {
-        orderReference: reference.toUpperCase(),
-        senderType,
-        senderName,
-        recipientType: recipientType || 'employee',
-        message,
-        read: false,
-        createdAt: new Date()
-      };
-
-      const msg = new OrderMessage(msgData);
-      savedMessage = await msg.save();
-      console.log(`✅ Message saved for order ${reference}`);
-    } else {
-      // In-memory fallback
-      savedMessage = {
-        id: `msg_${Date.now()}`,
-        referenceType: 'order',
-        reference: reference.toUpperCase(),
-        senderType,
-        senderName,
-        recipientType: recipientType || 'employee',
-        message,
-        read: false,
-        createdAt: new Date()
-      };
-      inMemoryMessages.push(savedMessage);
-    }
-
-    return {
-      success: true,
-      message: 'Message sent',
-      data: {
-        id: savedMessage._id?.toString() || savedMessage.id,
-        senderType: savedMessage.senderType,
-        senderName: savedMessage.senderName,
-        recipientType: savedMessage.recipientType,
-        message: savedMessage.message,
-        createdAt: savedMessage.createdAt
-      }
-    };
-  } catch (error) {
-    console.error('❌ Error sending message:', error);
-    return { success: false, error: 'Failed to send message' };
-  }
 }));
 
 // ============================================
@@ -1312,7 +701,6 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
         quote.paymentReference = paymentRef;
         quote.paymentStatus = 'pending';
         quote.status = 'payment';
-        quote.paymentReady = true;
         await quote.save();
         
         const paymentUrl = `${config.frontendUrl}/payment/${paymentRef}`;
@@ -1340,7 +728,6 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
             paymentRequired: quote.paymentRequired || false,
             paymentAmount: quote.paymentAmount || 0,
             paymentStatus: quote.paymentStatus || 'pending',
-            paymentReady: quote.paymentReady || false,
             feedback: quote.feedback || null
           }
         };
@@ -1390,11 +777,9 @@ app.use('/api/payment/webhook', eventHandler(async (event) => {
           if (status === 'completed' || status === 'paid') {
             quote.paymentStatus = 'paid';
             quote.status = 'payment';
-            quote.paymentReady = true;
           } else if (status === 'failed' || status === 'cancelled') {
             quote.paymentStatus = 'failed';
             quote.status = 'quoted';
-            quote.paymentReady = false;
           }
           
           await quote.save();
@@ -1450,7 +835,6 @@ app.use('/api/payment/simulate/:reference', eventHandler(async (event) => {
         
         quote.paymentStatus = 'paid';
         quote.status = 'payment';
-        quote.paymentReady = true;
         await quote.save();
         
         console.log(`✅ Payment simulated for ${reference}: PAID`);
@@ -1462,8 +846,7 @@ app.use('/api/payment/simulate/:reference', eventHandler(async (event) => {
         quote: quote ? {
           reference: quote.reference,
           paymentStatus: quote.paymentStatus,
-          status: quote.status,
-          paymentReady: quote.paymentReady
+          status: quote.status
         } : null
       };
     } catch (error) {
@@ -1555,7 +938,6 @@ app.use('/api/quotes/feedback', eventHandler(async (event) => {
           paymentRequired: quote.paymentRequired || false,
           paymentAmount: quote.paymentAmount || 0,
           paymentStatus: quote.paymentStatus || 'pending',
-          paymentReady: quote.paymentReady || false,
           feedback: quote.feedback || null
         }
       };
@@ -1613,9 +995,7 @@ app.use('/api/admin/quotes/:reference', eventHandler(async (event) => {
         if (body.paymentRequired !== undefined) quote.paymentRequired = body.paymentRequired;
         if (body.paymentAmount !== undefined) quote.paymentAmount = body.paymentAmount;
         if (body.paymentStatus) quote.paymentStatus = body.paymentStatus;
-        if (body.paymentReady !== undefined) quote.paymentReady = body.paymentReady;
         if (body.items) quote.items = body.items;
-        if (body.missing_details) quote.missing_details = body.missing_details;
         
         await quote.save();
         console.log(`✅ Quote updated: ${reference}`);
@@ -1631,9 +1011,7 @@ app.use('/api/admin/quotes/:reference', eventHandler(async (event) => {
           paymentRequired: quote.paymentRequired,
           paymentAmount: quote.paymentAmount,
           paymentStatus: quote.paymentStatus,
-          paymentReady: quote.paymentReady,
-          items: quote.items,
-          missing_details: quote.missing_details || []
+          items: quote.items
         } : null
       };
     } catch (error) {
@@ -1679,7 +1057,6 @@ app.use('/api/admin/quotes/:reference/payment', eventHandler(async (event) => {
         quote.paymentRequired = true;
         quote.paymentAmount = amount;
         quote.paymentStatus = 'pending';
-        quote.paymentReady = true;
         
         await quote.save();
         console.log(`✅ Payment set for ${reference}: R${amount}`);
@@ -1692,8 +1069,7 @@ app.use('/api/admin/quotes/:reference/payment', eventHandler(async (event) => {
           reference: quote.reference,
           paymentRequired: quote.paymentRequired,
           paymentAmount: quote.paymentAmount,
-          paymentStatus: quote.paymentStatus,
-          paymentReady: quote.paymentReady
+          paymentStatus: quote.paymentStatus
         } : null
       };
     } catch (error) {
@@ -1735,7 +1111,6 @@ app.use('/api/admin/quotes/:reference/extract-payment', eventHandler(async (even
           quote.paymentRequired = true;
           quote.paymentAmount = amount;
           quote.paymentStatus = 'pending';
-          quote.paymentReady = true;
           await quote.save();
           
           return {
@@ -1745,8 +1120,7 @@ app.use('/api/admin/quotes/:reference/extract-payment', eventHandler(async (even
               reference: quote.reference,
               paymentRequired: quote.paymentRequired,
               paymentAmount: quote.paymentAmount,
-              paymentStatus: quote.paymentStatus,
-              paymentReady: quote.paymentReady
+              paymentStatus: quote.paymentStatus
             }
           };
         }
@@ -1817,66 +1191,12 @@ app.use('/api/admin/quotes/:reference/status', eventHandler(async (event) => {
   return { success: false, message: 'Method not allowed' };
 }));
 
-// ============================================
-// ADMIN API - Update Missing Details
-// ============================================
-
-app.use('/api/admin/quotes/:reference/missing-details', eventHandler(async (event) => {
-  if (event.method === 'POST') {
-    try {
-      const reference = event.context.params?.reference;
-      const body = await readBody(event);
-      
-      console.log(`📝 Updating missing details for: ${reference}`);
-      
-      if (!reference) {
-        return { success: false, message: 'Reference is required' };
-      }
-      
-      const { missing_details } = body;
-      
-      if (!missing_details || !Array.isArray(missing_details)) {
-        return { success: false, message: 'missing_details array is required' };
-      }
-      
-      let quote = null;
-      
-      if (isMongoConnected) {
-        quote = await Quote.findOne({ reference: reference.toUpperCase() });
-        
-        if (!quote) {
-          return { success: false, message: 'Quote not found' };
-        }
-        
-        quote.missing_details = missing_details;
-        if (missing_details.length > 0) {
-          quote.status = 'awaiting_client';
-        }
-        await quote.save();
-        console.log(`✅ Missing details updated for ${reference}`);
-      }
-      
-      return {
-        success: true,
-        message: 'Missing details updated',
-        quote: quote ? {
-          reference: quote.reference,
-          missing_details: quote.missing_details,
-          status: quote.status
-        } : null
-      };
-    } catch (error) {
-      console.error('❌ Error updating missing details:', error);
-      return { success: false, message: 'Failed to update missing details' };
-    }
-  }
-  
-  return { success: false, message: 'Method not allowed' };
-}));
 
 // ============================================
 // DESKTOP EXE API - AUTHENTICATION + ATTENDANCE
 // ============================================
+// The Windows EXE talks to these endpoints instead of connecting directly
+// to MongoDB. MongoDB credentials therefore remain on the server.
 
 const ACTIVE_STATUS_VALUES = new Set(['active', 'enabled', 'approved', 'true', '1', 'yes']);
 const SESSION_HOURS = 8;
@@ -1975,6 +1295,9 @@ function verifyPassword(password: string, storedHash: unknown): boolean {
     const digest = crypto.createHash('sha256').update(password, 'utf8').digest('hex');
     return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(storedHash));
   }
+  // Werkzeug's pbkdf2/scrypt and bcrypt are intentionally rejected unless the
+  // backend is built with the corresponding verifier. This prevents accepting
+  // plaintext passwords or silently changing password semantics.
   return false;
 }
 
@@ -2081,6 +1404,11 @@ function employeeDisplayName(employee: any, user: any): string {
 }
 
 app.use('/api/auth/login', eventHandler(async (event) => {
+  const limited = rateLimitOrNull(event, 'auth');
+  if (limited) {
+    event.node.res.statusCode = limited.statusCode;
+    return limited.body;
+  }
   if (event.method !== 'POST') return { success: false, error: 'Method not allowed' };
   try {
     const body = await readBody(event);
@@ -2191,6 +1519,8 @@ app.use('/api/auth/logout', eventHandler(async (event) => {
 // ============================================
 // DESKTOP DASHBOARD
 // ============================================
+// Dashboard metrics are calculated on the server so the desktop client
+// never connects directly to MongoDB.
 
 async function dashboardSummary() {
   const db = mongoRequired();
@@ -2200,19 +1530,38 @@ async function dashboardSummary() {
   const tasks = db.collection('work_assignments');
   const approvals = db.collection('approvals');
 
+  // People working = distinct employees with a REAL open clock-in for TODAY only.
+  // Do not count orphan rows, null employee_id, or sticky employee flags.
   const activeAttendanceQuery = {
     work_date: today,
+    employee_id: { $exists: true, $nin: [null, ''] },
     clock_in_at: { $exists: true, $nin: [null, ''] },
-    $or: [
-      { clock_out_at: { $exists: false } },
-      { clock_out_at: null },
-      { clock_out_at: '' },
+    $and: [
+      {
+        $or: [
+          { clock_out_at: { $exists: false } },
+          { clock_out_at: null },
+          { clock_out_at: '' },
+        ],
+      },
+      {
+        $or: [
+          { status: { $in: ['clocked_in', 'on_break'] } },
+          // Treat missing status as open only when clock_out is absent
+          { status: { $exists: false } },
+          { status: null },
+          { status: '' },
+        ],
+      },
     ],
-    status: { $in: ['clocked_in', 'on_break'] },
   };
 
   const activeAttendanceIds = await attendance.distinct('employee_id', activeAttendanceQuery);
-  const peopleWorking = new Set(activeAttendanceIds.map((id: any) => String(id))).size;
+  const peopleWorking = new Set(
+    activeAttendanceIds
+      .filter((id: any) => id !== null && id !== undefined && String(id).trim() !== '')
+      .map((id: any) => String(id))
+  ).size;
 
   const [
     totalEmployees,
@@ -2428,11 +1777,6 @@ async function startServer() {
     console.log(`💰 Extract Payment: http://localhost:${config.port}/api/admin/quotes/:reference/extract-payment`);
     console.log(`🔄 Set Status: http://localhost:${config.port}/api/admin/quotes/:reference/status`);
     console.log(`🔄 Simulate Payment: http://localhost:${config.port}/api/payment/simulate/:reference`);
-    console.log(`📝 Missing Details: http://localhost:${config.port}/api/admin/quotes/:reference/missing-details`);
-    console.log(`👤 Assign Quote: http://localhost:${config.port}/api/quotes/:reference/assign`);
-    console.log(`👤 Assign Order: http://localhost:${config.port}/api/orders/:reference/assign`);
-    console.log(`💬 Quote Messages: http://localhost:${config.port}/api/quotes/:reference/messages`);
-    console.log(`💬 Order Messages: http://localhost:${config.port}/api/orders/:reference/messages`);
     console.log(`💾 Storage mode: ${isMongoConnected ? 'MongoDB ✅' : 'In-Memory ⚠️'}`);
     console.log(`\n✅ Server is ready!\n`);
   });

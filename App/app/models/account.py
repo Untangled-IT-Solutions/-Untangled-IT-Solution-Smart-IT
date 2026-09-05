@@ -1,12 +1,8 @@
-"""Account and authentication session models.
-
-MongoDB-only application models.
-No SQLite dependency.
-"""
+"""Account and authentication session models – MongoDB / Backend only."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
@@ -21,6 +17,8 @@ class UserAccount:
     role: str
     status: str = "active"
     last_login_at: str = ""
+    department: Optional[str] = None
+    email: Optional[str] = None
 
     @property
     def is_active(self) -> bool:
@@ -57,6 +55,8 @@ class AuthSession:
     account: UserAccount
     login_at: str
     last_activity_at: str
+    token: Optional[str] = None
+    raw: dict = field(default_factory=dict, repr=False)
 
     @property
     def employee_id(self) -> Any:
@@ -81,3 +81,7 @@ class AuthSession:
     @property
     def is_authenticated(self) -> bool:
         return bool(self.account and self.account.is_active)
+
+    @property
+    def user(self) -> UserAccount:
+        return self.account

@@ -1,1 +1,1 @@
-"""Domain and view models."""
+"""Models package."""

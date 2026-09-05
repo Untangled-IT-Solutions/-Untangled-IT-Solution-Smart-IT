@@ -1,69 +1,29 @@
-// server/api/orders/track.ts
 import { defineEventHandler, getQuery } from 'h3';
 import { Order } from '../../db/index.js';
+
+const projection = {
+  reference: 1, customerName: 1, email: 1, phone: 1, address: 1, notes: 1,
+  status: 1, items: 1, total: 1, trackingNumber: 1, carrier: 1,
+  estimatedDelivery: 1, createdAt: 1, updatedAt: 1,
+};
 
 export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event);
-    const ref = query.ref as string;
-    const email = query.email as string;
-    
-    console.log(`🔍 ===== TRACK ORDER REQUEST =====`);
-    console.log(`🔍 Reference: ${ref}`);
-    console.log(`🔍 Email: ${email}`);
-    
+    const ref = typeof query.ref === 'string' ? query.ref.trim().toUpperCase() : '';
+    const email = typeof query.email === 'string' ? query.email.trim().toLowerCase() : '';
+
     if (!ref || !email) {
-      return {
-        success: false,
-        error: 'Reference and email are required',
-        order: null
-      };
+      event.node.res.statusCode = 400;
+      return { success: false, error: 'Reference and email are required', order: null };
     }
-    
-    const cleanRef = ref.trim().toUpperCase();
-    const cleanEmail = email.trim().toLowerCase();
-    
-    console.log(`🔍 Cleaned Reference: ${cleanRef}`);
-    console.log(`🔍 Cleaned Email: ${cleanEmail}`);
-    
-    // Try exact match first
-    let order = await Order.findOne({ 
-      reference: cleanRef, 
-      email: cleanEmail 
-    });
-    
-    // If not found, try case insensitive
+
+    const order = await Order.findOne({ reference: ref, email }, projection).lean().exec();
     if (!order) {
-      console.log(`🔍 Trying case insensitive search...`);
-      order = await Order.findOne({ 
-        reference: { $regex: new RegExp(`^${cleanRef}$`, 'i') },
-        email: { $regex: new RegExp(`^${cleanEmail}$`, 'i') }
-      });
+      event.node.res.statusCode = 404;
+      return { success: false, error: 'Order not found. Check your reference and email.', order: null };
     }
-    
-    // If still not found, try just by reference
-    if (!order) {
-      console.log(`🔍 Trying search by reference only...`);
-      order = await Order.findOne({ 
-        reference: { $regex: new RegExp(`^${cleanRef}$`, 'i') }
-      });
-    }
-    
-    if (!order) {
-      console.log(`❌ Order NOT FOUND: ${cleanRef} | ${cleanEmail}`);
-      return {
-        success: false,
-        error: 'Order not found. Check your reference and email.',
-        order: null
-      };
-    }
-    
-    console.log(`✅ ===== ORDER FOUND =====`);
-    console.log(`✅ Reference: ${order.reference}`);
-    console.log(`✅ Customer: ${order.customerName}`);
-    console.log(`✅ Status: ${order.status}`);
-    console.log(`✅ Total: R${order.total}`);
-    
+
     return {
       success: true,
       order: {
@@ -74,26 +34,18 @@ export default defineEventHandler(async (event) => {
         address: order.address,
         notes: order.notes || '',
         status: order.status,
-        items: order.items.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          qty: item.qty,
-          price: item.price,
-        })),
+        items: (order.items || []).map((item: any) => ({ id: item.id, name: item.name, qty: item.qty, price: item.price })),
         total: order.total,
         trackingNumber: order.trackingNumber || null,
         carrier: order.carrier || null,
         estimatedDelivery: order.estimatedDelivery || null,
         createdAt: order.createdAt,
         updatedAt: order.updatedAt || order.createdAt,
-      }
+      },
     };
   } catch (error) {
-    console.error('❌ Error tracking order:', error);
-    return {
-      success: false,
-      error: 'Failed to track order',
-      order: null
-    };
+    console.error('Error tracking order:', error);
+    event.node.res.statusCode = 500;
+    return { success: false, error: 'Failed to track order', order: null };
   }
 });

@@ -50,7 +50,8 @@ const ProductSchema = new Schema<IProduct>(
 );
 
 ProductSchema.index({ name: 'text', brand: 'text', shortDescription: 'text', keywords: 'text' });
-ProductSchema.index({ category: 1, segment: 1 });
+ProductSchema.index({ category: 1, segment: 1 }, { name: 'product_category_segment' });
+ProductSchema.index({ segment: 1, createdAt: -1 }, { name: 'product_segment_created' });
 
 const Product = mongoose.model<IProduct>('Product', ProductSchema);
 export default Product;

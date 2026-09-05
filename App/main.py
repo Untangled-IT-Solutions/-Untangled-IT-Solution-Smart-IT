@@ -1,9 +1,6 @@
-"""Application entry point for Untangled Nexus."""
-from app.application import Application
+"""Untangled Nexus – Desktop Client entry point."""
 
-def main() -> None:
-    application = Application()
-    application.run()
+from app.application import main
 
 if __name__ == "__main__":
     main()

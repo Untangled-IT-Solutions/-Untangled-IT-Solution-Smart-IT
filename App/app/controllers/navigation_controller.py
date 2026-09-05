@@ -163,35 +163,38 @@ class NavigationController:
     # ----------------------------------------------------
 
     def employee_has_quotes(self) -> bool:
-        """Check if the current employee has any assigned quotes."""
-        if self._mongodb is None:
+        """Check if the current employee has any assigned quotes (Backend API)."""
+        if self._backend_api is None:
             return False
 
-        username = self._current_username
+        username = (self._current_username or "").strip().lower()
         if not username:
             return False
 
         try:
-            collection = self._mongodb.get_collection("quotes")
-            
-            # Match any identity field the assignment endpoint may store
-            uname = str(username).strip().lower()
-            query = {
-                "status": {"$in": ["assigned", "accepted", "in_progress"]},
-                "$or": [
-                    {"assigned_to.username": uname},
-                    {"assigned_to.email": uname},
-                    {"assigned_to.full_name": uname},
-                    {"assigned_to.display_name": uname},
-                    {"assigned_to.name": uname},
-                    {"assigned_to.employee_id": uname},
-                    {"assigned_to.id": uname},
-                ],
-            }
-
-            count = collection.count_documents(query)
-            return count > 0
-
+            data = self._backend_api.get_quotes()
+            quotes = data.get("quotes") or data.get("items") or []
+            active = {"assigned", "accepted", "in_progress"}
+            for q in quotes:
+                status = str(q.get("status") or "").strip().lower()
+                if status not in active:
+                    continue
+                assigned = q.get("assigned_to") or {}
+                if isinstance(assigned, dict):
+                    fields = [
+                        assigned.get("username"),
+                        assigned.get("email"),
+                        assigned.get("full_name"),
+                        assigned.get("display_name"),
+                        assigned.get("name"),
+                        assigned.get("employee_id"),
+                        assigned.get("id"),
+                    ]
+                else:
+                    fields = [assigned]
+                if any(str(f or "").strip().lower() == username for f in fields):
+                    return True
+            return False
         except Exception as e:
             print(f"⚠️ Error checking employee quotes: {e}")
             return False
@@ -229,6 +232,19 @@ class NavigationController:
             from app.views.dashboard_view import DashboardView
             return DashboardView(workspace, controller)
 
+        elif name == "Tasks":
+            from app.views.task_view import TaskView
+            return TaskView(workspace, controller)
+
+        elif name == "Attendance":
+            from app.views.attendance_view import AttendanceView
+            return AttendanceView(workspace, controller)
+
+        elif name == "Work":
+            # Production: Work is task-based (Backend API). Old Mongo quote workspace is retired.
+            from app.views.task_view import TaskView
+            return TaskView(workspace, controller)
+
         elif name == "People":
             from app.views.people_view import PeopleView
             return PeopleView(workspace, controller)
@@ -239,10 +255,9 @@ class NavigationController:
 
         elif name == "Quote Management":
             from app.views.quote_management_view import QuoteManagementView
-            
+
             return QuoteManagementView(
                 master=workspace,
-                mongodb_service=self._mongodb,
                 people_controller=controller,
                 notification_controller=self._notification_service,
                 auth_service=self._auth_service,
@@ -255,7 +270,6 @@ class NavigationController:
 
             return OrderManagementView(
                 master=workspace,
-                mongodb_service=self._mongodb,
                 people_controller=controller,
                 notification_controller=self._notification_service,
                 auth_service=self._auth_service,
@@ -270,7 +284,7 @@ class NavigationController:
                     "User Management",
                     "Only Directors, Branch Managers, and Operations Managers can access User Management."
                 )
-            
+
             from app.views.user_management_view import UserManagementView
             return UserManagementView(workspace, controller)
 
@@ -281,16 +295,19 @@ class NavigationController:
                     "Quote Sync",
                     "Only Directors, Branch Managers, Business Leads, and Operations Managers can access Quote Sync."
                 )
-            
-            from app.views.quote_sync_view import QuoteSyncView
-            from app.controllers.quote_sync_controller import QuoteSyncController
-            
-            quote_sync_controller = QuoteSyncController(self._mongodb)
-            return QuoteSyncView(workspace, quote_sync_controller)
+
+            return self._create_access_denied_view(
+                workspace,
+                "Quote Sync",
+                "Quote Sync runs on the server. Use Quote Management — all data is loaded from the Backend API.",
+            )
 
         elif name == "Settings":
             from app.views.settings_view import SettingsView
-            return SettingsView(workspace, controller)
+            try:
+                return SettingsView(workspace, controller)
+            except TypeError:
+                return SettingsView(workspace)
 
         else:
             frame = ctk.CTkFrame(workspace, fg_color="transparent")

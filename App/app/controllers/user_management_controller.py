@@ -4,13 +4,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from app.services.auth_service import AuthService
-from app.services.mongo_auth_service import MongoAuthService
+from app.services.backend_auth_service import BackendAuthService
 
 
 class UserManagementController:
     _ADMIN_ROLES = {"Director", "Branch Manager", "Operations Manager", "Business Lead", "Manager", "Admin", "Administrator", "Super Admin"}
 
-    def __init__(self, mongo_auth_service: Optional[MongoAuthService], people_service: Any = None, auth_service: Optional[AuthService] = None) -> None:
+    def __init__(self, mongo_auth_service: Optional[BackendAuthService], people_service: Any = None, auth_service: Optional[AuthService] = None) -> None:
         self._mongo_auth = mongo_auth_service
         self._auth_service = auth_service
 
@@ -23,7 +23,7 @@ class UserManagementController:
         if not self.require_admin():
             raise PermissionError("Only an administrator may manage user accounts.")
 
-    def _service(self) -> MongoAuthService:
+    def _service(self) -> BackendAuthService:
         if self._mongo_auth is None:
             raise RuntimeError("Backend authentication service is unavailable.")
         return self._mongo_auth

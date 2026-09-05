@@ -31,7 +31,7 @@ from typing import Optional, Dict, Any, List
 
 import customtkinter as ctk
 
-from app.services.mongodb_service import MongoDBService
+# Production: Backend API only — no direct MongoDB from the desktop client.
 from app.services.backend_api_client import BackendAPIClient
 from app.utils.theme import Theme
 from app.utils.async_tasks import run_in_background
@@ -133,12 +133,12 @@ class OrderManagementView(ctk.CTkFrame):
     def __init__(
         self,
         master,
-        mongodb_service: MongoDBService,
+        mongodb_service=None,  # deprecated – ignored in production (Backend API only)
         people_controller=None,
         notification_controller=None,
         auth_service=None,
         navigation_controller=None,
-        backend_api: BackendAPIClient = None,
+        backend_api: Optional[BackendAPIClient] = None,
     ):
         super().__init__(
             master,
@@ -146,7 +146,7 @@ class OrderManagementView(ctk.CTkFrame):
             corner_radius=0,
         )
 
-        self._mongodb = mongodb_service
+        self._mongodb = None  # never use direct Mongo from desktop
         self._people_controller = people_controller
         self._notification_controller = notification_controller
         self._auth_service = auth_service
@@ -773,10 +773,18 @@ class OrderManagementView(ctk.CTkFrame):
             return None
         try:
             response = self._backend_api.request("GET", "/api/orders")
-            if response and response.get("success"):
-                return response.get("orders", [])
-            if isinstance(response, dict) and "orders" in response:
-                return response.get("orders") or []
+            if not response:
+                return None
+            if isinstance(response, list):
+                return response
+            if response.get("success") is False:
+                return None
+            return (
+                response.get("orders")
+                or response.get("items")
+                or response.get("data")
+                or []
+            )
         except Exception as e:
             print(f"⚠️ Could not fetch orders from API: {e}")
         return None

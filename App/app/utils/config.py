@@ -1,61 +1,51 @@
-# app/utils/config.py
-"""Application configuration with all constants."""
+"""Application configuration – production ready."""
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load .env from project root or next to the executable
+_BASE = Path(__file__).resolve().parents[2]
+load_dotenv(_BASE / ".env")
+load_dotenv(Path.cwd() / ".env")
 
-# ============================================================
-# MongoDB Configuration
-# ============================================================
-# Prefer API_BASE_URL for shared business data (quotes, orders, users).
-# Direct Mongo access is only for controlled internal operations.
-# There is intentionally no hardcoded credential fallback.
-MONGO_URI = os.getenv("MONGO_URI") or os.getenv("MONGODB_URI")
-MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "untangled_its")
+# ---------------------------------------------------------------------------
+# Backend API (single source of truth – no direct MongoDB from desktop)
+# ---------------------------------------------------------------------------
+API_BASE_URL: str = os.getenv("API_BASE_URL", "https://untangled-nexus-api.onrender.com").rstrip("/")
+ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production").lower()
 
-if not MONGO_URI:
-    # Soft warning at import time; callers that need Mongo must check.
-    # Prefer Backend API (API_BASE_URL) for production desktop usage.
-    pass
-
-# ============================================================
-# Backend API (preferred for Work desktop app)
-# ============================================================
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:10000")
-
-# ============================================================
-# Password Security
-# ============================================================
+# ---------------------------------------------------------------------------
+# Security
+# ---------------------------------------------------------------------------
 PASSWORD_MIN_LENGTH = 8
-PASSWORD_HASH_ITERATIONS = 260000
-PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
-PASSWORD_RESET_TOKEN_EXPIRY = 3600  # 1 hour in seconds
-
-# ============================================================
-# Session Settings
-# ============================================================
 SESSION_EXPIRY_HOURS = 8
 
-# ============================================================
-# Attendance Settings
-# ============================================================
+# ---------------------------------------------------------------------------
+# Attendance defaults
+# ---------------------------------------------------------------------------
 WORK_HOURS_PER_DAY = 8
 LUNCH_BREAK_DURATION = 60  # minutes
-BREAK_DURATION = 15  # minutes
+BREAK_DURATION = 15
 
-# ============================================================
-# Application Paths
-# ============================================================
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = _BASE
 DATA_DIR = PROJECT_ROOT / "data"
 LOG_DIR = PROJECT_ROOT / "logs"
+CACHE_DIR = PROJECT_ROOT / "cache"
 
-# ============================================================
-# Company Information
-# ============================================================
+for _d in (DATA_DIR, LOG_DIR, CACHE_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Company
+# ---------------------------------------------------------------------------
+from app.__version__ import __version__ as APP_VERSION  # single source of truth
+
 COMPANY_NAME = "Untangled Nexus"
 COMPANY_LEGAL_NAME = "Untangled IT Solutions"
+SUBTITLE = "Internal Operations Platform"

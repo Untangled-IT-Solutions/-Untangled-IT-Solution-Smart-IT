@@ -1,342 +1,244 @@
-"""Unified Work model persistence service."""
+"""Unified Work / Tasks – Backend API only."""
 
-import sqlite3
-from pathlib import Path
+from __future__ import annotations
 
-from app.database.database import Database
+from typing import Any, List, Optional
+
 from app.models.task import Task
-from app.services.notification_service import NotificationService
+from app.services.backend_api_client import BackendAPIClient, BackendAPIError
 
 
 class WorkService:
-    """Owns all SQLite access for the unified operational work model."""
+    """All task/work operations go through the backend."""
 
-    WORK_CATEGORIES = (
-        "RFQ",
-        "Tender",
-        "Supplier Registration",
-        "Technical",
-        "Software",
-        "Marketing",
-        "Administration",
-        "Website",
-        "Inventory",
-        "Training",
-    )
+    def __init__(self, backend: BackendAPIClient) -> None:
+        self._backend = backend
 
-    def __init__(
-        self,
-        database: Database,
-        notification_service: NotificationService | None = None,
-    ) -> None:
-        self._database = database
-        self._notifications = notification_service
-
-    @property
-    def db_path(self) -> Path:
-        return self._database.db_path
-
-    def create_work(self, task: Task) -> Task:
-        """Persist a Work record and update the assigned employee's current task."""
-        with self._connect() as connection:
-            cursor = connection.execute(
-                """
-                INSERT INTO tasks (
-                    title, description, category, assigned_employee, assigned_by,
-                    priority, status, department, created_date, start_date, due_date,
-                    estimated_hours, actual_hours, checklist, comments, attachments, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                """,
-                (
-                    task.title,
-                    task.description,
-                    task.category,
-                    task.assigned_employee,
-                    task.assigned_by,
-                    task.priority,
-                    task.status,
-                    task.department,
-                    task.start_date,
-                    task.due_date,
-                    task.estimated_hours,
-                    task.actual_hours,
-                    task.checklist,
-                    task.comments,
-                    task.attachments,
-                ),
-            )
-            task_id = int(cursor.lastrowid)
-            self._sync_employee_current_task(connection, task.assigned_employee)
-            self._add_history(connection, task_id, "Created", "Work item created.")
-            connection.commit()
-            saved = self._get_by_id(task_id, connection)
-
-        self._record_work_activity(saved, "Work created")
-        return saved
-
-    def get_all_work(
-        self,
-        search: str = "",
-        assigned_employee: str = "All",
-        department: str = "All",
-        priority: str = "All",
-        status: str = "All",
-        category: str = "All",
-    ) -> list[Task]:
-        """Return Work records matching optional operational filters."""
-        query = "SELECT * FROM tasks WHERE 1 = 1"
-        parameters: list[object] = []
-
-        if search:
-            query += " AND (title LIKE ? OR description LIKE ? OR comments LIKE ?)"
-            search_pattern = f"%{search}%"
-            parameters.extend([search_pattern, search_pattern, search_pattern])
-
-        filters = (
-            ("assigned_employee", assigned_employee),
-            ("department", department),
-            ("priority", priority),
-            ("status", status),
-            ("category", category),
-        )
-        for column, value in filters:
-            if value != "All":
-                query += f" AND {column} = ?"
-                parameters.append(value)
-
-        query += """
-            ORDER BY
-                CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END,
-                due_date ASC,
-                created_date DESC,
-                id DESC;
-        """
-
-        with self._connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
-
-        return [self._row_to_task(row) for row in rows]
-
-    def get_work(self, task_id: int) -> Task | None:
-        """Return one Work record by its identifier."""
-        with self._connect() as connection:
-            row = connection.execute("SELECT * FROM tasks WHERE id = ?;", (task_id,)).fetchone()
-        return self._row_to_task(row) if row is not None else None
-
-    def update_work(self, task: Task) -> Task:
-        """Update editable Work details without leaking persistence into views."""
-        if task.id is None:
-            raise ValueError("A saved Work record is required for an update.")
-
-        with self._connect() as connection:
-            previous = self._get_by_id(task.id, connection)
-            connection.execute(
-                """
-                UPDATE tasks
-                SET title = ?, description = ?, category = ?, assigned_employee = ?,
-                    assigned_by = ?, priority = ?, status = ?, department = ?,
-                    start_date = ?, due_date = ?, estimated_hours = ?, actual_hours = ?,
-                    checklist = ?, comments = ?, attachments = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?;
-                """,
-                (
-                    task.title,
-                    task.description,
-                    task.category,
-                    task.assigned_employee,
-                    task.assigned_by,
-                    task.priority,
-                    task.status,
-                    task.department,
-                    task.start_date,
-                    task.due_date,
-                    task.estimated_hours,
-                    task.actual_hours,
-                    task.checklist,
-                    task.comments,
-                    task.attachments,
-                    task.id,
-                ),
-            )
-            self._sync_employee_current_task(connection, previous.assigned_employee)
-            self._sync_employee_current_task(connection, task.assigned_employee)
-            self._add_history(connection, task.id, "Updated", "Work item details updated.")
-            connection.commit()
-            saved = self._get_by_id(task.id, connection)
-
-        self._record_work_activity(saved, "Work updated")
-        return saved
-
-    def update_status(self, task_id: int, status: str) -> None:
-        """Update one Work record's status."""
-        with self._connect() as connection:
-            connection.execute(
-                "UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
-                (status, task_id),
-            )
-            task = self._get_by_id(task_id, connection)
-            self._sync_employee_current_task(connection, task.assigned_employee)
-            self._add_history(connection, task_id, "Status changed", f"Status set to {status}.")
-            connection.commit()
-
-        self._record_work_activity(task, f"Work moved to {status}")
-
-    def assign_work(self, task_id: int, assigned_employee: str) -> None:
-        """Assign an existing Work record to an employee."""
-        with self._connect() as connection:
-            previous = self._get_by_id(task_id, connection)
-            connection.execute(
-                """
-                UPDATE tasks
-                SET assigned_employee = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?;
-                """,
-                (assigned_employee, task_id),
-            )
-            task = self._get_by_id(task_id, connection)
-            self._sync_employee_current_task(connection, previous.assigned_employee)
-            self._sync_employee_current_task(connection, assigned_employee)
-            self._add_history(connection, task_id, "Assigned", f"Assigned to {assigned_employee}.")
-            connection.commit()
-
-        self._record_work_activity(task, f"Work assigned to {assigned_employee}")
-
-    def delete_work(self, task_id: int) -> None:
-        """Remove a Work record and refresh the former assignee's current task."""
-        with self._connect() as connection:
-            task = self._get_by_id(task_id, connection)
-            self._add_history(connection, task_id, "Deleted", "Work item deleted.")
-            connection.execute("DELETE FROM tasks WHERE id = ?;", (task_id,))
-            self._sync_employee_current_task(connection, task.assigned_employee)
-            connection.commit()
-
-        if self._notifications is not None:
-            self._notifications.record_activity(
-                "Work",
-                f"Work deleted: {task.title}",
-                "Task",
-                task_id,
-            )
-
-    def get_departments(self) -> list[str]:
-        return self._distinct_values("department")
-
-    def get_assigned_employees(self) -> list[str]:
-        return self._distinct_values("assigned_employee")
-
-    def get_categories(self) -> list[str]:
-        return list(self.WORK_CATEGORIES)
-
-    def get_history(self, task_id: int) -> list["WorkHistory"]:
-        """Return the chronological history for a Work record."""
-        from app.models.task import WorkHistory
-
-        with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT * FROM work_history
-                WHERE task_id = ?
-                ORDER BY datetime(created_at) DESC, id DESC;
-                """,
-                (task_id,),
-            ).fetchall()
-        return [
-            WorkHistory(
-                id=row["id"], task_id=row["task_id"], action=row["action"],
-                note=row["note"] or "", created_by=row["created_by"] or "",
-                created_at=row["created_at"]
-            )
-            for row in rows
-        ]
-
-    def _record_work_activity(self, task: Task, action: str) -> None:
-        if self._notifications is None:
-            return
-        self._notifications.record_activity("Work", f"{action}: {task.title}", "Task", task.id)
-        self._notifications.notify_operational(
-            ("Operations Manager",),
-            "Work update",
-            f"{action}: {task.title}",
-            "Work",
-            "Task",
-            task.id,
-        )
-
-    @staticmethod
-    def _add_history(
-        connection: sqlite3.Connection,
-        task_id: int,
-        action: str,
-        note: str,
-    ) -> None:
-        connection.execute(
-            """
-            INSERT INTO work_history (task_id, action, note, created_by)
-            VALUES (?, ?, ?, 'Operations Manager');
-            """,
-            (task_id, action, note),
-        )
-
-    def _sync_employee_current_task(
-        self,
-        connection: sqlite3.Connection,
-        employee_name: str,
-    ) -> None:
-        if not employee_name:
-            return
-        row = connection.execute(
-            """
-            SELECT title FROM tasks
-            WHERE assigned_employee = ?
-            AND status NOT IN ('Completed', 'Cancelled')
-            ORDER BY CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END,
-                     due_date ASC, id DESC
-            LIMIT 1;
-            """,
-            (employee_name,),
-        ).fetchone()
-        current_task = row["title"] if row is not None else "No active task"
-        connection.execute(
-            "UPDATE employees SET current_task = ? WHERE full_name = ?;",
-            (current_task, employee_name),
-        )
-
-    def _distinct_values(self, column_name: str) -> list[str]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                f"SELECT DISTINCT {column_name} FROM tasks WHERE {column_name} IS NOT NULL "
-                f"AND {column_name} != '' ORDER BY {column_name} ASC;"
-            ).fetchall()
-        return [row[column_name] for row in rows]
-
-    def _connect(self) -> sqlite3.Connection:
-        return self._database.connection()  # type: ignore[return-value]
-
-    def _get_by_id(self, task_id: int, connection: sqlite3.Connection) -> Task:
-        row = connection.execute("SELECT * FROM tasks WHERE id = ?;", (task_id,)).fetchone()
-        if row is None:
-            raise ValueError(f"Work record {task_id} was not found.")
-        return self._row_to_task(row)
-
-    @staticmethod
-    def _row_to_task(row: sqlite3.Row) -> Task:
+    def _to_task(self, raw: dict) -> Task:
         return Task(
-            id=row["id"],
-            title=row["title"],
-            description=row["description"] or "",
-            assigned_employee=row["assigned_employee"] or "",
-            assigned_by=row["assigned_by"] or "",
-            priority=row["priority"],
-            status=row["status"],
-            department=row["department"] or "",
-            created_date=row["created_date"] or row["created_at"],
-            start_date=row["start_date"] or "",
-            due_date=row["due_date"] or "",
-            estimated_hours=float(row["estimated_hours"] or 0),
-            category=row["category"] or "Administration",
-            actual_hours=float(row["actual_hours"] or 0),
-            comments=row["comments"] or "",
-            checklist=row["checklist"] or "[]",
-            attachments=row["attachments"] or "[]",
+            id=str(raw.get("id") or raw.get("_id") or "") or None,
+            title=raw.get("title") or raw.get("name") or "Untitled",
+            description=raw.get("description") or "",
+            assigned_employee=raw.get("assigned_employee")
+            or raw.get("assignee")
+            or raw.get("assigned_to")
+            or "",
+            assigned_by=raw.get("assigned_by") or "",
+            priority=raw.get("priority") or "Normal",
+            status=raw.get("status") or "Pending",
+            department=raw.get("department") or "",
+            created_date=raw.get("created_date") or raw.get("created_at"),
+            start_date=raw.get("start_date"),
+            due_date=raw.get("due_date") or "",
+            estimated_hours=float(raw.get("estimated_hours") or 0),
+            actual_hours=float(raw.get("actual_hours") or 0),
+            category=raw.get("category") or "Administration",
+            comments=raw.get("comments") or "",
+            checklist=raw.get("checklist") or "[]",
+            attachments=raw.get("attachments") or "[]",
+            active_timer_started_at=raw.get("active_timer_started_at"),
+            director_approval_status=raw.get("director_approval_status"),
+            returned_reason=raw.get("returned_reason"),
+            raw=raw,
         )
+
+
+    def create_task(self, data: dict) -> dict:
+        """Create a task on the backend and optionally assign it."""
+        assignee = (data.get("assigned_employee") or data.get("assignee") or "").strip()
+        if assignee.lower() == "unassigned":
+            assignee = ""
+        status = data.get("status") or ("Assigned" if assignee else "Pending")
+        payload = {
+            "title": (data.get("title") or "").strip(),
+            "description": data.get("description") or "",
+            "assigned_employee": assignee,
+            # Common backend aliases so assignment sticks regardless of schema
+            "assignee": assignee,
+            "assigned_to": assignee,
+            "priority": data.get("priority") or "Normal",
+            "status": status,
+            "due_date": data.get("due_date") or None,
+            "estimated_hours": float(data.get("estimated_hours") or 0),
+            "category": data.get("category") or "Administration",
+            "attachments": data.get("attachments") or [],
+        }
+        if not payload["title"]:
+            raise ValueError("Title is required.")
+        try:
+            result = self._backend.create_task(payload)
+        except BackendAPIError as exc:
+            # Retry with minimal payload if backend is strict about unknown fields
+            minimal = {
+                "title": payload["title"],
+                "description": payload["description"],
+                "assigned_employee": assignee,
+                "priority": payload["priority"],
+                "status": status,
+                "due_date": payload["due_date"],
+                "estimated_hours": payload["estimated_hours"],
+            }
+            try:
+                result = self._backend.create_task(minimal)
+            except BackendAPIError:
+                raise RuntimeError(
+                    f"Could not create task on the server: {exc}"
+                ) from exc
+        if not isinstance(result, dict):
+            result = {"success": True, "task": result}
+        # If create succeeded without assignment fields applied, patch assign
+        task = result.get("task") or result
+        task_id = None
+        if isinstance(task, dict):
+            task_id = task.get("id") or task.get("_id")
+        if assignee and task_id:
+            try:
+                self.assign_task(task_id, assignee)
+            except Exception as exc:
+                print(f"⚠️ Task created but assign patch failed: {exc}")
+        return result
+
+    def get_tasks(self, scope: str = "All") -> List[Task]:
+        scope_map = {
+            "Inbox": "inbox",
+            "Reviews": "reviews",
+            "Overdue": "overdue",
+            "All": "all",
+            "Personal": "personal",
+            "Department": "department",
+        }
+        api_scope = scope_map.get(scope, "all")
+        try:
+            data = self._backend.get_tasks(api_scope)
+            items = data.get("tasks") or data.get("items") or data.get("data") or []
+            return [self._to_task(item) for item in items]
+        except BackendAPIError:
+            return []
+
+    def get_task(self, task_id: Any) -> Optional[Task]:
+        try:
+            data = self._backend.get_task(task_id)
+            raw = data.get("task") or data
+            return self._to_task(raw)
+        except BackendAPIError:
+            return None
+
+    def get_workload(self) -> List[dict]:
+        try:
+            data = self._backend.get_workload()
+            return data.get("workload") or data.get("items") or []
+        except BackendAPIError:
+            return []
+
+    def get_decision_queue(self) -> dict:
+        try:
+            return self._backend.get_decision_queue()
+        except BackendAPIError:
+            return {"summary": {}}
+
+    def log_time(self, task_id: Any, hours: float, note: str = "") -> None:
+        try:
+            self._backend.update_task(task_id, {"hours_logged": hours, "note": note})
+        except BackendAPIError:
+            self._backend.task_action(task_id, "log-time", note)
+
+    def assign_task(self, task_id: Any, assignee: str) -> None:
+        assignee = (assignee or "").strip()
+        if assignee.lower() == "unassigned":
+            assignee = ""
+        payload = {
+            "assigned_employee": assignee,
+            "assignee": assignee,
+            "assigned_to": assignee,
+            "status": "Assigned" if assignee else "Pending",
+        }
+        try:
+            self._backend.update_task(task_id, payload)
+        except BackendAPIError:
+            # Some APIs use a dedicated assign action
+            try:
+                self._backend.task_action(task_id, "assign", assignee)
+            except BackendAPIError as exc:
+                raise RuntimeError(f"Could not assign task: {exc}") from exc
+
+    def _set_status(self, task_id: Any, status: str, note: str = "", action: str = "") -> None:
+        """Prefer PATCH status update; fall back to action endpoint if present.
+
+        Some backends validate title on every write – always include existing title.
+        """
+        existing = self.get_task(task_id)
+        title = (existing.title if existing else "") or ""
+        payload: dict = {
+            "status": status,
+            "title": title,
+        }
+        if existing:
+            if existing.description:
+                payload["description"] = existing.description
+            if existing.assigned_employee:
+                payload["assigned_employee"] = existing.assigned_employee
+                payload["assignee"] = existing.assigned_employee
+                payload["assigned_to"] = existing.assigned_employee
+            if existing.priority:
+                payload["priority"] = existing.priority
+            if existing.category:
+                payload["category"] = existing.category
+            if existing.due_date:
+                payload["due_date"] = existing.due_date
+        if note:
+            payload["note"] = note
+            payload["comments"] = note
+        # Prefer dedicated action route first when provided (no title validation)
+        if action:
+            try:
+                self._backend.task_action(task_id, action, note)
+                return
+            except BackendAPIError:
+                pass
+        try:
+            self._backend.update_task(task_id, payload)
+            return
+        except BackendAPIError as exc:
+            # Last attempt: minimal status-only with title
+            try:
+                self._backend.update_task(task_id, {"status": status, "title": title or "Task"})
+                return
+            except BackendAPIError:
+                raise RuntimeError(f"Could not update task status: {exc}") from exc
+
+    def start_work(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "In Progress", note, action="start")
+
+    def pause_work(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Paused", note, action="pause")
+
+    def submit_for_review(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Waiting Review", note, action="submit-review")
+
+    def complete_work(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Completed", note, action="complete")
+
+    def approve_review(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Completed", note, action="approve-review")
+
+    def return_to_work(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "In Progress", note, action="return")
+
+    def escalate_to_director(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Escalated", note, action="escalate")
+
+    def cancel_task(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "Cancelled", note, action="cancel")
+
+    # Compatibility
+    def get_all_work(self) -> List[Task]:
+        return self.get_tasks("All")
+
+    def get_personal_work(self) -> List[Task]:
+        return self.get_tasks("Personal")
+
+    def get_department_work(self) -> List[Task]:
+        return self.get_tasks("Department")
+
+    def get_work(self, task_id: Any) -> Optional[Task]:
+        return self.get_task(task_id)

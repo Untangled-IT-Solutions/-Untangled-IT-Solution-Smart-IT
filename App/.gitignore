@@ -1,95 +1,37 @@
+# Secrets – never commit
+.env
+.env.local
+.env.*.local
+
+# Python
 __pycache__/
 *.py[cod]
-*.log
-.env
+*$py.class
+*.so
+.Python
+*.egg-info/
 .venv/
-data/*.db
-data/*.db-*
-# Work / Frontend .gitignore
+venv/
+env/
 
-# Dependencies
-node_modules/
-.pnpm-store/
-
-# Build output
-dist/
-dist-ssr/
-*.local
+# Build / release artifacts (CI generates these)
 build/
-out/
+dist/
+*.spec.bak
+Output/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Logs
+# Local runtime
+data/
 logs/
+cache/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-*.swp
-*.swo
-*~
-*.tmp
-*.temp
+Desktop.ini
 
-# IDE files
-.vscode/
+# IDE
 .idea/
-*.iml
-*.sublime-*
-.vscode/settings.json
-.vscode/launch.json
-
-# Testing
-coverage/
-.nyc_output/
-
-# Vite / Build cache
-.vite/
-.cache/
-
-# React / TypeScript
-*.tsbuildinfo
-*.tsbuildinfo.*
-
-# Assets (if using imported assets)
-# If you want to commit asset imports but not the assets themselves:
-# src/assets/ !src/assets/*.png !src/assets/*.jpg !src/assets/*.svg
-
-# Production files
-*.min.js
-*.min.css
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-*.temp
-
-# Misc
-.ftpconfig
-.env.local
-.env.*.local
-.eslintcache
-.prettiercache
-
-# Work specific
-work/
-dist/
-# Python test/cache output
-.pytest_cache/
-
-# Local databases
-*.db
-*.db-*
+.vscode/
+*.swp

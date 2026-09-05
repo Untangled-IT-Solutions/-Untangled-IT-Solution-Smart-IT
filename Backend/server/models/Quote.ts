@@ -1,6 +1,15 @@
 // server/models/Quote.ts
-
 import mongoose, { Schema, Document } from 'mongoose';
+import type { QuoteStatus, PaymentStatus } from '../types/quote.types.js';
+import { QUOTE_STATUSES, PAYMENT_STATUSES } from '../types/quote.types.js';
+
+export interface IQuoteItem {
+  id: string;
+  name: string;
+  kind: 'product' | 'service';
+  qty: number;
+  image?: string | null;
+}
 
 export interface IQuote extends Document {
   reference: string;
@@ -9,52 +18,16 @@ export interface IQuote extends Document {
   email: string;
   phone: string;
   notes?: string;
-
-  items: Array<{
-    id: string;
-    name: string;
-    kind: 'product' | 'service';
-    qty: number;
-  }>;
-
-  status:
-    | 'received'
-    | 'in_review'
-    | 'quoted'
-    | 'closed'
-    | 'pending'
-    | 'waiting_feedback'
-    | 'in_touch'
-    | 'approved'
-    | 'payment'
-    | 'assigned'
-    | 'awaiting_client'
-    | 'awaiting_payment'
-    | 'completed';
-
+  items: IQuoteItem[];
+  status: QuoteStatus;
   replyMessage?: string;
   repliedAt?: Date;
-
   createdAt: Date;
   updatedAt: Date;
-
-  // Payment
   paymentRequired?: boolean;
   paymentAmount?: number;
-  paymentStatus?: 'pending' | 'paid' | 'failed';
+  paymentStatus?: PaymentStatus;
   paymentReference?: string;
-  paymentReady?: boolean;
-
-  // Assignment
-  assigned_to?: string | null;
-  assigned_name?: string | null;
-  assigned_by?: string | null;
-  assigned_at?: Date | null;
-
-  // Missing client information
-  missing_details?: string[];
-
-  // Client feedback
   feedback?: {
     rating?: number;
     comment?: string;
@@ -65,168 +38,65 @@ export interface IQuote extends Document {
 
 const QuoteSchema = new Schema<IQuote>(
   {
-    reference: {
-      type: String,
-      required: true,
-      unique: true,
-      index: true,
-    },
-
-    customerName: {
-      type: String,
-      required: true,
-    },
-
-    company: String,
-
-    email: {
-      type: String,
-      required: true,
-      index: true,
-    },
-
-    phone: {
-      type: String,
-      required: true,
-    },
-
-    notes: String,
-
+    reference: { type: String, required: true, unique: true, index: true },
+    customerName: { type: String, required: true },
+    company: { type: String },
+    email: { type: String, required: true, index: true },
+    phone: { type: String, required: true },
+    notes: { type: String },
     items: [
       {
-        id: {
-          type: String,
-          required: true,
-        },
-        name: {
-          type: String,
-          required: true,
-        },
-        kind: {
-          type: String,
-          enum: ['product', 'service'],
-          required: true,
-        },
-        qty: {
-          type: Number,
-          required: true,
-          min: 1,
-        },
+        id: { type: String, required: true },
+        name: { type: String, required: true },
+        kind: { type: String, enum: ['product', 'service'], required: true },
+        qty: { type: Number, required: true, min: 1 },
+        image: { type: String, default: null },
       },
     ],
-
     status: {
       type: String,
-      enum: [
-        'received',
-        'in_review',
-        'quoted',
-        'closed',
-        'pending',
-        'waiting_feedback',
-        'in_touch',
-        'approved',
-        'payment',
-        'assigned',
-        'awaiting_client',
-        'awaiting_payment',
-        'completed',
-      ],
+      enum: QUOTE_STATUSES,
       default: 'received',
-    },
-
-    replyMessage: String,
-
-    repliedAt: Date,
-
-    // -------------------------
-    // Assignment
-    // -------------------------
-    assigned_to: {
-      type: String,
-      default: null,
       index: true,
     },
-
-    assigned_name: {
-      type: String,
-      default: null,
-    },
-
-    assigned_by: {
-      type: String,
-      default: null,
-    },
-
-    assigned_at: {
-      type: Date,
-      default: null,
-    },
-
-    // -------------------------
-    // Missing client details
-    // -------------------------
-    missing_details: {
-      type: [String],
-      default: [],
-    },
-
-    // -------------------------
-    // Payment
-    // -------------------------
-    paymentRequired: {
-      type: Boolean,
-      default: false,
-    },
-
-    paymentAmount: Number,
-
+    replyMessage: { type: String },
+    repliedAt: { type: Date },
+    paymentRequired: { type: Boolean, default: false },
+    paymentAmount: { type: Number },
     paymentStatus: {
       type: String,
-      enum: ['pending', 'paid', 'failed'],
+      enum: PAYMENT_STATUSES,
       default: 'pending',
     },
-
-    paymentReference: String,
-
-    paymentReady: {
-      type: Boolean,
-      default: false,
-    },
-
-    // -------------------------
-    // Customer feedback
-    // -------------------------
+    paymentReference: { type: String },
     feedback: {
-      rating: {
-        type: Number,
-        min: 1,
-        max: 5,
-      },
-
-      comment: String,
-
-      submitted: {
-        type: Boolean,
-        default: false,
-      },
-
-      submittedAt: Date,
+      rating: { type: Number, min: 1, max: 5 },
+      comment: { type: String },
+      submitted: { type: Boolean, default: false },
+      submittedAt: { type: Date },
     },
+    // Desktop workflow extras (assignment / director review / audit trail)
+    assignedTo: { type: Schema.Types.Mixed },
+    assignedEmployeeId: { type: Schema.Types.Mixed },
+    assignedAt: { type: Date },
+    history: { type: [Schema.Types.Mixed], default: [] },
+    directorReview: { type: Schema.Types.Mixed },
+    progress: { type: Number },
+    completed_at: { type: Date },
+    completed_by: { type: String },
+    accepted_at: { type: Date },
+    accepted_by: { type: String },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-// Tracking index
-QuoteSchema.index({ reference: 1, email: 1 });
-
-// Employee assignment index
-QuoteSchema.index({ assigned_to: 1, status: 1 });
+// Compound index for customer tracking lookups
+QuoteSchema.index({ reference: 1, email: 1 }, { name: 'quote_tracking' });
+QuoteSchema.index({ createdAt: -1 }, { name: 'quote_created_desc' });
+QuoteSchema.index({ status: 1, createdAt: -1 }, { name: 'quote_status_created' });
 
 const Quote =
-  mongoose.models.Quote ||
+  (mongoose.models.Quote as mongoose.Model<IQuote>) ||
   mongoose.model<IQuote>('Quote', QuoteSchema);
 
 export default Quote;

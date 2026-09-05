@@ -20,7 +20,7 @@ class Theme:
     COMPANY_NAME = "Untangled Nexus"
     COMPANY_LEGAL_NAME = "Untangled IT Solutions"
     SUBTITLE = "Internal Operations Platform"
-    VERSION = "0.4.0-sprint1"
+    VERSION = __import__("app.__version__", fromlist=["__version__"]).__version__
 
     MODES = ("dark", "light")
     CURRENT_MODE = "light"

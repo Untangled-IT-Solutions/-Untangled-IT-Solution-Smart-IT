@@ -155,7 +155,7 @@ class NotificationView(ctk.CTkFrame):
             reference_id=item.get("reference_id"),
             is_executive=item.get("is_executive", False),
             is_read=item.get("is_read", False),
-            created_at=item.get("created_at"),
+            created_at=item.get("created_at") or item.get("createdAt"),
         )
 
     def _extract_id(self, item) -> str:

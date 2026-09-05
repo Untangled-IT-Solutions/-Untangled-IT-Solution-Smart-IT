@@ -1,7 +1,9 @@
-pytest>=8.0.0
-pymongo>=4.5.0
-python-dotenv>=1.0.0
+# Untangled Nexus Desktop – production dependencies
 customtkinter>=5.2.0
 pillow>=10.0.0
 requests>=2.32.0
+python-dotenv>=1.0.0
 tzdata>=2025.2
+
+# Optional but recommended for packaging
+# pyinstaller>=6.0.0

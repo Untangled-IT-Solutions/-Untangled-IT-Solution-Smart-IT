@@ -11,7 +11,8 @@ from tkinter import messagebox
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
-from app.services.mongodb_service import MongoDBService
+# Production: Backend API only — no direct MongoDB from the desktop client.
+from app.services.backend_api_client import BackendAPIClient
 from app.utils.theme import Theme
 
 
@@ -59,13 +60,15 @@ class QuoteManagementView(ctk.CTkFrame):
     def __init__(
         self,
         master,
-        mongodb_service: MongoDBService,
+        mongodb_service=None,  # deprecated – ignored in production (Backend API only)
         people_controller=None,
         notification_controller=None,
         auth_service=None,
+        backend_api: Optional[BackendAPIClient] = None,
     ):
         super().__init__(master, fg_color=Theme.BG, corner_radius=0)
-        self._mongodb = mongodb_service
+        self._mongodb = None  # never use direct Mongo from desktop
+        self._backend_api = backend_api or BackendAPIClient()
         self._people_controller = people_controller
         self._notification_controller = notification_controller
         self._auth_service = auth_service
@@ -2010,3 +2013,6 @@ class QuoteManagementView(ctk.CTkFrame):
     def refresh(self):
         if self._check_authorization():
             self._load_quotes()
+# Compatibility alias – navigation may import WorkView
+WorkView = QuoteManagementView
+

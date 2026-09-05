@@ -1,0 +1,167 @@
+# Untangled Nexus – automated Windows production release
+#
+# Trigger ONLY on a valid semver tag: v1.2.3
+# Any failure stops the pipeline – no partial release.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate and extract version from tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          echo "Raw tag: ${TAG}"
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid release tag '${TAG}'. Expected vMAJOR.MINOR.PATCH e.g. v1.1.0"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${VERSION}"
+
+      - name: Write single-source version file
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          printf '%s\n' '"""Application version – written by CI from the git tag."""' \
+            "" \
+            "__version__ = \"${VERSION}\"" > app/__version__.py
+          cat app/__version__.py
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller==6.11.1 pytest
+
+      - name: Verify required project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            main.py
+            requirements.txt
+            UntangledNexus.spec
+            installer/untangled_nexus.iss
+            app/__version__.py
+            app/application.py
+            app/services/backend_api_client.py
+            app/services/backend_auth_service.py
+            assets/Branding/icon.ico
+          )
+          for f in "${required[@]}"; do
+            if [[ ! -e "$f" ]]; then
+              echo "::error::Missing required file: $f"
+              exit 1
+            fi
+            echo "OK $f"
+          done
+
+      - name: Run automated tests
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Import and version sanity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          python -c "from app.__version__ import __version__; from app.utils.config import APP_VERSION; assert __version__ == APP_VERSION; print('version', __version__)"
+          python -c "from app.services.backend_api_client import BackendAPIClient; from app.services.backend_auth_service import BackendAuthService; print('imports ok')"
+          python -c "from app.__version__ import __version__; import sys; sys.exit(0 if __version__ == '${VERSION}' else 1)"
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm --clean UntangledNexus.spec
+
+      - name: Verify PyInstaller executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="dist/UntangledNexus/UntangledNexus.exe"
+          if [[ ! -f "$EXE" ]]; then
+            echo "::error::PyInstaller did not produce $EXE"
+            ls -la dist/ || true
+            exit 1
+          fi
+          echo "Executable OK: $EXE"
+          ls -la dist/UntangledNexus/ | head -40
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+            throw "ISCC.exe not found after Inno Setup install"
+          }
+
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          New-Item -ItemType Directory -Force -Path "dist\installer" | Out-Null
+          & $iscc "/DMyAppVersion=$version" "installer\untangled_nexus.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+      - name: Verify installer artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          INSTALLER="dist/installer/Untangled-Nexus-Setup-${VERSION}.exe"
+          if [[ ! -f "$INSTALLER" ]]; then
+            echo "::error::Installer not found at $INSTALLER"
+            ls -la dist/installer/ || true
+            exit 1
+          fi
+          echo "Installer OK: $INSTALLER"
+          ls -la "$INSTALLER"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Untangled Nexus v${{ steps.version.outputs.version }}
+          body: |
+            ## Untangled Nexus v${{ steps.version.outputs.version }}
+
+            Production Windows installer for authorised Untangled IT Solutions employees.
+
+            ### Installer
+            - `Untangled-Nexus-Setup-${{ steps.version.outputs.version }}.exe`
+
+            ### Notes
+            - Requires network access to the company backend API.
+            - Do not redistribute via unofficial channels.
+          files: |
+            dist/installer/Untangled-Nexus-Setup-${{ steps.version.outputs.version }}.exe
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

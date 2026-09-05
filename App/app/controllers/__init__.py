@@ -1,1 +1,1 @@
-"""Controller layer for Untangled Nexus."""
+"""Controllers package."""

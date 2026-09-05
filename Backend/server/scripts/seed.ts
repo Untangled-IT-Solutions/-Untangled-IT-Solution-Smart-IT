@@ -1,4 +1,6 @@
 import mongoose from 'mongoose';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
 import { Product, Service, CatalogItem } from '../db/index.js';
 
@@ -11,9 +13,15 @@ async function seedDatabase() {
     await mongoose.connect(MONGODB_URI);
     console.log('Connected to MongoDB');
 
-    // Import data from frontend
-    const { products, services } = await import('../../../Frontend/src/lib/store-data.js');
-    const { CATALOG } = await import('../../../Frontend/src/lib/catalog.js');
+    // Import data from the sibling Frontend project without making TypeScript
+    // type-check this optional cross-project dependency. The backend ZIP can
+    // run independently; seeding requires the full project layout.
+    const frontendRoot = resolve(process.cwd(), '../Frontend/src/lib');
+    const storeDataUrl = pathToFileURL(resolve(frontendRoot, 'store-data.ts')).href;
+    const catalogUrl = pathToFileURL(resolve(frontendRoot, 'catalog.ts')).href;
+
+    const { products, services } = await import(storeDataUrl);
+    const { CATALOG } = await import(catalogUrl);
 
     // Clear existing data
     await Product.deleteMany({});

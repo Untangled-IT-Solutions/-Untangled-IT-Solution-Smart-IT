@@ -1,1 +1,1 @@
-"""Reusable CustomTkinter widgets."""
+"""Widgets package."""

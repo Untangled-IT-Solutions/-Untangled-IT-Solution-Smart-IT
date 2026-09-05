@@ -26,6 +26,7 @@ const ServiceSchema = new Schema<IService>(
 );
 
 ServiceSchema.index({ name: 'text', description: 'text' });
+ServiceSchema.index({ group: 1, name: 1 }, { name: 'service_group_name' });
 
 const Service = mongoose.model<IService>('Service', ServiceSchema);
 export default Service;

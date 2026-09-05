@@ -219,6 +219,43 @@ class LoginView(ctk.CTk):
         try:
             w, h, x, y = self._calculate_window_size()
             self.geometry(f"{w}x{h}+{x}+{y}")
+            # Lock max size so the window cannot grow beyond its designed dimensions
+            self.maxsize(w, h)
+            # On Windows also hide the maximize button from the title bar
+            self._disable_maximize_button()
+        except Exception:
+            pass
+
+    def _disable_maximize_button(self) -> None:
+        """Remove the maximize (zoom) button from the title bar on Windows."""
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+
+            # CTk/Tk windows are often nested — get the real top-level HWND
+            hwnd = self.winfo_id()
+            parent = ctypes.windll.user32.GetParent(hwnd)
+            if parent:
+                hwnd = parent
+
+            GWL_STYLE = -16
+            WS_MAXIMIZEBOX = 0x00010000
+
+            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_STYLE)
+            # Clear maximize box; leave size borders so the window stays resizable
+            style = style & ~WS_MAXIMIZEBOX
+            ctypes.windll.user32.SetWindowLongW(hwnd, GWL_STYLE, style)
+
+            # Force the non-client area to redraw so the button disappears
+            SWP_FRAMECHANGED = 0x0020
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            ctypes.windll.user32.SetWindowPos(
+                hwnd, 0, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            )
         except Exception:
             pass
 
@@ -339,7 +376,7 @@ class LoginView(ctk.CTk):
         self._brand_logo_placeholder.grid(row=0, column=0)
 
         self._brand_title = ctk.CTkLabel(
-            self._brand_inner, text=Theme.COMPANY_NAME,
+            self._brand_inner, text="Untangled Nexus Workplace",
             font=self._font(22, True), text_color="#FFFFFF", anchor="w",
         )
         self._brand_title.grid(row=3, column=0, sticky="w", pady=(8, 2))
@@ -490,7 +527,11 @@ class LoginView(ctk.CTk):
             corner_radius=11, border_width=1,
             border_color=self._pick("#D0E6C0", "#2F4530"),
         )
-        self._demo.grid(row=10, column=0, sticky="ew", pady=(12, 0))
+        # Only show demo card when DEMO_USERNAME is configured in .env
+        if os.getenv("DEMO_USERNAME", "").strip():
+            self._demo.grid(row=10, column=0, sticky="ew", pady=(12, 0))
+        else:
+            self._demo.grid_remove()
         self._demo.grid_columnconfigure(0, weight=1)
 
         self._demo_title = ctk.CTkLabel(
@@ -599,18 +640,60 @@ class LoginView(ctk.CTk):
             self.winfo_width() or self.PREFERRED_W,
             self.winfo_height() or self.PREFERRED_H,
         )
+        # Compact logo: white when on green field, otherwise dark/primary
+        compact_on_green = (metrics.get("mode") == "small")
         ok_brand = self._put_logo(
             self._brand_logo_host, self._brand_logo_placeholder,
             prefer_white=True, size=metrics["logo_brand"], fallback_color="#FFFFFF",
         )
         ok_compact = self._put_logo(
             self._compact_logo_host, self._compact_logo_placeholder,
-            prefer_white=False, size=metrics["logo_compact"], fallback_color=self.PRIMARY,
+            prefer_white=compact_on_green, size=metrics["logo_compact"],
+            fallback_color="#FFFFFF" if compact_on_green else self.PRIMARY,
         )
         if not ok_brand and not ok_compact:
             print(f"⚠️ Logo could not be rendered. Paths searched: {[str(r) for r in self._project_roots()]}")
         else:
             print(f"✅ Logo mounted (brand={ok_brand}, compact={ok_compact})")
+
+    def _mount_compact_logo_white(self) -> None:
+        """Force a white logo onto the compact host (used on green full-bleed mode)."""
+        if self._is_destroyed:
+            return
+        metrics = self._current_metrics or self._calculate_layout_metrics(
+            self.winfo_width() or self.PREFERRED_W,
+            self.winfo_height() or self.PREFERRED_H,
+        )
+        # Clear any previous logo widgets so we don't stack them
+        try:
+            for child in self._compact_logo_host.winfo_children():
+                if child is not self._compact_logo_placeholder:
+                    try:
+                        child.destroy()
+                    except Exception:
+                        pass
+            self._compact_logo_placeholder.grid()
+        except Exception:
+            pass
+        # Slightly larger logo when it's the only brand element
+        size = metrics.get("logo_compact", (140, 48))
+        size = (max(size[0], 160), max(size[1], 56))
+        ok = self._put_logo(
+            self._compact_logo_host, self._compact_logo_placeholder,
+            prefer_white=True, size=size, fallback_color="#FFFFFF",
+        )
+        if ok:
+            print("✅ Compact white logo mounted for green mode")
+        else:
+            # Fallback: keep the text placeholder visible and white
+            try:
+                self._compact_logo_placeholder.configure(
+                    text="UNTANGLED", text_color="#FFFFFF",
+                    font=self._font(18, True),
+                )
+                self._compact_logo_placeholder.grid()
+            except Exception:
+                pass
 
     def _on_first_map(self, event=None) -> None:
         if self._is_destroyed or self._logos_mounted:
@@ -620,6 +703,8 @@ class LoginView(ctk.CTk):
         self._logos_mounted = True
         self.after(80, self._mount_logos)
         self.after(130, self._set_geometry)
+        # Re-apply after the window is fully mapped so the title-bar style sticks
+        self.after(180, self._disable_maximize_button)
 
     def _put_logo(self, host, placeholder, *, prefer_white: bool, size: tuple[int, int], fallback_color: str) -> bool:
         if Image is None:
@@ -690,12 +775,119 @@ class LoginView(ctk.CTk):
                         pass
         return False
 
+    # ------------------------------------------------------------------ compact green theme
+    def _apply_compact_theme(self, *, green: bool) -> None:
+        """When the window is narrow, flood the whole view with brand green
+        so it feels like the left panel expanded to full width."""
+        if self._is_destroyed:
+            return
+        try:
+            if green:
+                bg = self.PRIMARY
+                panel = self.PRIMARY
+                text = "#FFFFFF"
+                muted = "#D7EBC4"
+                soft = "#4A7A0A"
+                input_bg = "#FFFFFF"
+                input_text = "#16201A"
+                border = "#C8E0B5"
+                demo_bg = "#4A7A0A"
+                demo_border = "#6BA01A"
+                demo_title = self.BRIGHT
+                secure = "#E5F5D4"
+                legal = "#C5DEA8"
+                show_hover = "#5A8A0C"
+                login_fg = "#FFFFFF"
+                login_hover = self.PRIMARY_HOVER
+                login_bg = self.PRIMARY_DARK
+            else:
+                bg = self._bg()
+                panel = self._panel()
+                text = self._text()
+                muted = self._muted()
+                soft = self._pick(self.PRIMARY_SOFT, "#1A2818")
+                input_bg = self._input_bg()
+                input_text = self._text()
+                border = self._border()
+                demo_bg = soft
+                demo_border = self._pick("#D0E6C0", "#2F4530")
+                demo_title = self._pick(self.PRIMARY_DARK, self.BRIGHT)
+                secure = self.PRIMARY
+                legal = muted
+                show_hover = self._pick("#EDF5E5", "#243128")
+                login_fg = "#FFFFFF"
+                login_hover = self.PRIMARY_HOVER
+                login_bg = self.PRIMARY
+
+            self.configure(fg_color=bg)
+            self._form_panel.configure(fg_color=panel)
+            self._form_center.configure(fg_color="transparent")
+            self._form.configure(fg_color="transparent")
+
+            # Compact brand header
+            self._compact_title.configure(text_color=text)
+            self._compact_sub.configure(text_color=muted)
+            try:
+                self._compact_logo_placeholder.configure(text_color="#FFFFFF" if green else self.PRIMARY)
+            except Exception:
+                pass
+
+            # Form labels & text
+            self._welcome_lbl.configure(text_color=text)
+            self._subtitle_lbl.configure(text_color=muted)
+            self._user_lbl.configure(text_color=muted)
+            self._pass_lbl.configure(text_color=muted)
+            self._loading_label.configure(text_color=muted)
+            self.error_label.configure(text_color="#FFB4B4" if green else self.ERROR)
+
+            # Inputs stay crisp white so they pop on the green field
+            self.username_entry.configure(
+                fg_color=input_bg, text_color=input_text,
+                border_color=border, placeholder_text_color=muted if not green else "#8A958C",
+            )
+            self.password_entry.configure(
+                fg_color=input_bg, text_color=input_text,
+                border_color=border, placeholder_text_color=muted if not green else "#8A958C",
+            )
+            self._show_pass_btn.configure(
+                fg_color=input_bg, text_color=muted if not green else "#4A5A4C",
+                hover_color=show_hover, border_color=border,
+            )
+
+            # Primary action – slightly darker green so it still reads as a button
+            self.login_button.configure(
+                fg_color=login_bg, hover_color=login_hover, text_color=login_fg,
+            )
+
+            # Demo card
+            self._demo.configure(fg_color=demo_bg, border_color=demo_border)
+            self._demo_title.configure(text_color=demo_title)
+            self._demo_user_lbl.configure(text_color=muted if not green else "#C5DEA8")
+            self._demo_fill_btn.configure(
+                fg_color=self._pick("#D7EBC9", "#243228") if not green else "#5A8A0C",
+                hover_color=self._pick("#C8E0B5", "#2C3D2C") if not green else "#6BA01A",
+                text_color=demo_title,
+            )
+
+            # Footer
+            self._secure_lbl.configure(text_color=secure)
+            self._legal_lbl.configure(text_color=legal)
+        except Exception as exc:
+            print(f"Compact theme error: {exc}")
+
     # ------------------------------------------------------------------ layout
     def _on_resize(self, event=None) -> None:
         if self._is_destroyed:
             return
         if event is not None and event.widget is not self:
             return
+        # Soft safety net: if something still forces a maximized state, snap back
+        try:
+            if self.state() == "zoomed":
+                self.state("normal")
+                return
+        except Exception:
+            pass
         if self._resize_job is not None:
             try:
                 self.after_cancel(self._resize_job)
@@ -717,6 +909,7 @@ class LoginView(ctk.CTk):
             key = (
                 metrics["mode"], metrics["form_padx"], metrics["form_pady"],
                 metrics["input_h"], metrics["btn_h"], metrics["logo_brand"],
+                metrics["mode"] == "small",  # force theme refresh when entering/leaving green mode
             )
             if key == self._last_metrics_key and self._current_metrics is not None:
                 self.error_label.configure(
@@ -737,11 +930,20 @@ class LoginView(ctk.CTk):
                 self._brand_inner.grid_configure(
                     padx=metrics["brand_padx"], pady=metrics["brand_pady"]
                 )
+                # Restore normal (light/dark panel) look
+                self._apply_compact_theme(green=False)
             else:
                 self._shell.grid_columnconfigure(0, weight=0)
                 self._shell.grid_columnconfigure(1, weight=1)
                 self._brand_panel.grid_remove()
                 self._compact_brand.grid()
+                # Hide text labels — logo alone on the green field
+                self._compact_title.grid_remove()
+                self._compact_sub.grid_remove()
+                # Full-window brand green when compact / small
+                self._apply_compact_theme(green=True)
+                # Ensure white logo is mounted on the green background
+                self.after(30, self._mount_compact_logo_white)
 
             if metrics.get("center_form", False) and split:
                 self._form_center.grid_rowconfigure(0, weight=1)
@@ -875,7 +1077,7 @@ class LoginView(ctk.CTk):
                     text="Welcome", fg_color=self.PRIMARY,
                     hover_color=self.PRIMARY, state="normal",
                 )
-                self.after(400, self.withdraw)
+                self.after(200, self.withdraw)  # visual only; AppController quits mainloop
             else:
                 self._reset_login_button()
                 self._loading_label.configure(text="")
@@ -917,6 +1119,7 @@ class LoginView(ctk.CTk):
             self.after(100, self._focus_username)
             self.after(120, self._apply_layout)
             self.after(160, self._set_geometry)
+            self.after(200, self._disable_maximize_button)
             if not self._logo_labels:
                 self.after(10, self._mount_logos)
         except Exception:

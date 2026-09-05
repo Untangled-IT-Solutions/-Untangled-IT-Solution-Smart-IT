@@ -10,14 +10,17 @@ Navigation:
 
 from __future__ import annotations
 
-import customtkinter as ctk
+from pathlib import Path
 from typing import Optional
 import queue
 
+import customtkinter as ctk
+
 try:
-    from PIL import Image
+    from PIL import Image, ImageTk
 except ModuleNotFoundError:
     Image = None
+    ImageTk = None
 
 from app.controllers.navigation_controller import NavigationController
 from app.controllers.search_controller import SearchController
@@ -27,7 +30,7 @@ from app.utils.async_tasks import start_ui_dispatcher
 from app.widgets.sidebar_button import SidebarButton
 from app.views.search_view import GlobalSearchModal
 from app.services.mongo_attendance_service import MongoAttendanceService
-from app.services.mongo_auth_service import MongoAuthService
+from app.services.backend_auth_service import BackendAuthService
 
 
 class TimerWidget(ctk.CTkFrame):
@@ -37,7 +40,7 @@ class TimerWidget(ctk.CTkFrame):
 
     def __init__(self, master, employee_name: str, employee_id,
                  mongo_attendance: Optional[MongoAttendanceService],
-                 mongo_auth: Optional[MongoAuthService] = None):
+                 mongo_auth: Optional[BackendAuthService] = None):
         super().__init__(master, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
         self._mongo_attendance = mongo_attendance
         self._mongo_auth = mongo_auth
@@ -225,7 +228,7 @@ class TimerWidget(ctk.CTkFrame):
         current_state = self._state.get("state", "not_started")
         current_status = self._state.get("status", "clocked_out")
         if current_state == "not_started" or (current_status == "clocked_out" and not self._state.get("record")):
-            op = lambda: self._mongo_attendance.clock_in(self._employee_id, self._employee_name)
+            op = lambda: self._mongo_attendance.clock_in(self._employee_id)
             name = "Clock in"
         elif current_state == "completed" or current_status == "clocked_out":
             print("⚠️ Today's attendance has already been completed.")
@@ -314,10 +317,15 @@ class MainWindow(ctk.CTkToplevel):
         self._timer_widget = None
         self._active_destination = "Dashboard"
         self._logo_image = None
+        self._logo_label = None
+        self._ctk_images: list = []
         self._icon_image = None
         self._is_destroyed = False
         self._mongo_attendance = None
         self._mongo_auth = None
+        self._notification_controller = None
+        self._notif_poll_job = None
+        self._last_unread = 0
         self._nav_items = []
         self._nav_frame = None  # Store reference to nav frame
 
@@ -330,9 +338,8 @@ class MainWindow(ctk.CTkToplevel):
             self._handle_window_close,
         )
 
-        # No custom OS/window icon is configured here.
-        # This removes the blue square icon from the
-        # top-left corner of the Windows title bar.
+        # Window / taskbar icon — same branding as login_view
+        self._set_window_icon()
 
         self._build_layout()
         # Main-thread poller so background workers can safely deliver results
@@ -347,6 +354,34 @@ class MainWindow(ctk.CTkToplevel):
         except Exception as exc:
             print(f"⚠️ Could not attach MainWindow to navigation controller: {exc}")
 
+    # ------------------------------------------------------------------ icon
+    def _set_window_icon(self) -> None:
+        """Set the window and taskbar icon from assets/Branding/icon.ico"""
+        try:
+            candidates = [
+                Path(__file__).resolve().parents[2] / "assets" / "Branding" / "icon.ico",
+                Path(__file__).resolve().parents[1] / "assets" / "Branding" / "icon.ico",
+                Path.cwd() / "assets" / "Branding" / "icon.ico",
+                Path.cwd() / "assets" / "icon.ico",
+            ]
+
+            icon_path = None
+            for p in candidates:
+                if p.is_file():
+                    icon_path = p
+                    break
+
+            if icon_path is None:
+                print("⚠️ Window icon not found. Looked for: assets/Branding/icon.ico")
+                return
+
+            # .ico works best on Windows for both title-bar and taskbar
+            self.iconbitmap(str(icon_path))
+            print(f"✅ Window icon set: {icon_path}")
+
+        except Exception as e:
+            print(f"⚠️ Could not set window icon: {e}")
+
     # ==================================================================
     # SET CURRENT ACCOUNT - SUPPORTS USER SWITCHING
     # ==================================================================
@@ -357,21 +392,21 @@ class MainWindow(ctk.CTkToplevel):
             return
 
         print(f"🔄 MainWindow: Updating to new user: {getattr(account, 'full_name', 'Unknown')}")
-        
+
         self._current_account = account
-        
+
         # Update navigation for new user's role
         if hasattr(self._navigation_controller, 'set_current_account'):
             self._navigation_controller.set_current_account(account)
-        
+
         # Rebuild navigation buttons for new role
         self._rebuild_navigation()
-        
+
         # Update timer widget for new employee (don't destroy, just update)
         if self._mongo_attendance and account:
             employee_id = getattr(account, 'employee_id', None)
             employee_name = getattr(account, 'full_name', 'Employee')
-            
+
             if employee_id:
                 if self._timer_widget:
                     # Update existing timer widget
@@ -380,7 +415,7 @@ class MainWindow(ctk.CTkToplevel):
                 else:
                     # Create timer if it doesn't exist
                     self.after(100, self._add_timer_to_header)
-        
+
         # After a user switch, always land on Dashboard. Re-navigating to a
         # previous destination (e.g. Quote Management) races with login's
         # own Dashboard open and can leave a half-built workspace.
@@ -410,7 +445,7 @@ class MainWindow(ctk.CTkToplevel):
                                 if grid_info.get('row') == 2:
                                     self._nav_frame = grandchild
                                     break
-                            except:
+                            except Exception:
                                 pass
                     if self._nav_frame:
                         break
@@ -427,7 +462,7 @@ class MainWindow(ctk.CTkToplevel):
                             break
                     if self._nav_frame:
                         break
-            
+
             if self._nav_frame is None:
                 # Last resort - rebuild layout
                 print("⚠️ Nav frame not found, rebuilding layout...")
@@ -438,9 +473,9 @@ class MainWindow(ctk.CTkToplevel):
         for widget in self._nav_frame.winfo_children():
             try:
                 widget.destroy()
-            except:
+            except Exception:
                 pass
-        
+
         self._nav_buttons.clear()
 
         # Create new buttons
@@ -465,11 +500,11 @@ class MainWindow(ctk.CTkToplevel):
     def clear_user_state(self) -> None:
         """Clear user-specific state on logout."""
         print("🧹 Clearing MainWindow user state...")
-        
+
         # Pause timer updates (don't destroy)
         if self._timer_widget:
             self._timer_widget.pause()
-        
+
         self._current_account = None
 
     # ==================================================================
@@ -480,12 +515,15 @@ class MainWindow(ctk.CTkToplevel):
         self,
         mongo_attendance,
         mongo_auth,
+        notification_controller=None,
     ):
         if self._is_destroyed:
             return
 
         self._mongo_attendance = mongo_attendance
         self._mongo_auth = mongo_auth
+        if notification_controller is not None:
+            self._notification_controller = notification_controller
 
         if (
             self._mongo_attendance
@@ -498,6 +536,55 @@ class MainWindow(ctk.CTkToplevel):
                 )
             except Exception:
                 pass
+
+        # Start unread notification badge polling (WhatsApp-style)
+        try:
+            self.after(400, self._poll_notification_badge)
+        except Exception:
+            pass
+
+    def set_notification_controller(self, controller) -> None:
+        """Attach notification controller for sidebar badge updates."""
+        self._notification_controller = controller
+        if not self._is_destroyed:
+            try:
+                self.after(200, self._poll_notification_badge)
+            except Exception:
+                pass
+
+    def _poll_notification_badge(self) -> None:
+        """Refresh the Notifications sidebar badge every ~25s."""
+        if self._is_destroyed:
+            return
+        count = 0
+        try:
+            ctrl = self._notification_controller
+            if ctrl is not None and hasattr(ctrl, "get_unread_count"):
+                count = int(ctrl.get_unread_count() or 0)
+        except Exception as exc:
+            print(f"⚠️ notification badge poll failed: {exc}")
+            count = 0
+
+        try:
+            btn = self._nav_buttons.get("Notifications")
+            if btn is not None and hasattr(btn, "set_badge"):
+                btn.set_badge(count)
+        except Exception:
+            pass
+
+        # Optional: play sound when unread increases
+        if count > self._last_unread and self._last_unread >= 0:
+            try:
+                from app.utils.sound import SoundManager
+                SoundManager.play_notification_sound()
+            except Exception:
+                pass
+        self._last_unread = count
+
+        try:
+            self._notif_poll_job = self.after(25000, self._poll_notification_badge)
+        except Exception:
+            self._notif_poll_job = None
 
     def _add_timer_to_header(self):
         if (
@@ -621,6 +708,102 @@ class MainWindow(ctk.CTkToplevel):
             weight=1,
         )
 
+    def _resolve_main_logo(self) -> Optional[Path]:
+        """Locate the best dark/light logo for the light sidebar panel."""
+        names = [
+            "mainlogo.png",
+            "logo.png",
+            "logo_dark.png",
+            "logo_black.png",
+            "logo_full.png",
+            "logo_slogan.png",
+        ]
+        roots = [
+            Path(__file__).resolve().parents[2],
+            Path(__file__).resolve().parents[1],
+            Path.cwd(),
+            Path.cwd().parent,
+        ]
+        folders = [
+            Path("assets") / "logo",
+            Path("assets") / "Branding" / "logo",
+            Path("app") / "assets" / "logo",
+            Path("assets") / "Branding",
+            Path("assets"),
+        ]
+        for root in roots:
+            for folder in folders:
+                for name in names:
+                    candidate = root / folder / name
+                    if candidate.is_file():
+                        return candidate
+        return None
+
+    def _mount_sidebar_logo(self, host: ctk.CTkFrame) -> None:
+        """Load logo bound to THIS MainWindow (CTkToplevel).
+
+        CTkImage/PhotoImage without master binds to the default Tk root.
+        After login the LoginView root is destroyed, so those images become
+        invalid ("pyimageN doesn't exist"). We must pass master=self.
+        """
+        if self._is_destroyed or Image is None or ImageTk is None:
+            return
+        logo_path = self._resolve_main_logo()
+        if logo_path is None:
+            print("⚠️ Sidebar logo file not found (checked assets/logo and Branding/logo)")
+            return
+        try:
+            import tkinter as tk
+
+            for child in list(host.winfo_children()):
+                try:
+                    child.destroy()
+                except Exception:
+                    pass
+
+            pil_image = Image.open(logo_path).convert("RGBA")
+            max_w, max_h = 200, 130
+            src_w, src_h = pil_image.size
+            scale = min(max_w / max(src_w, 1), max_h / max(src_h, 1))
+            size = (max(40, int(src_w * scale)), max(40, int(src_h * scale)))
+            try:
+                resample = Image.Resampling.LANCZOS
+            except AttributeError:
+                resample = Image.LANCZOS
+            pil_image = pil_image.resize(size, resample)
+
+            # Critical: master=self (MainWindow Toplevel), not the dead login root
+            photo = ImageTk.PhotoImage(pil_image, master=self)
+            self._logo_image = photo
+            self._ctk_images.append(photo)
+
+            bg = Theme.PANEL if isinstance(Theme.PANEL, str) else "#FFFFFF"
+            label = tk.Label(
+                host,
+                image=photo,
+                borderwidth=0,
+                highlightthickness=0,
+                bg=bg,
+            )
+            label.image = photo  # extra ref on the widget
+            label.pack(anchor="w", padx=4, pady=2)
+            self._logo_label = label
+            print(f"✅ Sidebar logo loaded: {logo_path} ({size[0]}x{size[1]})")
+        except Exception as exp:
+            print(f"⚠️ Could not load sidebar logo: {exp}")
+            self._logo_image = None
+            try:
+                ctk.CTkLabel(
+                    host,
+                    text=Theme.COMPANY_NAME,
+                    justify="left",
+                    text_color=Theme.TEXT,
+                    font=Theme.FONT_HEADING,
+                ).pack(anchor="w", padx=4, pady=4)
+            except Exception:
+                pass
+
+
     def _build_sidebar(self):
         if self._is_destroyed:
             return
@@ -651,49 +834,16 @@ class MainWindow(ctk.CTkToplevel):
             weight=1,
         )
 
-        # LOGO
-        logo_path = Theme.logo_for_current_mode()
-
-        if (
-            Image is not None
-            and logo_path.exists()
-        ):
-            try:
-                pil_image = Image.open(
-                    logo_path
-                ).copy()
-
-                self._logo_image = ctk.CTkImage(
-                    light_image=pil_image,
-                    dark_image=pil_image,
-                    size=(188, 150),
-                )
-
-                ctk.CTkLabel(
-                    sidebar,
-                    image=self._logo_image,
-                    text="",
-                ).grid(
-                    row=0,
-                    column=0,
-                    padx=22,
-                    pady=(24, 8),
-                    sticky="w",
-                )
-
-            except Exception as exc:
-                print(
-                    f"⚠️ Could not load sidebar logo: {exc}"
-                )
-
-                self._create_text_logo(
-                    sidebar
-                )
-
-        else:
-            self._create_text_logo(
-                sidebar
-            )
+        # LOGO host — text first, then swap to image after window is mapped
+        # (CTkToplevel often drops PhotoImage if created too early → "pyimage doesn't exist")
+        self._logo_host = ctk.CTkFrame(sidebar, fg_color="transparent")
+        self._logo_host.grid(row=0, column=0, padx=20, pady=(20, 6), sticky="w")
+        self._create_text_logo(self._logo_host)
+        try:
+            self.after(120, lambda h=self._logo_host: self._mount_sidebar_logo(h))
+            self.after(400, lambda h=self._logo_host: self._mount_sidebar_logo(h))
+        except Exception as exp:
+            print(f"⚠️ Could not schedule sidebar logo mount: {exp}")
 
         # SUBTITLE
         ctk.CTkLabel(
@@ -752,23 +902,20 @@ class MainWindow(ctk.CTkToplevel):
 
             self._nav_buttons[item] = button
 
-    def _create_text_logo(
-        self,
-        sidebar,
-    ):
-        ctk.CTkLabel(
-            sidebar,
+    def _create_text_logo(self, parent) -> None:
+        """Fallback company name when the logo image is not ready yet."""
+        label = ctk.CTkLabel(
+            parent,
             text=Theme.COMPANY_NAME,
             justify="left",
             text_color=Theme.TEXT,
             font=Theme.FONT_HEADING,
-        ).grid(
-            row=0,
-            column=0,
-            padx=24,
-            pady=(30, 8),
-            sticky="w",
         )
+        # Parent may be the logo host (pack) or the sidebar (grid)
+        try:
+            label.pack(anchor="w", padx=4, pady=4)
+        except Exception:
+            label.grid(row=0, column=0, padx=24, pady=(30, 8), sticky="w")
 
     def _build_header(self):
         if self._is_destroyed:
@@ -895,8 +1042,8 @@ class MainWindow(ctk.CTkToplevel):
             # previous workspace. This avoids a blank workspace during
             # rapid navigation between complex CustomTkinter views.
             self.workspace.update_idletasks()
-        except Exception as exc:
-            print(f"❌ Error displaying view: {exc}")
+        except Exception as exp:
+            print(f"❌ Error displaying view: {exp}")
             try:
                 view.destroy()
             except Exception:
@@ -941,17 +1088,22 @@ class MainWindow(ctk.CTkToplevel):
                 result = self._navigation_controller.navigate(destination)
                 if result:
                     print(f"🧭 Workspace request completed: {destination}")
+                    if destination == "Notifications":
+                        try:
+                            self.after(800, self._poll_notification_badge)
+                        except Exception:
+                            pass
                 else:
                     print(f"⚠️ Workspace request rejected: {destination}")
-            except Exception as exc:
-                print(f"❌ Navigation dispatch failed for {destination}: {exc}")
+            except Exception as exp:
+                print(f"❌ Navigation dispatch failed for {destination}: {exp}")
                 import traceback
                 traceback.print_exc()
 
         try:
             self.after(0, dispatch)
-        except Exception as exc:
-            print(f"❌ Could not schedule navigation for {destination}: {exc}")
+        except Exception as exp:
+            print(f"❌ Could not schedule navigation for {destination}: {exp}")
 
     def update_navigation(self, navigation_controller: NavigationController) -> None:
         """Update navigation with a new controller."""
@@ -988,6 +1140,8 @@ class MainWindow(ctk.CTkToplevel):
         self._active_view = None
         self._timer_widget = None
         self._nav_frame = None
+        self._logo_image = None
+        self._logo_label = None
 
         self._build_layout()
 
@@ -1015,10 +1169,8 @@ class MainWindow(ctk.CTkToplevel):
         if callable(self._on_logout):
             try:
                 self._on_logout()
-            except Exception as exc:
-                print(
-                    f"⚠️ Logout callback error: {exc}"
-                )
+            except Exception as exp:
+                print(f"⚠️ Logout callback error: {exp}")
 
     def _handle_window_close(self):
         if self._is_destroyed:

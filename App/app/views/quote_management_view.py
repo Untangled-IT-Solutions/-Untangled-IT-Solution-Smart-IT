@@ -1,3 +1,4 @@
+
 # app/views/quote_management_view.py
 """Quote Management View - Complete employee workspace with all statuses."""
 
@@ -8,7 +9,7 @@ from typing import Optional, Dict, Any, List
 import base64
 import os
 
-from app.services.mongodb_service import MongoDBService
+# Production: Backend API only — no direct MongoDB from the desktop client.
 from app.services.backend_api_client import BackendAPIClient
 from app.utils.theme import Theme
 from app.utils.async_tasks import run_in_background
@@ -17,100 +18,148 @@ from app.utils.async_tasks import run_in_background
 class QuoteManagementView(ctk.CTkFrame):
     """Complete employee workspace with full status workflow."""
 
-    # Complete status list for employees
+    # Professional workflow statuses
+    # Assign → Collect Details → Quote → Client Approves → Payment → Delivery → Complete
     STATUS_OPTIONS = [
-        "Pending", "In Review", "Quoted", "Assigned", "Accepted", 
-        "In Progress", "Awaiting Client", "Awaiting Payment", "Paid", "Completed", "Returned"
+        "Pending",
+        "Assigned",
+        "Awaiting Details",
+        "Quoted",
+        "Awaiting Client Approval",
+        "Awaiting Payment",
+        "Paid",
+        "In Progress",
+        "Out for Delivery",
+        "Completed",
+        "Returned",
+        # Legacy (still supported for existing jobs)
+        "In Review",
+        "Accepted",
+        "Awaiting Client",
     ]
-    
+
     STATUS_COLORS = {
         "Pending": "#FFC107",
-        "In Review": "#FF9800",
-        "Quoted": "#4CAF50",
         "Assigned": "#2196F3",
-        "Accepted": "#4CAF50",
-        "In Progress": "#FF9800",
-        "Awaiting Client": "#9C27B0",
+        "Awaiting Details": "#FF9800",
+        "Quoted": "#4CAF50",
+        "Awaiting Client Approval": "#9C27B0",
         "Awaiting Payment": "#E91E63",
         "Paid": "#00BCD4",
+        "In Progress": "#FF9800",
+        "Out for Delivery": "#3F51B5",
         "Completed": "#9E9E9E",
         "Returned": "#F44336",
+        "In Review": "#FF9800",
+        "Accepted": "#4CAF50",
+        "Awaiting Client": "#9C27B0",
     }
 
     STATUS_ICONS = {
         "Pending": "⏳",
-        "In Review": "📝",
-        "Quoted": "💰",
         "Assigned": "📋",
-        "Accepted": "✅",
-        "In Progress": "🔧",
-        "Awaiting Client": "⏳",
-        "Awaiting Payment": "💰",
+        "Awaiting Details": "📝",
+        "Quoted": "💰",
+        "Awaiting Client Approval": "🤝",
+        "Awaiting Payment": "💳",
         "Paid": "✅",
+        "In Progress": "🔧",
+        "Out for Delivery": "🚚",
         "Completed": "🏁",
         "Returned": "↩️",
+        "In Review": "📝",
+        "Accepted": "✅",
+        "Awaiting Client": "⏳",
     }
 
     STATUS_HELP = {
-        "Pending": "New request awaiting review.",
-        "In Review": "Pricing and details being worked out.",
-        "Quoted": "Price sent to customer.",
-        "Assigned": "Assigned to you. Click Accept to start.",
-        "Accepted": "You've accepted the job. Click Start Work to begin.",
-        "In Progress": "Work in progress. Update below.",
-        "Awaiting Client": "Waiting for client response.",
-        "Awaiting Payment": "Waiting for payment.",
-        "Paid": "Payment received. Complete the job.",
-        "Completed": "Job complete! 🎉",
+        "Pending": "Client submitted a request. Review and assign if needed.",
+        "Assigned": "Job assigned. Contact the client and collect any missing details.",
+        "Awaiting Details": "Missing address, measurements, or other info. Collect from client.",
+        "Quoted": "Quotation prepared with pricing. Send to the client.",
+        "Awaiting Client Approval": "Client is reviewing the quote. Wait for accept/reject.",
+        "Awaiting Payment": "Client accepted the quote. Waiting for payment.",
+        "Paid": "Payment received. Schedule work or delivery.",
+        "In Progress": "Manufacturing or service is underway. Update progress.",
+        "Out for Delivery": "Item is being delivered. Track until delivered.",
+        "Completed": "Delivered successfully. Job closed.",
         "Returned": "Returned to manager for reassignment.",
+        "In Review": "Legacy: pricing and details being worked out.",
+        "Accepted": "Legacy: job accepted by employee.",
+        "Awaiting Client": "Legacy: waiting for client response.",
+    }
+
+    # Next-step guidance for the primary action button
+    WORKFLOW_NEXT = {
+        "Pending": {"label": "📋 Assign / Start", "action": "assign_start", "color": "#2196F3"},
+        "Assigned": {"label": "📝 Request Details", "action": "request_details", "color": "#FF9800"},
+        "Awaiting Details": {"label": "💰 Generate Quote", "action": "generate_quote", "color": "#4CAF50"},
+        "Quoted": {"label": "📤 Send for Approval", "action": "send_approval", "color": "#9C27B0"},
+        "Awaiting Client Approval": {"label": "💳 Mark Awaiting Payment", "action": "await_payment", "color": "#E91E63"},
+        "Awaiting Payment": {"label": "✅ Mark Paid", "action": "mark_paid", "color": "#00BCD4"},
+        "Paid": {"label": "🔧 Start Work", "action": "start_work", "color": "#FF9800"},
+        "In Progress": {"label": "🚚 Out for Delivery", "action": "out_for_delivery", "color": "#3F51B5"},
+        "Out for Delivery": {"label": "🏁 Mark Completed", "action": "complete", "color": "#9E9E9E"},
+        "Accepted": {"label": "🔧 Start Work", "action": "start_work", "color": "#FF9800"},
+        "In Review": {"label": "💰 Generate Quote", "action": "generate_quote", "color": "#4CAF50"},
+        "Awaiting Client": {"label": "💳 Mark Awaiting Payment", "action": "await_payment", "color": "#E91E63"},
     }
 
     MANAGER_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
     STAFF_ROLES = ["Staff", "Intern"]
 
-    # Map display status to MongoDB status
+    # Map display status to MongoDB / API status
     DISPLAY_TO_MONGO = {
         "Pending": "received",
-        "In Review": "in_review",
-        "Quoted": "quoted",
         "Assigned": "assigned",
-        "Accepted": "accepted",
-        "In Progress": "in_progress",
-        "Awaiting Client": "awaiting_client",
+        "Awaiting Details": "awaiting_details",
+        "Quoted": "quoted",
+        "Awaiting Client Approval": "awaiting_client_approval",
         "Awaiting Payment": "awaiting_payment",
         "Paid": "paid",
+        "In Progress": "in_progress",
+        "Out for Delivery": "out_for_delivery",
         "Completed": "completed",
         "Returned": "returned",
+        "In Review": "in_review",
+        "Accepted": "accepted",
+        "Awaiting Client": "awaiting_client",
     }
 
     MONGO_TO_DISPLAY = {
         "received": "Pending",
-        "in_review": "In Review",
-        "quoted": "Quoted",
+        "pending": "Pending",
         "assigned": "Assigned",
-        "accepted": "Accepted",
-        "in_progress": "In Progress",
-        "in progress": "In Progress",
-        "awaiting_client": "Awaiting Client",
+        "awaiting_details": "Awaiting Details",
+        "quoted": "Quoted",
+        "awaiting_client_approval": "Awaiting Client Approval",
+        "awaiting_client": "Awaiting Client Approval",  # map legacy to new name
         "awaiting_payment": "Awaiting Payment",
         "paid": "Paid",
+        "in_progress": "In Progress",
+        "in progress": "In Progress",
+        "out_for_delivery": "Out for Delivery",
         "completed": "Completed",
         "returned": "Returned",
+        "in_review": "In Review",
+        "accepted": "Accepted",
+        "awaiting_director": "In Review",
+        "awaiting director": "In Review",
     }
 
     def __init__(
         self,
         master,
-        mongodb_service: MongoDBService = None,
+        mongodb_service=None,  # deprecated – ignored in production (Backend API only)
         people_controller=None,
         notification_controller=None,
         auth_service=None,
         navigation_controller=None,
-        backend_api: BackendAPIClient = None,
+        backend_api: Optional[BackendAPIClient] = None,
     ):
         super().__init__(master, fg_color=Theme.BG, corner_radius=0)
-        self._mongodb = mongodb_service
-        self._backend_api = backend_api or BackendAPIClient()  # Initialize if not provided
+        self._mongodb = None  # never use direct Mongo from desktop
+        self._backend_api = backend_api or BackendAPIClient()
         self._people_controller = people_controller
         self._notification_controller = notification_controller
         self._auth_service = auth_service
@@ -396,11 +445,21 @@ class QuoteManagementView(ctk.CTkFrame):
         """Get quotes from the backend API."""
         if not self._backend_api:
             return None
-        
+
         try:
             response = self._backend_api.request("GET", "/api/quotes")
-            if response and response.get('success'):
-                return response.get('quotes', [])
+            if not response:
+                return None
+            if isinstance(response, list):
+                return response
+            if response.get("success") is False:
+                return None
+            return (
+                response.get("quotes")
+                or response.get("items")
+                or response.get("data")
+                or []
+            )
         except Exception as e:
             print(f"⚠️ Could not fetch quotes from API: {e}")
         return None
@@ -622,6 +681,32 @@ class QuoteManagementView(ctk.CTkFrame):
                         quote["photos"] = []
                     if not quote.get("createdAt"):
                         quote["createdAt"] = quote.get("created_at") or quote.get("created")
+                    # Normalize director review for Director availability UI
+                    review = quote.get("director_review") or quote.get("directorReview")
+                    if isinstance(review, dict):
+                        # Treat legacy backend status "requested" as pending
+                        st = str(review.get("status") or "").lower()
+                        if st in ("requested", "awaiting", "awaiting_director"):
+                            review = {**review, "status": "pending"}
+                        quote["director_review"] = review
+                    elif str(raw_status).lower() in ("awaiting_director", "awaiting director"):
+                        # Stuck status with no review object — synthesize pending shell
+                        items = quote.get("items") or []
+                        quote["director_review"] = {
+                            "status": "pending",
+                            "requested_at": quote.get("updatedAt") or quote.get("createdAt"),
+                            "requested_by": {"full_name": "Employee"},
+                            "items": [
+                                {
+                                    "item_id": str(it.get("id") or it.get("_id") or ""),
+                                    "item_name": it.get("name") or "Item",
+                                    "qty_requested": it.get("qty", 1),
+                                    "availability": "",
+                                    "comment": "",
+                                }
+                                for it in items
+                            ],
+                        }
                     normalized.append(quote)
 
                 total_from_api = len(normalized)
@@ -895,33 +980,32 @@ class QuoteManagementView(ctk.CTkFrame):
         self._quote_cards[quote.get("reference", "")] = frame
 
     def _get_next_action(self, status: str) -> Optional[Dict[str, Any]]:
-        """Get the next action for a status."""
-        actions = {
-            "Pending": {"label": "📝 Review", "action": "review", "color": "#FFC107"},
-            "In Review": {"label": "📝 Review", "action": "review", "color": "#FF9800"},
-            "Quoted": {"label": "💰 Check", "action": "check", "color": "#4CAF50"},
-            "Assigned": {"label": "✅ Accept", "action": "accept", "color": "#4CAF50"},
-            "Accepted": {"label": "▶ Start", "action": "start", "color": "#FF9800"},
-            "In Progress": {"label": "📝 Update", "action": "update", "color": "#2196F3"},
-            "Awaiting Client": {"label": "⏳ Check", "action": "check", "color": "#9C27B0"},
-            "Awaiting Payment": {"label": "💰 Check", "action": "check", "color": "#E91E63"},
-            "Paid": {"label": "✅ Complete", "action": "complete", "color": "#00BCD4"},
-        }
-        return actions.get(status)
+        """Next primary action for the professional workflow."""
+        return self.WORKFLOW_NEXT.get(status)
 
     def _execute_action(self, quote: Dict[str, Any], action: str):
-        """Execute the action based on current status."""
-        if action == "accept":
+        """Execute workflow action and advance status when appropriate."""
+        if action in ("assign_start", "review", "check", "update"):
+            self._select_quote(quote)
+        elif action == "accept":
             self._quick_accept(quote)
-        elif action == "start":
-            self._quick_start_work(quote)
-        elif action == "update":
-            self._select_quote(quote)
-        elif action == "check":
-            self._select_quote(quote)
+        elif action == "start" or action == "start_work":
+            self._apply_status_change(quote, "In Progress")
+        elif action == "request_details":
+            self._request_client_details(quote)
+        elif action == "generate_quote":
+            self._generate_quotation(quote)
+        elif action == "send_approval":
+            self._apply_status_change(quote, "Awaiting Client Approval")
+        elif action == "await_payment":
+            self._apply_status_change(quote, "Awaiting Payment")
+        elif action == "mark_paid":
+            self._apply_status_change(quote, "Paid")
+        elif action == "out_for_delivery":
+            self._apply_status_change(quote, "Out for Delivery")
         elif action == "complete":
             self._mark_complete(quote)
-        elif action == "review":
+        else:
             self._select_quote(quote)
 
     def _set_status_filter(self, name: str):
@@ -1180,42 +1264,15 @@ class QuoteManagementView(ctk.CTkFrame):
                     anchor="w",
                 ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(4, 0))
 
-        # === CUSTOMER DETAILS ===
+        # === CUSTOMER DETAILS + MISSING INFO ===
         row = self._add_divider(row)
-        row = self._add_section_title("Customer Details", row)
-        card = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
-        card.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-        card.grid_columnconfigure(0, weight=0)
-        card.grid_columnconfigure(1, weight=1)
-        row += 1
+        row = self._render_customer_and_missing_section(quote, row)
 
-        details = [
-            ("Name", quote.get("customerName") or "Not provided"),
-            ("Email", quote.get("email") or "Not provided"),
-            ("Phone", quote.get("phone") or "Not provided"),
-            ("Address", quote.get("address") or "Not provided"),
-        ]
-        if quote.get("company"):
-            details.append(("Company", quote["company"]))
+        # === QUOTATION ===
+        row = self._render_quotation_section(quote, row)
 
-        for i, (label, value) in enumerate(details):
-            ctk.CTkLabel(
-                card,
-                text=label,
-                font=ctk.CTkFont(size=11, weight="bold"),
-                anchor="w",
-                width=80,
-                text_color=Theme.MUTED_TEXT,
-            ).grid(row=i, column=0, sticky="w", padx=(12, 6), pady=3)
-            ctk.CTkLabel(
-                card,
-                text=value,
-                anchor="w",
-                font=ctk.CTkFont(size=12),
-                text_color=Theme.TEXT,
-                wraplength=350,
-                justify="left",
-            ).grid(row=i, column=1, sticky="w", padx=(0, 12), pady=3)
+        # === DELIVERY (after payment) ===
+        row = self._render_delivery_section(quote, row)
 
         # === ITEMS ===
         row = self._add_divider(row)
@@ -1249,13 +1306,20 @@ class QuoteManagementView(ctk.CTkFrame):
                     text_color=Theme.TEXT,
                     fg_color=stripe,
                 ).grid(row=i, column=1, sticky="ew", pady=1, padx=(0, 6))
-                specs = item.get("specs")
-                if isinstance(specs, list) and specs:
-                    specs_text = " · ".join(str(s) for s in specs[:2])
-                elif specs:
-                    specs_text = str(specs)
+                price = item.get("price") or item.get("unit_price")
+                if price is not None:
+                    try:
+                        specs_text = f"R {float(price):,.2f}"
+                    except Exception:
+                        specs_text = str(price)
                 else:
-                    specs_text = "No specs"
+                    specs = item.get("specs")
+                    if isinstance(specs, list) and specs:
+                        specs_text = " · ".join(str(s) for s in specs[:2])
+                    elif specs:
+                        specs_text = str(specs)
+                    else:
+                        specs_text = "No price set"
                 ctk.CTkLabel(
                     items_frame,
                     text=specs_text,
@@ -1266,7 +1330,7 @@ class QuoteManagementView(ctk.CTkFrame):
                     wraplength=180,
                 ).grid(row=i, column=2, sticky="ew", pady=1)
 
-        # === DIRECTOR AVAILABILITY REVIEW (optional field; old quotes work without it) ===
+        # === DIRECTOR AVAILABILITY REVIEW ===
         row = self._render_director_review_section(quote, row)
 
         # === HISTORY ===
@@ -2102,9 +2166,10 @@ class QuoteManagementView(ctk.CTkFrame):
         }
         # Backend documents: PUT/POST /api/admin/quotes/:reference/status
         # Older clients incorrectly called PUT /api/admin/quotes/:reference (404).
+        # Prefer POST (canonical on fixed backend); keep aliases for older deploys.
         candidates = [
-            ("PUT", f"/api/admin/quotes/{reference}/status"),
             ("POST", f"/api/admin/quotes/{reference}/status"),
+            ("PUT", f"/api/admin/quotes/{reference}/status"),
             ("PATCH", f"/api/admin/quotes/{reference}/status"),
             ("POST", f"/api/quotes/{reference}/status"),
             ("PUT", f"/api/quotes/{reference}/status"),
@@ -2328,7 +2393,7 @@ class QuoteManagementView(ctk.CTkFrame):
 
         active = sum(
             1 for q in self._quotes 
-            if q.get("status") in ("Assigned", "Accepted", "In Progress", "Pending", "In Review")
+            if q.get("status") in ("Pending", "Assigned", "Awaiting Details", "Quoted", "Awaiting Client Approval", "Awaiting Payment", "Paid", "In Progress", "Out for Delivery", "Accepted", "In Review", "Awaiting Client")
         )
         self._stats_label.configure(
             text=f"{len(self._quotes)} jobs · {active} active"
@@ -2344,20 +2409,419 @@ class QuoteManagementView(ctk.CTkFrame):
     ]
 
     def _is_director(self) -> bool:
-        return str(self._current_role or "").strip().lower() == "director"
+        role = str(self._current_role or "").strip().lower()
+        # Accept common variants used in auth / sidebar
+        return role in {
+            "director",
+            "demo admin",
+            "admin",
+            "branch manager",
+            "business lead",
+            "operations manager",
+        } or "director" in role
+
+    def _get_director_review(self, quote: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a normalized director_review dict from either API field name."""
+        review = quote.get("director_review") or quote.get("directorReview") or {}
+        if not isinstance(review, dict):
+            return {}
+        st = str(review.get("status") or "").lower()
+        # Backend historically used "requested" — treat as pending for the form
+        if st in ("requested", "awaiting", "awaiting_director"):
+            review = {**review, "status": "pending"}
+        return review
+
+
+    # ------------------------------------------------------------------ workflow UI
+
+    def _format_rand(self, value) -> str:
+        try:
+            return f"R {float(value):,.2f}"
+        except Exception:
+            return "R 0.00"
+
+    def _quotation_lines(self, quote: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Build quotation lines from quote.items / quote.quotation."""
+        stored = quote.get("quotation") or quote.get("quote_lines") or []
+        if isinstance(stored, list) and stored:
+            lines = []
+            for line in stored:
+                if not isinstance(line, dict):
+                    continue
+                lines.append({
+                    "name": line.get("name") or line.get("description") or "Item",
+                    "amount": float(line.get("amount") or line.get("price") or 0),
+                })
+            return lines
+
+        lines = []
+        for item in quote.get("items") or []:
+            name = item.get("name") or "Item"
+            qty = float(item.get("qty") or 1)
+            unit = item.get("price") or item.get("unit_price")
+            if unit is None:
+                # no price yet — still list the line at 0 for Generate Quote UX
+                amount = 0.0
+            else:
+                try:
+                    amount = float(unit) * qty
+                except Exception:
+                    amount = 0.0
+            lines.append({"name": name if qty == 1 else f"{name} ×{int(qty) if qty == int(qty) else qty}", "amount": amount})
+
+        delivery_fee = quote.get("delivery_fee") or quote.get("deliveryFee")
+        if delivery_fee:
+            try:
+                lines.append({
+                    "name": f"Delivery ({quote.get('delivery_area') or quote.get('city') or 'client address'})",
+                    "amount": float(delivery_fee),
+                })
+            except Exception:
+                pass
+        return lines
+
+    def _quotation_total(self, quote: Dict[str, Any]) -> float:
+        total = quote.get("quotation_total") or quote.get("total") or quote.get("paymentAmount")
+        if total is not None:
+            try:
+                return float(total)
+            except Exception:
+                pass
+        return sum(line["amount"] for line in self._quotation_lines(quote))
+
+    def _missing_client_fields(self, quote: Dict[str, Any]) -> List[str]:
+        missing = []
+        if not (quote.get("address") or quote.get("delivery_address")):
+            missing.append("Delivery address")
+        if not (quote.get("phone") or quote.get("mobile")):
+            missing.append("Phone number")
+        if not (quote.get("delivery_date") or quote.get("preferred_delivery_date")):
+            missing.append("Preferred delivery date")
+        return missing
+
+    def _render_customer_and_missing_section(self, quote: Dict[str, Any], row: int) -> int:
+        row = self._add_section_title("Customer Details", row)
+        card = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
+        card.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        card.grid_columnconfigure(0, weight=0)
+        card.grid_columnconfigure(1, weight=1)
+        row += 1
+
+        address = quote.get("address") or quote.get("delivery_address") or ""
+        delivery_date = quote.get("delivery_date") or quote.get("preferred_delivery_date") or ""
+        site_notes = quote.get("site_notes") or quote.get("notes") or ""
+
+        details = [
+            ("Name", quote.get("customerName") or "—"),
+            ("Email", quote.get("email") or "—"),
+            ("Phone", quote.get("phone") or quote.get("mobile") or "—"),
+            ("Address", address or "—"),
+            ("Delivery Date", delivery_date or "—"),
+        ]
+        if quote.get("company"):
+            details.insert(1, ("Company", quote["company"]))
+        if site_notes:
+            details.append(("Site Notes", site_notes))
+
+        for i, (label, value) in enumerate(details):
+            is_missing = value in ("—", "", None)
+            ctk.CTkLabel(
+                card,
+                text=label,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                anchor="w",
+                width=100,
+                text_color=Theme.MUTED_TEXT,
+            ).grid(row=i, column=0, sticky="w", padx=(12, 6), pady=3)
+            ctk.CTkLabel(
+                card,
+                text=("Missing — request from client" if is_missing else str(value)),
+                anchor="w",
+                font=ctk.CTkFont(size=12),
+                text_color=("#C62828" if is_missing else Theme.TEXT),
+                wraplength=340,
+                justify="left",
+            ).grid(row=i, column=1, sticky="w", padx=(0, 12), pady=3)
+
+        missing = self._missing_client_fields(quote)
+        if missing:
+            miss_box = ctk.CTkFrame(self._details_frame, fg_color=("#FFF3E0", "#3E2723"), corner_radius=8)
+            miss_box.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+            miss_box.grid_columnconfigure(0, weight=1)
+            row += 1
+            ctk.CTkLabel(
+                miss_box,
+                text="⚠️  Missing Information",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="#E65100",
+                anchor="w",
+            ).pack(fill="x", padx=12, pady=(10, 2))
+            ctk.CTkLabel(
+                miss_box,
+                text="•  " + "\n•  ".join(missing),
+                font=ctk.CTkFont(size=11),
+                text_color=Theme.TEXT,
+                anchor="w",
+                justify="left",
+            ).pack(fill="x", padx=12, pady=(0, 6))
+            ctk.CTkButton(
+                miss_box,
+                text="Request Details from Client",
+                height=30,
+                width=200,
+                fg_color="#FF9800",
+                hover_color="#F57C00",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._request_client_details(quote),
+            ).pack(anchor="w", padx=12, pady=(0, 12))
+        return row
+
+    def _render_quotation_section(self, quote: Dict[str, Any], row: int) -> int:
+        row = self._add_divider(row)
+        row = self._add_section_title("Quotation", row)
+
+        box = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
+        box.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        box.grid_columnconfigure(0, weight=1)
+        box.grid_columnconfigure(1, weight=0)
+        row += 1
+
+        lines = self._quotation_lines(quote)
+        total = self._quotation_total(quote)
+        validity = quote.get("quote_valid_until") or quote.get("valid_until") or "14 days"
+        includes = quote.get("quote_includes") or "Includes delivery to the client's address"
+
+        if not lines:
+            ctk.CTkLabel(
+                box,
+                text="No priced lines yet. Use Generate Quote after collecting details.",
+                font=ctk.CTkFont(size=11),
+                text_color=Theme.MUTED_TEXT,
+                anchor="w",
+            ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=12)
+        else:
+            for i, line in enumerate(lines):
+                ctk.CTkLabel(
+                    box,
+                    text=line["name"],
+                    font=ctk.CTkFont(size=12),
+                    text_color=Theme.TEXT,
+                    anchor="w",
+                ).grid(row=i, column=0, sticky="w", padx=14, pady=3)
+                ctk.CTkLabel(
+                    box,
+                    text=self._format_rand(line["amount"]),
+                    font=ctk.CTkFont(size=12),
+                    text_color=Theme.TEXT,
+                    anchor="e",
+                ).grid(row=i, column=1, sticky="e", padx=14, pady=3)
+
+            # separator
+            sep = ctk.CTkFrame(box, fg_color=("gray80", "gray30"), height=1)
+            sep.grid(row=len(lines), column=0, columnspan=2, sticky="ew", padx=14, pady=(6, 4))
+
+            ctk.CTkLabel(
+                box,
+                text="Total",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=Theme.TEXT,
+                anchor="w",
+            ).grid(row=len(lines) + 1, column=0, sticky="w", padx=14, pady=(2, 2))
+            ctk.CTkLabel(
+                box,
+                text=self._format_rand(total),
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="#2E7D32",
+                anchor="e",
+            ).grid(row=len(lines) + 1, column=1, sticky="e", padx=14, pady=(2, 2))
+
+            ctk.CTkLabel(
+                box,
+                text=f"Validity: {validity}  •  {includes}",
+                font=ctk.CTkFont(size=10),
+                text_color=Theme.MUTED_TEXT,
+                anchor="w",
+            ).grid(row=len(lines) + 2, column=0, columnspan=2, sticky="w", padx=14, pady=(2, 10))
+
+        btn_row = ctk.CTkFrame(box, fg_color="transparent")
+        btn_row.grid(row=50, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
+        ctk.CTkButton(
+            btn_row,
+            text="Generate / Refresh Quote",
+            height=30,
+            width=180,
+            fg_color="#4CAF50",
+            hover_color="#388E3C",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self._generate_quotation(quote),
+        ).pack(side="left")
+        if total > 0 and quote.get("status") in (
+            "Quoted", "Awaiting Details", "Assigned", "In Review", "Pending"
+        ):
+            ctk.CTkButton(
+                btn_row,
+                text="Send for Client Approval",
+                height=30,
+                width=180,
+                fg_color="#9C27B0",
+                hover_color="#7B1FA2",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._apply_status_change(quote, "Awaiting Client Approval"),
+            ).pack(side="left", padx=(8, 0))
+        return row
+
+    def _render_delivery_section(self, quote: Dict[str, Any], row: int) -> int:
+        status = quote.get("status", "")
+        if status not in ("Paid", "In Progress", "Out for Delivery", "Completed"):
+            return row
+
+        row = self._add_divider(row)
+        row = self._add_section_title("Delivery Details", row)
+        box = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
+        box.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        box.grid_columnconfigure(0, weight=0)
+        box.grid_columnconfigure(1, weight=1)
+        row += 1
+
+        delivery = quote.get("delivery") if isinstance(quote.get("delivery"), dict) else {}
+        address = (
+            delivery.get("address")
+            or quote.get("delivery_address")
+            or quote.get("address")
+            or "—"
+        )
+        date = delivery.get("date") or quote.get("delivery_date") or "—"
+        driver = delivery.get("driver") or quote.get("driver") or "—"
+        d_status = delivery.get("status") or (
+            "Delivered" if status == "Completed"
+            else "Out for delivery" if status == "Out for Delivery"
+            else "Scheduled" if status in ("Paid", "In Progress")
+            else "—"
+        )
+
+        for i, (label, value) in enumerate([
+            ("Address", address),
+            ("Date", date),
+            ("Driver", driver),
+            ("Status", d_status),
+        ]):
+            ctk.CTkLabel(
+                box, text=label, font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=Theme.MUTED_TEXT, anchor="w", width=80,
+            ).grid(row=i, column=0, sticky="w", padx=(14, 6), pady=3)
+            ctk.CTkLabel(
+                box, text=str(value), font=ctk.CTkFont(size=12),
+                text_color=Theme.TEXT, anchor="w", wraplength=340, justify="left",
+            ).grid(row=i, column=1, sticky="w", padx=(0, 14), pady=3)
+
+        actions = ctk.CTkFrame(box, fg_color="transparent")
+        actions.grid(row=10, column=0, columnspan=2, sticky="ew", padx=14, pady=(6, 12))
+        if status in ("Paid", "In Progress"):
+            ctk.CTkButton(
+                actions,
+                text="Mark Out for Delivery",
+                height=30,
+                width=180,
+                fg_color="#3F51B5",
+                hover_color="#303F9F",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._apply_status_change(quote, "Out for Delivery"),
+            ).pack(side="left")
+        if status == "Out for Delivery":
+            ctk.CTkButton(
+                actions,
+                text="Mark Delivered / Complete",
+                height=30,
+                width=200,
+                fg_color="#9E9E9E",
+                hover_color="#757575",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._mark_complete(quote),
+            ).pack(side="left")
+        return row
+
+    def _request_client_details(self, quote: Dict[str, Any]):
+        """Draft a client message and move status to Awaiting Details."""
+        name = (quote.get("customerName") or "there").split()[0]
+        missing = self._missing_client_fields(quote)
+        if not missing:
+            missing = ["delivery address", "preferred delivery date"]
+        needs = " and ".join(missing).lower()
+        msg = (
+            f"Hi {name}, before we can finalize your quotation, please send your "
+            f"{needs}. Thank you!"
+        )
+        # Prefill communication box if present
+        try:
+            if getattr(self, "_reply_text", None):
+                self._reply_text.delete("1.0", "end")
+                self._reply_text.insert("1.0", msg)
+        except Exception:
+            pass
+        self._apply_status_change(quote, "Awaiting Details")
+        self._toast("Status → Awaiting Details. Message drafted for the client.", "info")
+        print(f"📨 Request details draft for {quote.get('reference')}: {msg}")
+
+    def _generate_quotation(self, quote: Dict[str, Any]):
+        """Build / refresh quotation totals from items and optional delivery fee."""
+        lines = self._quotation_lines(quote)
+        total = sum(line["amount"] for line in lines)
+        quote["quotation"] = lines
+        quote["quotation_total"] = total
+        if total > 0:
+            quote["paymentAmount"] = total
+            quote["paymentRequired"] = True
+        # Advance to Quoted if we were collecting details / assigned
+        status = quote.get("status", "")
+        if status in ("Awaiting Details", "Assigned", "Pending", "In Review", "Accepted"):
+            self._apply_status_change(quote, "Quoted")
+        else:
+            # just refresh UI
+            self._show_quote_details(quote)
+        self._toast(f"Quotation total {self._format_rand(total)}", "success")
+
+    def _apply_status_change(self, quote: Dict[str, Any], new_status: str):
+        """Shared status update used by workflow actions."""
+        # Gate: don't jump to payment without a quote total
+        if new_status == "Awaiting Payment":
+            total = self._quotation_total(quote)
+            if total <= 0:
+                self._toast("Generate a quotation with pricing before Awaiting Payment.", "error")
+                return
+        if new_status == "Completed" and quote.get("status") not in (
+            "Out for Delivery", "Paid", "In Progress", "Completed"
+        ):
+            # soft warning only
+            print(f"ℹ️ Completing from {quote.get('status')} — preferred path is Out for Delivery first")
+        self._update_status_from_dropdown(quote, new_status)
 
     def _render_director_review_section(self, quote: Dict[str, Any], row: int) -> int:
-        """Minimal Director availability UI inside existing details panel."""
+        """Clean Director availability UI — stacked layout, no overlaps."""
         status = quote.get("status", "Pending")
         if status in ("Completed", "Returned"):
             return row
 
-        review = quote.get("director_review") or {}
-        review_status = (review.get("status") or "").lower() if isinstance(review, dict) else ""
+        review = quote.get("director_review") or quote.get("directorReview") or {}
+        if not isinstance(review, dict):
+            review = {}
+        review_status = str(review.get("status") or "").lower()
+        if review_status in ("requested", "awaiting", "awaiting_director"):
+            review_status = "pending"
+            review = {**review, "status": "pending"}
+            quote["director_review"] = review
+
         is_assigned_to_me = self._is_assigned_to_user(
             quote, (self._current_username or "").lower()
         )
         is_director = self._is_director()
+
+        if not (
+            is_director
+            or is_assigned_to_me
+            or getattr(self, "_is_manager", False)
+            or review_status in ("pending", "reviewed", "completed")
+        ):
+            return row
 
         row = self._add_divider(row)
         row = self._add_section_title("Director Availability Check", row)
@@ -2367,199 +2831,242 @@ class QuoteManagementView(ctk.CTkFrame):
         box.grid_columnconfigure(0, weight=1)
         row += 1
 
-        # --- Employee: Send to Director ---
+        r = 0
+        self._director_item_widgets = []
+        self._director_general_reply = None
+
         can_send = (
-            (is_assigned_to_me or self._is_manager)
+            (is_assigned_to_me or getattr(self, "_is_manager", False))
+            and not is_director
             and review_status != "pending"
             and status not in ("Completed", "Returned")
         )
-        if can_send and not is_director:
+        if can_send:
             ctk.CTkLabel(
                 box,
                 text="Ask the Director to confirm whether client items are available.",
                 font=ctk.CTkFont(size=11),
                 text_color=Theme.MUTED_TEXT,
                 anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
+            ).grid(row=r, column=0, sticky="ew", padx=14, pady=(12, 4))
+            r += 1
             ctk.CTkButton(
                 box,
                 text="Send to Director",
                 height=32,
-                width=160,
+                width=170,
                 fg_color="#673AB7",
                 hover_color="#5E35B1",
                 font=ctk.CTkFont(size=12, weight="bold"),
                 command=lambda: self._send_to_director(quote),
-            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 12))
+            ).grid(row=r, column=0, sticky="w", padx=14, pady=(0, 12))
+            r += 1
 
-        # --- Pending banner ---
         if review_status == "pending":
+            req_by = review.get("requested_by") or review.get("requestedBy") or {}
+            who = req_by if isinstance(req_by, str) else (
+                req_by.get("full_name") or req_by.get("username") or "employee"
+            )
             ctk.CTkLabel(
                 box,
-                text="⏳ Awaiting Director availability review",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="#FF9800",
+                text="⏳  Awaiting Director availability review",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="#E65100",
                 anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 6))
-            req_by = (review.get("requested_by") or {}) if isinstance(review, dict) else {}
-            who = req_by.get("full_name") or req_by.get("username") or "employee"
+            ).grid(row=r, column=0, sticky="ew", padx=14, pady=(12, 2))
+            r += 1
             ctk.CTkLabel(
                 box,
                 text=f"Requested by {who}",
                 font=ctk.CTkFont(size=11),
                 text_color=Theme.MUTED_TEXT,
                 anchor="w",
-            ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
+            ).grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 10))
+            r += 1
 
-        # --- Director form (when pending or director opening any active quote) ---
-        show_director_form = is_director and (
-            review_status == "pending" or (not review_status and is_assigned_to_me is False)
-        )
-        # Prefer form only when a review was requested
-        show_director_form = is_director and review_status == "pending"
+            if is_director:
+                items = quote.get("items") or []
+                review_items = review.get("items") or []
+                form = ctk.CTkFrame(box, fg_color="transparent")
+                form.grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 6))
+                form.grid_columnconfigure(0, weight=2)
+                form.grid_columnconfigure(1, weight=0)
+                form.grid_columnconfigure(2, weight=2)
+                r += 1
 
-        self._director_item_widgets = []
-        self._director_general_reply = None
-
-        if show_director_form:
-            items = quote.get("items") or []
-            review_items = (review.get("items") if isinstance(review, dict) else None) or []
-            form = ctk.CTkFrame(box, fg_color="transparent")
-            form.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 8))
-            form.grid_columnconfigure(0, weight=2)
-            form.grid_columnconfigure(1, weight=0)
-            form.grid_columnconfigure(2, weight=2)
-
-            ctk.CTkLabel(
-                form, text="Item", font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=Theme.MUTED_TEXT, anchor="w",
-            ).grid(row=0, column=0, sticky="w", pady=(0, 4))
-            ctk.CTkLabel(
-                form, text="Availability", font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=Theme.MUTED_TEXT, anchor="w",
-            ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
-            ctk.CTkLabel(
-                form, text="Comment (qty / alternative)", font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=Theme.MUTED_TEXT, anchor="w",
-            ).grid(row=0, column=2, sticky="w", padx=(8, 0), pady=(0, 4))
-
-            for idx, item in enumerate(items):
-                item_id = str(item.get("id") or item.get("_id") or "")
-                name = item.get("name") or "Item"
-                qty = item.get("qty", 1)
-                prior = next(
-                    (
-                        r for r in review_items
-                        if str(r.get("item_id") or "") == item_id
-                        or str(r.get("item_name") or "").lower() == name.lower()
-                    ),
-                    {},
-                )
                 ctk.CTkLabel(
-                    form,
-                    text=f"{name}  ×{qty}",
-                    font=ctk.CTkFont(size=12),
-                    text_color=Theme.TEXT,
-                    anchor="w",
-                    wraplength=160,
-                ).grid(row=idx + 1, column=0, sticky="w", pady=3)
+                    form, text="Item", font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=Theme.MUTED_TEXT, anchor="w",
+                ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+                ctk.CTkLabel(
+                    form, text="Availability", font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=Theme.MUTED_TEXT, anchor="w",
+                ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 4))
+                ctk.CTkLabel(
+                    form, text="Comment", font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=Theme.MUTED_TEXT, anchor="w",
+                ).grid(row=0, column=2, sticky="w", padx=(8, 0), pady=(0, 4))
 
-                avail_menu = ctk.CTkOptionMenu(
-                    form,
-                    values=self.AVAILABILITY_OPTIONS,
-                    width=150,
-                    height=28,
-                    font=ctk.CTkFont(size=11),
-                )
-                avail_menu.set(prior.get("availability") or "Available")
-                avail_menu.grid(row=idx + 1, column=1, sticky="w", padx=(8, 0), pady=3)
+                for idx, item in enumerate(items):
+                    item_id = str(item.get("id") or item.get("_id") or "")
+                    name = item.get("name") or "Item"
+                    qty = item.get("qty", 1)
+                    prior = next(
+                        (
+                            ri for ri in review_items
+                            if str(ri.get("item_id") or "") == item_id
+                            or str(ri.get("item_name") or "").lower() == name.lower()
+                        ),
+                        {},
+                    )
+                    ctk.CTkLabel(
+                        form,
+                        text=f"{name}  ×{qty}",
+                        font=ctk.CTkFont(size=12),
+                        text_color=Theme.TEXT,
+                        anchor="w",
+                        wraplength=180,
+                    ).grid(row=idx + 1, column=0, sticky="w", pady=3)
 
-                comment_entry = ctk.CTkEntry(
-                    form, placeholder_text="Optional note", height=28, font=ctk.CTkFont(size=11)
-                )
-                if prior.get("comment"):
-                    comment_entry.insert(0, str(prior.get("comment")))
-                comment_entry.grid(row=idx + 1, column=2, sticky="ew", padx=(8, 0), pady=3)
+                    avail_menu = ctk.CTkOptionMenu(
+                        form,
+                        values=self.AVAILABILITY_OPTIONS,
+                        width=150,
+                        height=28,
+                        font=ctk.CTkFont(size=11),
+                    )
+                    avail_menu.set(prior.get("availability") or "Available")
+                    avail_menu.grid(row=idx + 1, column=1, sticky="w", padx=(8, 0), pady=3)
 
-                self._director_item_widgets.append({
-                    "item_id": item_id,
-                    "item_name": name,
-                    "qty_requested": qty,
-                    "availability_menu": avail_menu,
-                    "comment_entry": comment_entry,
-                })
+                    comment_entry = ctk.CTkEntry(
+                        form, placeholder_text="Optional note", height=28, font=ctk.CTkFont(size=11)
+                    )
+                    if prior.get("comment"):
+                        comment_entry.insert(0, str(prior.get("comment")))
+                    comment_entry.grid(row=idx + 1, column=2, sticky="ew", padx=(8, 0), pady=3)
 
-            ctk.CTkLabel(
-                box,
-                text="General Director Reply",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=Theme.TEXT,
-                anchor="w",
-            ).grid(row=3, column=0, sticky="w", padx=12, pady=(6, 2))
-            self._director_general_reply = ctk.CTkTextbox(
-                box, height=70, wrap="word", corner_radius=6, font=ctk.CTkFont(size=12)
-            )
-            self._director_general_reply.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 6))
+                    self._director_item_widgets.append({
+                        "item_id": item_id,
+                        "item_name": name,
+                        "qty_requested": qty,
+                        "availability_menu": avail_menu,
+                        "comment_entry": comment_entry,
+                    })
 
-            ctk.CTkButton(
-                box,
-                text="Send Reply to Employee",
-                height=34,
-                width=200,
-                fg_color="#2196F3",
-                hover_color="#1976D2",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                command=lambda: self._submit_director_review(quote),
-            ).grid(row=5, column=0, sticky="w", padx=12, pady=(0, 12))
-
-        # --- Reviewed response (employee + director can view) ---
-        if review_status == "reviewed" and isinstance(review, dict):
-            director = review.get("director") or {}
-            who = director.get("full_name") or director.get("username") or "Director"
-            when = review.get("reviewed_at") or ""
-            ctk.CTkLabel(
-                box,
-                text=f"✅ Director response from {who}" + (f" · {str(when)[:16]}" if when else ""),
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="#4CAF50",
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 4))
-
-            general = review.get("general_reply") or ""
-            if general:
                 ctk.CTkLabel(
                     box,
+                    text="Your reply to the employee",
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=Theme.TEXT,
+                    anchor="w",
+                ).grid(row=r, column=0, sticky="ew", padx=14, pady=(8, 2))
+                r += 1
+                self._director_general_reply = ctk.CTkTextbox(
+                    box, height=80, wrap="word", corner_radius=6, font=ctk.CTkFont(size=12)
+                )
+                self._director_general_reply.grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 6))
+                r += 1
+                self._director_general_reply.insert("1.0", "Items checked. ")
+
+                ctk.CTkButton(
+                    box,
+                    text="Send Reply to Employee",
+                    height=34,
+                    width=200,
+                    fg_color="#2196F3",
+                    hover_color="#1976D2",
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    command=lambda: self._submit_director_review(quote),
+                ).grid(row=r, column=0, sticky="w", padx=14, pady=(0, 14))
+                r += 1
+            else:
+                ctk.CTkLabel(
+                    box,
+                    text="The Director has not replied yet. You will be notified when they do.",
+                    font=ctk.CTkFont(size=11),
+                    text_color=Theme.MUTED_TEXT,
+                    anchor="w",
+                ).grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 12))
+                r += 1
+
+        elif review_status in ("reviewed", "completed"):
+            director = review.get("director") or {}
+            who = director.get("full_name") or director.get("username") or "Director"
+            when = self._format_review_time(
+                review.get("reviewed_at") or review.get("reviewedAt") or ""
+            )
+
+            header = ctk.CTkFrame(box, fg_color=("gray90", "gray20"), corner_radius=6)
+            header.grid(row=r, column=0, sticky="ew", padx=14, pady=(12, 8))
+            r += 1
+            ctk.CTkLabel(
+                header,
+                text=f"✅  Director response from {who}",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="#2E7D32",
+                anchor="w",
+            ).pack(fill="x", padx=10, pady=(8, 0 if when else 8))
+            if when:
+                ctk.CTkLabel(
+                    header,
+                    text=when,
+                    font=ctk.CTkFont(size=11),
+                    text_color=Theme.MUTED_TEXT,
+                    anchor="w",
+                ).pack(fill="x", padx=10, pady=(2, 8))
+
+            general = review.get("general_reply") or review.get("reply") or ""
+            if general:
+                reply_box = ctk.CTkFrame(box, fg_color=("gray92", "gray18"), corner_radius=6)
+                reply_box.grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 8))
+                r += 1
+                ctk.CTkLabel(
+                    reply_box,
+                    text="Reply",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color=Theme.MUTED_TEXT,
+                    anchor="w",
+                ).pack(fill="x", padx=10, pady=(8, 2))
+                ctk.CTkLabel(
+                    reply_box,
                     text=general,
                     font=ctk.CTkFont(size=12),
                     text_color=Theme.TEXT,
                     anchor="w",
-                    wraplength=440,
                     justify="left",
-                ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+                    wraplength=420,
+                ).pack(fill="x", padx=10, pady=(0, 8))
 
             items_resp = review.get("items") or []
             if items_resp:
-                lines = []
+                items_box = ctk.CTkFrame(box, fg_color="transparent")
+                items_box.grid(row=r, column=0, sticky="ew", padx=14, pady=(0, 8))
+                r += 1
+                ctk.CTkLabel(
+                    items_box,
+                    text="Item availability",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color=Theme.MUTED_TEXT,
+                    anchor="w",
+                ).pack(fill="x", pady=(0, 4))
                 for it in items_resp:
                     avail = it.get("availability") or "—"
                     name = it.get("item_name") or "Item"
                     comment = it.get("comment") or ""
-                    line = f"• {name}: {avail}"
+                    line = f"•  {name}:  {avail}"
                     if comment:
-                        line += f" — {comment}"
-                    lines.append(line)
-                ctk.CTkLabel(
-                    box,
-                    text="\n".join(lines),
-                    font=ctk.CTkFont(size=11),
-                    text_color=Theme.TEXT,
-                    anchor="w",
-                    justify="left",
-                    wraplength=440,
-                ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+                        line += f"  —  {comment}"
+                    ctk.CTkLabel(
+                        items_box,
+                        text=line,
+                        font=ctk.CTkFont(size=12),
+                        text_color=Theme.TEXT,
+                        anchor="w",
+                        justify="left",
+                        wraplength=420,
+                    ).pack(fill="x", pady=1)
 
-            # Employee can acknowledge / resubmit after updates
-            if is_assigned_to_me or self._is_staff:
+            if (is_assigned_to_me or getattr(self, "_is_staff", False)) and not is_director:
                 ctk.CTkButton(
                     box,
                     text="Update / Resubmit to Director",
@@ -2569,20 +3076,32 @@ class QuoteManagementView(ctk.CTkFrame):
                     hover_color="#5E35B1",
                     font=ctk.CTkFont(size=12, weight="bold"),
                     command=lambda: self._send_to_director(quote),
-                ).grid(row=3, column=0, sticky="w", padx=12, pady=(0, 12))
+                ).grid(row=r, column=0, sticky="w", padx=14, pady=(4, 14))
+                r += 1
 
-        # Prior review history (archived)
-        history = quote.get("director_review_history") or []
-        if history:
+        elif is_director:
             ctk.CTkLabel(
                 box,
-                text=f"Previous director reviews: {len(history)}",
-                font=ctk.CTkFont(size=10),
+                text="No availability request on this quote yet.\n"
+                     "When an employee sends it for review, the reply form will appear here.",
+                font=ctk.CTkFont(size=11),
                 text_color=Theme.MUTED_TEXT,
                 anchor="w",
-            ).grid(row=10, column=0, sticky="w", padx=12, pady=(0, 8))
+                justify="left",
+            ).grid(row=r, column=0, sticky="ew", padx=14, pady=14)
 
         return row
+
+    def _format_review_time(self, value) -> str:
+        """Format ISO timestamps into a short readable form."""
+        if not value:
+            return ""
+        try:
+            text = str(value).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(text)
+            return dt.strftime("%d %b %Y, %H:%M")
+        except Exception:
+            return str(value)[:16]
 
     def _send_to_director(self, quote: Dict[str, Any]):
         """Employee (or manager) sends quote to Director for availability check."""
