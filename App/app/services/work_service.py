@@ -14,6 +14,27 @@ class WorkService:
     def __init__(self, backend: BackendAPIClient) -> None:
         self._backend = backend
 
+    @staticmethod
+    def _normalize_attachments(value) -> str:
+        """Always store attachments as a JSON string for the Task model."""
+        import json as _json
+        if value is None or value == "":
+            return "[]"
+        if isinstance(value, list):
+            return _json.dumps(value)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return "[]"
+            try:
+                parsed = _json.loads(s)
+                if isinstance(parsed, list):
+                    return _json.dumps(parsed)
+            except Exception:
+                pass
+            return s
+        return "[]"
+
     def _to_task(self, raw: dict) -> Task:
         return Task(
             id=str(raw.get("id") or raw.get("_id") or "") or None,
@@ -35,7 +56,7 @@ class WorkService:
             category=raw.get("category") or "Administration",
             comments=raw.get("comments") or "",
             checklist=raw.get("checklist") or "[]",
-            attachments=raw.get("attachments") or "[]",
+            attachments=self._normalize_attachments(raw.get("attachments")),
             active_timer_started_at=raw.get("active_timer_started_at"),
             director_approval_status=raw.get("director_approval_status"),
             returned_reason=raw.get("returned_reason"),
@@ -63,6 +84,12 @@ class WorkService:
             "category": data.get("category") or "Administration",
             "attachments": data.get("attachments") or [],
         }
+        # Persist both array and string forms for schema flexibility
+        atts = payload["attachments"]
+        if isinstance(atts, list):
+            import json as _json
+            payload["attachments"] = atts
+            payload["attachments_json"] = _json.dumps(atts)
         if not payload["title"]:
             raise ValueError("Title is required.")
         try:
@@ -77,6 +104,7 @@ class WorkService:
                 "status": status,
                 "due_date": payload["due_date"],
                 "estimated_hours": payload["estimated_hours"],
+                "attachments": payload.get("attachments") or [],
             }
             try:
                 result = self._backend.create_task(minimal)
@@ -86,11 +114,27 @@ class WorkService:
                 ) from exc
         if not isinstance(result, dict):
             result = {"success": True, "task": result}
-        # If create succeeded without assignment fields applied, patch assign
         task = result.get("task") or result
         task_id = None
         if isinstance(task, dict):
             task_id = task.get("id") or task.get("_id")
+
+        # Ensure attachments survived create (retry via PATCH if stripped)
+        atts = data.get("attachments") or []
+        if task_id and atts:
+            try:
+                import json as _json
+                self._backend.update_task(
+                    task_id,
+                    {
+                        "title": payload["title"],
+                        "attachments": atts,
+                        "attachments_json": _json.dumps(atts) if isinstance(atts, list) else str(atts),
+                    },
+                )
+            except Exception as exc:
+                print(f"⚠️ Task created but attachment save failed: {exc}")
+
         if assignee and task_id:
             try:
                 self.assign_task(task_id, assignee)

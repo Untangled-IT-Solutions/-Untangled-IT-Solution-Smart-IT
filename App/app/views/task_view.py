@@ -249,25 +249,100 @@ class TaskView(ctk.CTkFrame):
     # --------------------------------------------------------------- detail
 
     @staticmethod
-    def _attachment_names(task: Task) -> list[str]:
-        raw = getattr(task, "attachments", None) or "[]"
-        try:
-            import json as _json
-            if isinstance(raw, str):
-                items = _json.loads(raw) if raw.strip() else []
-            elif isinstance(raw, list):
-                items = raw
-            else:
-                items = []
-        except Exception:
-            return []
-        names = []
+    def _parse_attachments(task: Task) -> list[dict]:
+        """Return list of {name, mime, size, content_base64?} from task."""
+        import json as _json
+        candidates = [
+            getattr(task, "attachments", None),
+            (task.raw or {}).get("attachments") if getattr(task, "raw", None) else None,
+            (task.raw or {}).get("attachments_json") if getattr(task, "raw", None) else None,
+        ]
+        items = []
+        for raw in candidates:
+            if raw is None or raw == "":
+                continue
+            try:
+                if isinstance(raw, list):
+                    items = raw
+                    break
+                if isinstance(raw, str):
+                    s = raw.strip()
+                    if not s:
+                        continue
+                    parsed = _json.loads(s)
+                    if isinstance(parsed, list):
+                        items = parsed
+                        break
+            except Exception:
+                continue
+        out = []
         for a in items:
             if isinstance(a, dict):
-                names.append(str(a.get("name") or a.get("filename") or "file"))
+                out.append(
+                    {
+                        "name": str(a.get("name") or a.get("filename") or "file"),
+                        "mime": str(a.get("mime") or a.get("content_type") or ""),
+                        "size": a.get("size"),
+                        "content_base64": a.get("content_base64") or a.get("data") or "",
+                        "url": a.get("url") or a.get("path") or "",
+                    }
+                )
             else:
-                names.append(str(a))
-        return names
+                out.append({"name": str(a), "mime": "", "size": None, "content_base64": "", "url": ""})
+        return out
+
+    @staticmethod
+    def _attachment_names(task: Task) -> list[str]:
+        return [a["name"] for a in TaskView._parse_attachments(task)]
+
+    def _open_attachment(self, att: dict) -> None:
+        """Save/open an attachment for the employee (base64 or URL)."""
+        import base64
+        import os
+        import tempfile
+        import webbrowser
+        from tkinter import filedialog, messagebox
+
+        name = att.get("name") or "attachment.bin"
+        data_b64 = att.get("content_base64") or ""
+        url = att.get("url") or ""
+        try:
+            if data_b64:
+                raw = base64.b64decode(data_b64)
+                path = filedialog.asksaveasfilename(
+                    parent=self,
+                    title="Save attachment",
+                    initialfile=name,
+                )
+                if not path:
+                    # still allow quick open via temp
+                    path = os.path.join(tempfile.gettempdir(), name)
+                    with open(path, "wb") as f:
+                        f.write(raw)
+                    os.startfile(path) if os.name == "nt" else webbrowser.open(path)
+                    return
+                with open(path, "wb") as f:
+                    f.write(raw)
+                try:
+                    if os.name == "nt":
+                        os.startfile(path)
+                    else:
+                        webbrowser.open(path)
+                except Exception:
+                    messagebox.showinfo("Saved", f"File saved to:\n{path}", parent=self)
+                return
+            if url:
+                webbrowser.open(str(url))
+                return
+            messagebox.showwarning(
+                "Attachment",
+                "This file has no downloadable content stored on the server.\n"
+                "Ask the manager to re-attach and save the task.",
+                parent=self,
+            )
+        except Exception as exc:
+            messagebox.showerror("Attachment", str(exc), parent=self)
+
 
     def _select_task(self, task: Task) -> None:
         self._selected = task
@@ -350,8 +425,8 @@ class TaskView(ctk.CTkFrame):
             wraplength=480,
         ).grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
-        att_names = self._attachment_names(task)
-        if att_names:
+        attachments = self._parse_attachments(task)
+        if attachments:
             ctk.CTkLabel(
                 shell,
                 text="Attachments",
@@ -359,14 +434,30 @@ class TaskView(ctk.CTkFrame):
                 font=("Segoe UI", 12),
                 anchor="w",
             ).grid(row=4, column=0, sticky="w", pady=(4, 2))
-            ctk.CTkLabel(
-                shell,
-                text=", ".join(att_names),
-                text_color=Theme.ACCENT,
-                font=("Segoe UI", 12),
-                anchor="w",
-                wraplength=480,
-            ).grid(row=5, column=0, sticky="w", pady=(0, 10))
+            att_box = ctk.CTkFrame(shell, fg_color=Theme.PANEL_ALT, corner_radius=8)
+            att_box.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+            att_box.grid_columnconfigure(0, weight=1)
+            for i, att in enumerate(attachments):
+                name = att.get("name") or "file"
+                size = att.get("size")
+                size_txt = f" ({int(size)/1024:.0f} KB)" if size else ""
+                ctk.CTkLabel(
+                    att_box,
+                    text=f"📎  {name}{size_txt}",
+                    text_color=Theme.TEXT,
+                    font=("Segoe UI", 12),
+                    anchor="w",
+                ).grid(row=i, column=0, padx=12, pady=6, sticky="w")
+                ctk.CTkButton(
+                    att_box,
+                    text="Open / Save",
+                    width=100,
+                    height=30,
+                    fg_color=Theme.ACCENT,
+                    hover_color=Theme.ACCENT_HOVER,
+                    text_color="#FFFFFF",
+                    command=lambda a=att: self._open_attachment(a),
+                ).grid(row=i, column=1, padx=12, pady=6, sticky="e")
             note_label_row, note_box_row, status_row = 6, 7, 8
         else:
             note_label_row, note_box_row, status_row = 4, 5, 6

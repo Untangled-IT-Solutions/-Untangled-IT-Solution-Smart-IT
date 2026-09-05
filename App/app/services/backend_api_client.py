@@ -428,13 +428,19 @@ class BackendAPIClient:
         return self.request("POST", "/api/tasks", data)
 
     def update_task(self, task_id: str | int, data: dict) -> dict[str, Any]:
-        return self.request("PATCH", f"/api/tasks/{task_id}", data)
+        """Update task – try PATCH then PUT (some hosts block PATCH)."""
+        try:
+            return self.request("PATCH", f"/api/tasks/{task_id}", data)
+        except BackendAPIError as exc:
+            if getattr(exc, "status_code", None) in (405, 404):
+                return self.request("PUT", f"/api/tasks/{task_id}", data)
+            raise
 
     def task_action(self, task_id: str | int, action: str, note: str = "") -> dict[str, Any]:
         return self.request(
             "POST",
             f"/api/tasks/{task_id}/{action}",
-            {"note": note},
+            {"note": note or ""},
         )
 
     def get_workload(self) -> dict[str, Any]:

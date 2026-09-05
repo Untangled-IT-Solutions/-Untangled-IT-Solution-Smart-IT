@@ -101,5 +101,17 @@ class NotificationService:
                 print(f"⚠️ notify_operational failed for {role}: {exc}")
 
 
+
+    def count_unread(self, role: str = "All") -> int:
+        """Return number of unread notifications (for sidebar badge)."""
+        try:
+            items = self.get_notifications(role=role, unread_only=True)
+            return len(items)
+        except Exception:
+            try:
+                return len([n for n in self.get_notifications(role=role) if not n.is_read])
+            except Exception:
+                return 0
+
 # Backward-compatible alias used by older controllers
 MongoNotificationService = NotificationService
