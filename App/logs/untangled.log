@@ -1,0 +1,30 @@
+2026-09-05 08:40:18,619 | INFO    | untangled | ============================================================
+2026-09-05 08:40:18,651 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-05 08:40:18,652 | INFO    | untangled | ============================================================
+2026-09-05 08:40:18,653 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:40:18,655 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:40:18,658 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-05 08:40:20,811 | INFO    | untangled | Application composition complete
+2026-09-05 08:40:44,736 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-05 08:40:47,203 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-05 08:41:32,031 | INFO    | untangled.app | User logged out
+2026-09-05 08:42:06,977 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-05 08:42:08,666 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-05 08:45:08,244 | INFO    | untangled.app | User logged out
+2026-09-05 08:45:44,082 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-05 08:45:45,695 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-05 08:49:38,687 | INFO    | untangled.app | User logged out
+2026-09-05 08:53:46,263 | INFO    | untangled | ============================================================
+2026-09-05 08:53:46,292 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-05 08:53:46,293 | INFO    | untangled | ============================================================
+2026-09-05 08:53:46,294 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:53:46,295 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:53:46,296 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-05 08:53:47,963 | INFO    | untangled | Application composition complete
+2026-09-05 08:54:03,792 | INFO    | untangled | ============================================================
+2026-09-05 08:54:03,794 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-05 08:54:03,795 | INFO    | untangled | ============================================================
+2026-09-05 08:54:03,795 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:54:03,796 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-05 08:54:03,796 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-05 08:54:05,516 | INFO    | untangled | Application composition complete
