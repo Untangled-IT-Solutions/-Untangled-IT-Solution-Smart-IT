@@ -1,37 +1,80 @@
-# Secrets – never commit
+# ========================================
+# Dependencies
+# ========================================
+
+Backend/node_modules/
+Website/node_modules/
+App/node_modules/
+
+# ========================================
+# Secrets
+# ========================================
+
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
+App/.env
+App/.env.*
+!App/.env.example
+
+Backend/.env
+Backend/.env.*
+!Backend/.env.example
+
+Website/.env
+Website/.env.*
+!Website/.env.example
+
+# ========================================
 # Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-*.egg-info/
-.venv/
-venv/
-env/
+# ========================================
 
-# Build / release artifacts (CI generates these)
-build/
-dist/
-*.spec.bak
-Output/
+App/__pycache__/
+App/**/*.pyc
+App/**/*.pyo
+App/**/*.pyd
 
-# Local runtime
-data/
-logs/
-cache/
-*.log
+App/.venv/
+App/venv/
+App/env/
 
+# ========================================
+# PyInstaller
+# ========================================
+
+App/build/
+App/dist/
+App/*.spec.bak
+
+# ========================================
+# Runtime data
+# ========================================
+
+App/data/
+App/logs/
+App/cache/
+App/**/*.log
+
+# ========================================
+# Node build files
+# ========================================
+
+Website/dist/
+Website/.vite/
+
+# ========================================
 # OS
+# ========================================
+
 .DS_Store
 Thumbs.db
 Desktop.ini
 
+# ========================================
 # IDE
-.idea/
+# ========================================
+
 .vscode/
+.idea/
 *.swp
