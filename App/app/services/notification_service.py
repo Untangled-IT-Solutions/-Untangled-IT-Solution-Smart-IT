@@ -1,4 +1,4 @@
-"""Notifications – Backend API only."""
+"""Notifications – Backend API only (robust mark-as-read)."""
 from __future__ import annotations
 
 from typing import Any, List, Optional
@@ -8,7 +8,7 @@ from app.services.backend_api_client import BackendAPIClient, BackendAPIError
 
 
 class NotificationService:
-    """Backend-backed notification surface (replaces MongoNotificationService)."""
+    """Backend-backed notification surface."""
 
     def __init__(self, backend: BackendAPIClient) -> None:
         self._backend = backend
@@ -23,7 +23,7 @@ class NotificationService:
             reference_type=str(raw.get("reference_type") or ""),
             reference_id=raw.get("reference_id"),
             is_executive=bool(raw.get("is_executive")),
-            is_read=bool(raw.get("is_read") or raw.get("read")),
+            is_read=bool(raw.get("is_read") or raw.get("read") or raw.get("isRead")),
             created_at=raw.get("created_at") or raw.get("createdAt"),
         )
 
@@ -48,7 +48,6 @@ class NotificationService:
                     if n.recipient_role in (role, "All", "") or not n.recipient_role
                 ]
             result = self._dedupe(result)
-            # Newest first when timestamps exist
             result.sort(key=lambda n: n.created_at or "", reverse=True)
             return result
         except BackendAPIError as exc:
@@ -56,61 +55,101 @@ class NotificationService:
             return []
 
     def mark_read(self, notification_id: str) -> bool:
-        """Mark a single notification as read on the backend."""
+        """Mark a single notification as read. Tries several common API shapes."""
         if not notification_id:
+            print("⚠️ mark_read: empty id")
             return False
-        try:
-            # Try the most common REST patterns
+
+        nid = str(notification_id).strip()
+        print(f"📋 Marking notification as read: {nid}")
+
+        # Prefer the routes the live backend actually implements first
+        attempts = [
+            ("POST",  f"/api/notifications/{nid}/read", None),
+            ("PATCH", f"/api/notifications/{nid}/read", None),
+            ("PUT",   f"/api/notifications/{nid}/read", None),
+            ("PATCH", f"/api/notifications/{nid}", {"is_read": True, "read": True, "isRead": True}),
+            ("PUT",   f"/api/notifications/{nid}", {"is_read": True, "read": True, "isRead": True}),
+            ("POST",  f"/api/notifications/read", {"id": nid, "notification_id": nid}),
+            ("POST",  f"/api/notifications/mark-read", {"id": nid, "notification_id": nid}),
+        ]
+
+        last_error = None
+        for method, path, payload in attempts:
             try:
-                self._backend.request("PATCH", f"/api/notifications/{notification_id}/read")
+                data = self._backend.request(method, path, payload)
+                # Treat explicit matched/modified=0 as failure so we can try next shape
+                if isinstance(data, dict):
+                    matched = data.get("matched")
+                    modified = data.get("modified") or data.get("count")
+                    if matched is not None and int(matched) == 0:
+                        print(f"⚠️ {method} {path} matched 0 docs – trying next")
+                        continue
+                    if modified is not None and int(modified) == 0 and matched is None:
+                        # some backends only return modified
+                        pass
+                print(f"✅ Notification {nid} marked as read via {method} {path}")
                 return True
-            except BackendAPIError:
-                pass
-            try:
-                self._backend.request("POST", f"/api/notifications/{notification_id}/read")
-                return True
-            except BackendAPIError:
-                pass
-            # Fallback: generic update
-            self._backend.request(
-                "PATCH",
-                f"/api/notifications/{notification_id}",
-                {"is_read": True, "read": True},
-            )
-            return True
-        except BackendAPIError as exc:
-            print(f"⚠️ mark_read failed for {notification_id}: {exc}")
-            return False
+            except BackendAPIError as exc:
+                last_error = exc
+                continue
+
+        print(f"⚠️ mark_read failed for {nid}: {last_error}")
+        return False
 
     def mark_all_read(self, role: str = "All") -> int:
         """Mark all unread notifications as read. Returns how many were marked."""
-        try:
-            # Prefer a bulk endpoint if the backend supports it
-            try:
-                data = self._backend.request(
-                    "POST",
-                    "/api/notifications/mark-all-read",
-                    {"role": role} if role and role != "All" else {},
-                )
-                return int(data.get("count") or data.get("marked") or 0)
-            except BackendAPIError:
-                pass
+        print(f"📋 mark_all_read(role={role})")
 
-            # Fallback: mark one by one
-            items = self.get_notifications(role=role, unread_only=True)
-            count = 0
-            for n in items:
-                nid = getattr(n, "id", None)
-                if nid and self.mark_read(str(nid)):
-                    count += 1
-            return count
-        except Exception as exc:
-            print(f"⚠️ mark_all_read failed: {exc}")
-            return 0
+        payload = {"role": role} if role and role != "All" else {}
+
+        # Prefer the real backend routes. mark-all-read is now an alias on the server.
+        # Do NOT treat a bare success with no count as "1 marked" – that hid the old bug.
+        bulk_attempts = [
+            ("POST", "/api/notifications/mark-all-read", payload),
+            ("POST", "/api/notifications/read-all", payload),
+            ("PATCH", "/api/notifications/mark-all-read", payload),
+            ("PATCH", "/api/notifications/read-all", payload),
+        ]
+
+        for method, path, body in bulk_attempts:
+            try:
+                data = self._backend.request(method, path, body)
+                if not isinstance(data, dict):
+                    continue
+                count = int(
+                    data.get("count")
+                    or data.get("marked")
+                    or data.get("updated")
+                    or data.get("modifiedCount")
+                    or data.get("modified")
+                    or 0
+                )
+                matched = int(data.get("matched") or data.get("matchedCount") or 0)
+                print(f"✅ mark_all_read via {method} {path} → count={count} matched={matched}")
+                # Real update happened
+                if count > 0 or matched > 0:
+                    return max(count, matched)
+                # Explicit success with 0 is still a valid "nothing left to mark"
+                if data.get("success") is True or data.get("ok") is True:
+                    return count
+            except BackendAPIError as exc:
+                print(f"⚠️ {method} {path} failed: {exc}")
+                continue
+
+        # Fallback: mark one-by-one
+        items = self.get_notifications(role=role, unread_only=True)
+        print(f"📋 Fallback: marking {len(items)} unread notification(s) one by one")
+        count = 0
+        for n in items:
+            nid = getattr(n, "id", None)
+            if nid and self.mark_read(str(nid)):
+                count += 1
+        print(f"✅ Marked {count} notification(s) as read (one-by-one)")
+        return count
 
     @staticmethod
     def _dedupe(items: List[Notification]) -> List[Notification]:
-        """Collapse identical assignment notices (backend + client both posting)."""
         seen: set[str] = set()
         out: List[Notification] = []
         for n in items:
@@ -152,8 +191,50 @@ class NotificationService:
             except BackendAPIError as exc:
                 print(f"⚠️ notify_operational failed for {role}: {exc}")
 
+    def notify_user(
+        self,
+        user_name: str,
+        message: str,
+        category: str = "General",
+        title: str = "",
+        reference_type: str = "",
+        reference_id: str = "",
+    ) -> None:
+        """Send a notification targeted at a specific user/username."""
+        payload = {
+            "title": title or "Notification",
+            "message": message,
+            "category": category,
+            "recipient_name": user_name,
+            "recipient": user_name,
+            "recipient_username": user_name,
+            "user_name": user_name,
+            "reference_type": reference_type,
+            "reference_id": reference_id,
+        }
+        try:
+            self._backend.request("POST", "/api/notifications", payload)
+        except BackendAPIError as exc:
+            print(f"⚠️ notify_user failed for {user_name}: {exc}")
+
+    def notify_executive(
+        self,
+        title: str,
+        message: str,
+        category: str = "Quote",
+        reference_type: str = "",
+        reference_id: str = "",
+    ) -> None:
+        self.notify_operational(
+            recipient_roles=["Director"],
+            title=title,
+            message=message,
+            category=category,
+            reference_type=reference_type,
+            reference_id=reference_id,
+        )
+
     def count_unread(self, role: str = "All") -> int:
-        """Return number of unread notifications (for sidebar badge)."""
         try:
             items = self.get_notifications(role=role, unread_only=True)
             return len(items)
@@ -164,5 +245,5 @@ class NotificationService:
                 return 0
 
 
-# Backward-compatible alias used by older controllers
+# Backward-compatible alias
 MongoNotificationService = NotificationService

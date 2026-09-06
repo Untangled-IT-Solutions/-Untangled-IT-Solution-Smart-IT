@@ -238,9 +238,20 @@ class AppController:
         controller = controller_map.get(destination)
 
         try:
-            view = self._navigation_controller.get_view(
-                destination, workspace, controller
-            )
+            # Attendance needs the same MongoAttendanceService the header timer uses,
+            # plus the logged-in account (employee_id). Navigation alone does not inject them.
+            if destination == "Attendance":
+                from app.views.attendance_view import AttendanceView
+                view = AttendanceView(
+                    workspace,
+                    controller,
+                    mongo_attendance_service=self._mongo_attendance,
+                    current_account=self._current_account,
+                )
+            else:
+                view = self._navigation_controller.get_view(
+                    destination, workspace, controller
+                )
         except Exception as exc:
             logger.exception("Failed to build view %s", destination)
             print(f"❌ Failed to build view {destination}: {exc}")

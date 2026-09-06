@@ -1,5 +1,9 @@
 # app/views/attendance_view.py
-"""Modern Attendance workspace with glass-morphism design and live tracking."""
+"""Modern Attendance workspace matching the Operations Workspace dashboard mockup.
+
+NOTE: The main window already draws the top "Operations Workspace" header and
+status/Logout card. This view only renders the Attendance content below that.
+"""
 
 import customtkinter as ctk
 from datetime import datetime
@@ -13,8 +17,26 @@ from app.services.mongo_attendance_service import MongoAttendanceService
 from app.utils.theme import Theme
 
 
+# Design tokens (mockup)
+PRIMARY = "#16A34A"
+PRIMARY_DARK = "#15803D"
+RED = "#DC2626"
+RED_HOVER = "#B91C1C"
+ORANGE = "#F59E0B"
+ORANGE_HOVER = "#D97706"
+BLUE = "#2563EB"
+BLUE_HOVER = "#1D4ED8"
+BG = "#F5F7FA"
+CARD = "#FFFFFF"
+BORDER = "#E5E7EB"
+TEXT = "#0F172A"
+MUTED = "#64748B"
+SOFT_BANNER = "#F0FDF4"
+SOFT_BANNER_BORDER = "#BBF7D0"
+
+
 class AttendanceView(ctk.CTkFrame):
-    """Modern attendance workspace with glass-morphism UI and live timer."""
+    """Modern attendance workspace with live timer (content area only)."""
 
     def __init__(
         self,
@@ -24,11 +46,23 @@ class AttendanceView(ctk.CTkFrame):
         current_account: Optional[UserAccount] = None,
         filters: Optional[Dict[str, Any]] = None
     ):
-        super().__init__(master, fg_color=Theme.BG, corner_radius=0)
+        super().__init__(master, fg_color=BG, corner_radius=0)
         self._controller = controller
         self._mongo = mongo_attendance_service
         self._account = current_account
         self._initial_filters = filters or {}
+
+        # Fallback: if navigation did not inject services, pull them from MainWindow
+        if self._mongo is None or self._account is None:
+            w = master
+            for _ in range(8):
+                if w is None:
+                    break
+                if self._mongo is None and getattr(w, "_mongo_attendance", None) is not None:
+                    self._mongo = w._mongo_attendance
+                if self._account is None and getattr(w, "_current_account", None) is not None:
+                    self._account = w._current_account
+                w = getattr(w, "master", None)
         self._can_manage = False
         self._employees = []
         self._employees_by_name = {}
@@ -54,27 +88,27 @@ class AttendanceView(ctk.CTkFrame):
         self._weekly_total = 0.0
         self._monthly_total = 0.0
         self._status_colors = {
-            "clocked_in": "#4CAF50",
-            "on_break": "#FFC107",
+            "clocked_in": PRIMARY,
+            "on_break": ORANGE,
             "clocked_out": "#9E9E9E",
             "not_started": "#757575",
-            "early": "#FFC107",
-            "on_time": "#4CAF50",
-            "late": "#E53935",
+            "early": ORANGE,
+            "on_time": PRIMARY,
+            "late": RED,
             "absent": "#757575",
         }
-        
+
         try:
             checker = getattr(controller, "can_manage_attendance", None)
             self._can_manage = bool(checker()) if callable(checker) else False
         except Exception:
             self._can_manage = False
-            
+
         if self._can_manage:
             try:
                 self._employees = controller.get_employees() or []
                 self._employees_by_name = {
-                    e.full_name: e for e in self._employees 
+                    e.full_name: e for e in self._employees
                     if getattr(e, "id", None) is not None
                 }
             except Exception:
@@ -91,278 +125,433 @@ class AttendanceView(ctk.CTkFrame):
         self._queue_job = self.after(50, self._drain_backend_queue)
         self._sync_from_backend()
 
+    # ------------------------------------------------------------------
+    # Layout  (content area only — no duplicate Operations Workspace header)
+    # ------------------------------------------------------------------
+
     def _build_layout(self):
-        # Main grid - fixed proportions
         self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=0)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(0, weight=0)  # fixed title row
+        self.grid_rowconfigure(1, weight=1)  # scrollable body
 
-        # === HEADER ===
-        header_frame = ctk.CTkFrame(self, fg_color="transparent", height=60)
-        header_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=30, pady=(20, 10))
-        header_frame.grid_columnconfigure(0, weight=1)
-        header_frame.grid_columnconfigure(1, weight=0)
-        header_frame.grid_propagate(False)
+        self._build_title_row()
 
-        # Header left - Title
-        title_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-        title_frame.grid(row=0, column=0, sticky="w")
+        # Vertically scrollable content so nothing is clipped
+        self.scroll_frame = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            corner_radius=0,
+        )
+        self.scroll_frame.grid(
+            row=1,
+            column=0,
+            sticky="nsew",
+            padx=24,
+            pady=(0, 24),
+        )
+        self.scroll_frame.grid_columnconfigure(0, weight=1)
+
+        self._build_content()
+
+    def _build_title_row(self):
+        """Attendance title + status + date/time (directly under main app header)."""
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.grid(row=0, column=0, sticky="ew", padx=24, pady=(16, 8))
+        row.grid_columnconfigure(0, weight=1)
+        row.grid_columnconfigure(1, weight=0)
+
+        left = ctk.CTkFrame(row, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="w")
+
+        # Green circular clock badge
+        icon_wrap = ctk.CTkFrame(
+            left,
+            width=48,
+            height=48,
+            corner_radius=24,
+            fg_color=PRIMARY,
+        )
+        icon_wrap.pack(side="left")
+        icon_wrap.pack_propagate(False)
+        ctk.CTkLabel(
+            icon_wrap,
+            text="⏱",
+            font=ctk.CTkFont(size=22),
+            text_color="#FFFFFF",
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        title_block = ctk.CTkFrame(left, fg_color="transparent")
+        title_block.pack(side="left", padx=(14, 0))
 
         ctk.CTkLabel(
-            title_frame,
-            text="⏱ Attendance",
-            font=ctk.CTkFont(size=28, weight="bold"),
-            text_color=Theme.TEXT,
-        ).pack(side="left")
+            title_block,
+            text="Attendance",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=TEXT,
+        ).pack(anchor="w")
 
-        # Status dot
+        status_line = ctk.CTkFrame(title_block, fg_color="transparent")
+        status_line.pack(anchor="w", pady=(2, 0))
+
         self._status_dot = ctk.CTkLabel(
-            title_frame,
+            status_line,
             text="●",
-            font=ctk.CTkFont(size=14),
+            font=ctk.CTkFont(size=12),
             text_color="#757575",
         )
-        self._status_dot.pack(side="left", padx=(12, 0))
+        self._status_dot.pack(side="left")
 
         self._status_dot_label = ctk.CTkLabel(
-            title_frame,
+            status_line,
             text="Not started",
             font=ctk.CTkFont(size=13),
-            text_color=Theme.MUTED_TEXT,
+            text_color=MUTED,
         )
-        self._status_dot_label.pack(side="left", padx=(4, 0))
+        self._status_dot_label.pack(side="left", padx=(5, 0))
 
-        # Header right - Date/time
+        # Date / time (SAST) — right aligned
+        right = ctk.CTkFrame(row, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="e")
+
         self._datetime_label = ctk.CTkLabel(
-            header_frame,
-            text=datetime.now().strftime("%A, %d %B %Y • %H:%M"),
+            right,
+            text="",
             font=ctk.CTkFont(size=13),
-            text_color=Theme.MUTED_TEXT,
+            text_color=MUTED,
         )
-        self._datetime_label.grid(row=0, column=1, sticky="e")
+        self._datetime_label.pack(anchor="e")
         self._update_datetime()
 
-        # === MAIN CONTENT ===
-        content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        content_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=20, pady=(0, 20))
-        content_frame.grid_columnconfigure(0, weight=1, minsize=400)
-        content_frame.grid_columnconfigure(1, weight=1, minsize=400)
-        content_frame.grid_rowconfigure(0, weight=1)
+    def _build_content(self):
+        # Parent is self.scroll_frame (already padded by the grid call above)
+        content = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        content.grid(row=0, column=0, sticky="nsew", pady=(4, 8))
+        content.grid_columnconfigure(0, weight=3, minsize=420)
+        content.grid_columnconfigure(1, weight=2, minsize=340)
+        content.grid_rowconfigure(0, weight=0)
 
-        # LEFT PANEL
+        # ================================================================
+        # LEFT: Today's Attendance
+        # ================================================================
         self.left_panel = ctk.CTkFrame(
-            content_frame,
-            fg_color=Theme.PANEL,
+            content,
+            fg_color=CARD,
             corner_radius=16,
             border_width=1,
-            border_color=Theme.BORDER,
+            border_color=BORDER,
         )
-        self.left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        self.left_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 9))
         self.left_panel.grid_columnconfigure(0, weight=1)
 
-        # RIGHT PANEL
-        self.right_panel = ctk.CTkFrame(
-            content_frame,
-            fg_color=Theme.PANEL,
-            corner_radius=16,
-            border_width=1,
-            border_color=Theme.BORDER,
-        )
-        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-        self.right_panel.grid_columnconfigure(0, weight=1)
-        self.right_panel.grid_rowconfigure(3, weight=1)
+        # Card title
+        ctk.CTkLabel(
+            self.left_panel,
+            text="📅  Today's Attendance",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=TEXT,
+        ).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 12))
 
-        # === LEFT PANEL CONTENT ===
-        # Employee selector
+        # Manager employee selector
         if self._can_manage and self._employees_by_name:
             emp_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
-            emp_frame.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
-            emp_frame.grid_columnconfigure(0, weight=0)
+            emp_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
             emp_frame.grid_columnconfigure(1, weight=1)
 
             ctk.CTkLabel(
                 emp_frame,
                 text="👤 Employee",
                 font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=Theme.MUTED_TEXT,
-            ).grid(row=0, column=0, padx=(0, 12), sticky="w")
+                text_color=MUTED,
+            ).grid(row=0, column=0, padx=(0, 10), sticky="w")
 
             names = list(self._employees_by_name.keys())
             self.employee_menu = ctk.CTkOptionMenu(
                 emp_frame,
                 values=names,
-                fg_color=Theme.PANEL_ALT,
-                button_color=Theme.ACCENT,
-                button_hover_color=Theme.ACCENT_HOVER,
-                text_color=Theme.TEXT,
-                dropdown_text_color=Theme.TEXT,
-                dropdown_fg_color=Theme.PANEL,
-                dropdown_hover_color=Theme.PANEL_ALT,
+                fg_color="#F8FAFC",
+                button_color=PRIMARY,
+                button_hover_color=PRIMARY_DARK,
+                text_color=TEXT,
+                dropdown_text_color=TEXT,
+                dropdown_fg_color=CARD,
+                dropdown_hover_color="#F1F5F9",
                 command=lambda _v: self.refresh(),
                 font=ctk.CTkFont(size=13),
+                height=34,
             )
             self.employee_menu.set(names[0])
             self.employee_menu.grid(row=0, column=1, sticky="ew")
         else:
             self.employee_menu = None
-            name = getattr(self._account, "full_name", "Employee")
-            emp_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
-            emp_frame.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
-            ctk.CTkLabel(
-                emp_frame,
-                text=f"👤 {name}",
-                font=ctk.CTkFont(size=15, weight="bold"),
-                text_color=Theme.TEXT,
-            ).pack(anchor="w")
 
-        # Status card
-        status_card = ctk.CTkFrame(
+        # Status banner
+        self._banner = ctk.CTkFrame(
             self.left_panel,
-            fg_color=Theme.PANEL_ALT,
+            fg_color=SOFT_BANNER,
             corner_radius=12,
+            border_width=1,
+            border_color=SOFT_BANNER_BORDER,
         )
-        status_card.grid(row=1, column=0, padx=20, pady=(4, 8), sticky="ew")
-        status_card.grid_columnconfigure(0, weight=1)
+        self._banner.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 8))
+        self._banner.grid_columnconfigure(0, weight=1)
+        self._banner.grid_columnconfigure(1, weight=0)
 
         self.status_label = ctk.CTkLabel(
-            status_card,
-            text="Loading…",
-            font=ctk.CTkFont(size=14),
-            text_color=Theme.TEXT,
+            self._banner,
+            text="⏳  Not clocked in today",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT,
             anchor="w",
         )
-        self.status_label.grid(row=0, column=0, padx=16, pady=(12, 4), sticky="w")
+        self.status_label.grid(row=0, column=0, sticky="w", padx=16, pady=14)
 
-        # Timer - Big and bold
-        timer_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
-        timer_frame.grid(row=2, column=0, padx=20, pady=4, sticky="ew")
-        timer_frame.grid_columnconfigure(0, weight=1)
+        self._since_label = ctk.CTkLabel(
+            self._banner,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+        )
+        self._since_label.grid(row=0, column=1, sticky="e", padx=16, pady=14)
+
+        # Large centered live timer
+        timer_wrap = ctk.CTkFrame(self.left_panel, fg_color="transparent")
+        timer_wrap.grid(row=3, column=0, sticky="ew", padx=20, pady=(12, 4))
+        timer_wrap.grid_columnconfigure(0, weight=1)
 
         self.timer_label = ctk.CTkLabel(
-            timer_frame,
+            timer_wrap,
             text="00:00:00",
-            font=ctk.CTkFont(size=44, weight="bold"),
-            text_color=Theme.TEXT,
+            font=ctk.CTkFont(size=56, weight="bold"),
+            text_color=TEXT,
         )
-        self.timer_label.grid(row=0, column=0, pady=8)
+        self.timer_label.grid(row=0, column=0)
 
-        # Action buttons
+        ctk.CTkLabel(
+            timer_wrap,
+            text="Current Time",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+        ).grid(row=1, column=0, pady=(2, 8))
+
+        # 2×2 equal action buttons
         action_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
-        action_frame.grid(row=3, column=0, padx=20, pady=(8, 12), sticky="ew")
-        action_frame.grid_columnconfigure(0, weight=1)
-        action_frame.grid_columnconfigure(1, weight=1)
+        action_frame.grid(row=4, column=0, sticky="ew", padx=20, pady=(4, 8))
+        action_frame.grid_columnconfigure(0, weight=1, uniform="btn")
+        action_frame.grid_columnconfigure(1, weight=1, uniform="btn")
 
         self.clock_in_button = self._modern_button(
-            action_frame, "▶ Clock In", self._clock_in, 
-            "#4CAF50", "#388E3C", 0, 0
+            action_frame, "▶  Clock In", self._clock_in,
+            PRIMARY, PRIMARY_DARK, 0, 0
         )
         self.clock_out_button = self._modern_button(
-            action_frame, "⏹ Clock Out", self._clock_out,
-            Theme.DANGER, Theme.DANGER_HOVER, 0, 1
+            action_frame, "⏹  Clock Out", self._clock_out,
+            RED, RED_HOVER, 0, 1
         )
         self.start_break_button = self._modern_button(
-            action_frame, "☕ Break", self._start_break,
-            "#FF9800", "#F57C00", 1, 0
+            action_frame, "☕  Start Break", self._start_break,
+            ORANGE, ORANGE_HOVER, 1, 0
         )
         self.end_break_button = self._modern_button(
-            action_frame, "✅ End Break", self._end_break,
-            "#2196F3", "#1976D2", 1, 1
+            action_frame, "✅  End Break", self._end_break,
+            BLUE, BLUE_HOVER, 1, 1
         )
 
         # Error label
         self.error_label = ctk.CTkLabel(
             self.left_panel,
             text="",
-            text_color=Theme.DANGER,
+            text_color=RED,
             font=ctk.CTkFont(size=12),
-            wraplength=400,
+            wraplength=420,
             justify="left",
         )
-        self.error_label.grid(row=4, column=0, padx=20, pady=(4, 8), sticky="w")
+        self.error_label.grid(row=5, column=0, sticky="w", padx=20, pady=(0, 4))
 
-        # Totals card
-        totals_card = ctk.CTkFrame(
+        # Today's Summary
+        summary = ctk.CTkFrame(
             self.left_panel,
-            fg_color=Theme.PANEL_ALT,
+            fg_color="#F8FAFC",
             corner_radius=12,
+            border_width=1,
+            border_color=BORDER,
         )
-        totals_card.grid(row=5, column=0, padx=20, pady=(4, 16), sticky="ew")
-        totals_card.grid_columnconfigure(0, weight=1)
-        totals_card.grid_columnconfigure(1, weight=1)
-        totals_card.grid_columnconfigure(2, weight=1)
+        summary.grid(row=6, column=0, sticky="ew", padx=20, pady=(10, 20))
+        summary.grid_columnconfigure(0, weight=1)
+        summary.grid_columnconfigure(1, weight=1)
+        summary.grid_columnconfigure(2, weight=1)
 
+        ctk.CTkLabel(
+            summary,
+            text="⏱  Today's Summary",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=16, pady=(14, 8))
+
+        self._summary_time_in = self._summary_cell(summary, "Time In", "—", 1, 0)
+        self._summary_time_out = self._summary_cell(summary, "Time Out", "—", 1, 1)
+        self._summary_break = self._summary_cell(summary, "Break Time", "—", 1, 2)
+
+        # Hidden totals label (kept for API compatibility with _render_totals)
         self.total_label = ctk.CTkLabel(
-            totals_card,
-            text="📊 Daily: 0.0h\n📈 Weekly: 0.0h\n📅 Monthly: 0.0h",
-            font=ctk.CTkFont(size=12),
-            text_color=Theme.MUTED_TEXT,
-            justify="left",
+            self.left_panel,
+            text="",
+            font=ctk.CTkFont(size=1),
+            text_color=BG,
         )
-        self.total_label.grid(row=0, column=0, padx=16, pady=12, sticky="w")
 
-        # === RIGHT PANEL - Attendance Policy + Calendar ===
-        policy_card = ctk.CTkFrame(self.right_panel, fg_color=Theme.PANEL_ALT, corner_radius=12)
-        policy_card.grid(row=0, column=0, padx=20, pady=(16, 8), sticky="ew")
-        policy_card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            policy_card, text="📅 Attendance Policy",
-            font=ctk.CTkFont(size=13, weight="bold"), text_color=Theme.TEXT
-        ).grid(row=0, column=0, padx=12, pady=(8, 2), sticky="w")
-        ctk.CTkLabel(
-            policy_card, text="08:00–09:00 🟢 On Time  •  After 09:00 🔴 Late",
-            font=ctk.CTkFont(size=11), text_color=Theme.MUTED_TEXT
-        ).grid(row=1, column=0, padx=12, pady=(0, 8), sticky="w")
+        # ================================================================
+        # RIGHT: Policy + Recent Activity
+        # ================================================================
+        self.right_panel = ctk.CTkFrame(content, fg_color="transparent")
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(9, 0))
+        self.right_panel.grid_columnconfigure(0, weight=1)
+        self.right_panel.grid_rowconfigure(0, weight=0)
+        self.right_panel.grid_rowconfigure(1, weight=1)
 
-        self.calendar_frame = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        self.calendar_frame.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="ew")
-        self.calendar_frame.grid_columnconfigure(0, weight=1)
-
-        # === RIGHT PANEL - History ===
-        history_header = ctk.CTkFrame(self.right_panel, fg_color="transparent")
-        history_header.grid(row=2, column=0, padx=20, pady=(16, 8), sticky="ew")
-        history_header.grid_columnconfigure(0, weight=1)
-        history_header.grid_columnconfigure(1, weight=0)
+        # --- Attendance Policy ---
+        policy = ctk.CTkFrame(
+            self.right_panel,
+            fg_color=CARD,
+            corner_radius=16,
+            border_width=1,
+            border_color=BORDER,
+        )
+        policy.grid(row=0, column=0, sticky="ew", pady=(0, 18))
+        policy.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            history_header,
-            text="📋 Recent Activity",
+            policy,
+            text="☰  Attendance Policy",
             font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=Theme.TEXT,
+            text_color=TEXT,
+        ).grid(row=0, column=0, sticky="w", padx=20, pady=(18, 12))
+
+        self._policy_row(policy, 1, "🕐", "Working Hours", "09:00 AM – 04:00 PM")
+        self._policy_separator(policy, 2)
+        self._policy_row(policy, 3, "☕", "Break Time", "12:00 PM – 01:00 PM (1 hour)")
+        self._policy_separator(policy, 4)
+        self._policy_row(
+            policy, 5, "📅", "Late Arrival",
+            "After 09:00 AM (may affect your day's record)"
+        )
+        self._policy_separator(policy, 6)
+        self._policy_row(
+            policy, 7, "🛡", "Early Departure",
+            "Before 04:00 PM (may affect your day's record)",
+            last=True,
+        )
+
+        # --- Recent Activity ---
+        activity = ctk.CTkFrame(
+            self.right_panel,
+            fg_color=CARD,
+            corner_radius=16,
+            border_width=1,
+            border_color=BORDER,
+        )
+        activity.grid(row=1, column=0, sticky="nsew")
+        activity.grid_columnconfigure(0, weight=1)
+        activity.grid_rowconfigure(1, weight=1)
+
+        act_hdr = ctk.CTkFrame(activity, fg_color="transparent")
+        act_hdr.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 8))
+        act_hdr.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            act_hdr,
+            text="📈  Recent Activity",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=TEXT,
         ).grid(row=0, column=0, sticky="w")
 
         self.week_label = ctk.CTkLabel(
-            history_header,
+            act_hdr,
             text="This week",
-            font=ctk.CTkFont(size=11),
-            text_color=Theme.MUTED_TEXT,
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
         )
         self.week_label.grid(row=0, column=1, sticky="e")
 
-        # History list
         self.history_frame = ctk.CTkScrollableFrame(
-            self.right_panel,
+            activity,
             fg_color="transparent",
             corner_radius=0,
         )
-        self.history_frame.grid(row=3, column=0, padx=16, pady=(0, 16), sticky="nsew")
+        self.history_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 16))
         self.history_frame.grid_columnconfigure(0, weight=1)
 
+        # Calendar frame kept for API compatibility (not shown in mockup)
+        self.calendar_frame = ctk.CTkFrame(self.right_panel, fg_color="transparent", height=1)
+
+    # ------------------------------------------------------------------
+    # Small UI helpers
+    # ------------------------------------------------------------------
+
     def _modern_button(self, parent, text, command, color, hover_color, row, col):
-        """Create a modern rounded button."""
         btn = ctk.CTkButton(
             parent,
             text=text,
-            height=44,
+            height=48,
             corner_radius=12,
             fg_color=color,
             hover_color=hover_color,
             command=command,
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#FFFFFF",
         )
         btn.grid(row=row, column=col, padx=6, pady=6, sticky="ew")
         return btn
+
+    def _summary_cell(self, parent, title, value, row, col):
+        cell = ctk.CTkFrame(parent, fg_color="transparent")
+        cell.grid(row=row, column=col, sticky="nsew", padx=10, pady=(0, 16))
+        ctk.CTkLabel(
+            cell,
+            text=title,
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+        ).pack(anchor="w")
+        lbl = ctk.CTkLabel(
+            cell,
+            text=value,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=TEXT,
+        )
+        lbl.pack(anchor="w", pady=(2, 0))
+        return lbl
+
+    def _policy_row(self, parent, row, icon, title, subtitle, last=False):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        bottom = 18 if last else 8
+        frame.grid(row=row, column=0, sticky="ew", padx=20, pady=(6, bottom))
+        frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            frame,
+            text=icon,
+            font=ctk.CTkFont(size=16),
+            width=28,
+        ).grid(row=0, column=0, rowspan=2, sticky="n", pady=(2, 0))
+
+        ctk.CTkLabel(
+            frame,
+            text=title,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+
+        ctk.CTkLabel(
+            frame,
+            text=subtitle,
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=1, column=1, sticky="w", padx=(8, 0))
+
+    def _policy_separator(self, parent, row):
+        sep = ctk.CTkFrame(parent, fg_color=BORDER, height=1)
+        sep.grid(row=row, column=0, sticky="ew", padx=20)
 
     def _update_datetime(self):
         """Update the datetime label every second."""
@@ -372,7 +561,7 @@ class AttendanceView(ctk.CTkFrame):
             from zoneinfo import ZoneInfo
             now = datetime.now(ZoneInfo("Africa/Johannesburg"))
             self._datetime_label.configure(
-                text=now.strftime("%A, %d %B %Y • %H:%M:%S") + " SAST"
+                text=f"📅  {now.strftime('%A, %d %B %Y')}   |   🕐  {now.strftime('%H:%M:%S')} SAST"
             )
             self.after(1000, self._update_datetime)
         except Exception:
@@ -388,6 +577,10 @@ class AttendanceView(ctk.CTkFrame):
         if employee is not None:
             return employee.id, employee.full_name
         return getattr(self._account, "employee_id", None), getattr(self._account, "full_name", "")
+
+    # ------------------------------------------------------------------
+    # Backend threading
+    # ------------------------------------------------------------------
 
     def _run_backend(self, operation, callback, action_name="attendance"):
         """Run network I/O outside Tkinter and marshal the result back safely."""
@@ -433,7 +626,16 @@ class AttendanceView(ctk.CTkFrame):
 
     def _sync_from_backend(self, delay=None):
         """Synchronize authoritative attendance state without blocking the UI."""
-        if self._is_destroyed or self._mongo is None:
+        if self._is_destroyed:
+            return
+
+        if self._mongo is None:
+            try:
+                self.error_label.configure(
+                    text="⚠️ Attendance service not connected (mongo_attendance missing)."
+                )
+            except Exception:
+                pass
             return
 
         if self._sync_inflight:
@@ -442,7 +644,9 @@ class AttendanceView(ctk.CTkFrame):
         employee_id, _ = self._employee_identity()
         if employee_id is None:
             try:
-                self.error_label.configure(text="⚠️ No employee linked to this account.")
+                self.error_label.configure(
+                    text="⚠️ No employee_id on this account – cannot sync attendance."
+                )
             except Exception:
                 pass
             self._schedule_backend_sync(5000)
@@ -466,7 +670,10 @@ class AttendanceView(ctk.CTkFrame):
 
         self._sync_inflight = False
         self._timer_state = dict(state or {})
-        self._timer_record = self._timer_state.get("record")
+        # Prefer the record from this payload; never wipe an active session with None
+        incoming = self._timer_state.get("record")
+        if incoming is not None:
+            self._timer_record = incoming
         self._last_update_time = datetime.now().timestamp()
         self._retry_count = 0
 
@@ -477,8 +684,6 @@ class AttendanceView(ctk.CTkFrame):
             employee_id,
         )
 
-        # These are supporting data, not timer data, so they update only after
-        # an authoritative backend sync instead of every second.
         if employee_id is not None:
             self._update_supporting_data(employee_id)
 
@@ -493,7 +698,6 @@ class AttendanceView(ctk.CTkFrame):
         self._retry_count += 1
         print(f"⚠️ {action_name} error: {exc}")
 
-        # Keep the last known timer state visible. Retry in the background.
         try:
             self.error_label.configure(text=f"⚠️ {exc}")
         except Exception:
@@ -542,12 +746,39 @@ class AttendanceView(ctk.CTkFrame):
 
     def _render_live_timer(self):
         """Use the same live calculation as MainWindow.TimerWidget."""
-        if self._is_destroyed or self._mongo is None:
+        if self._is_destroyed:
             return
 
-        record = self._timer_record
+        # Mirror TimerWidget._render_state exactly so both clocks stay in lock-step
+        state = self._timer_state or {
+            "state": "not_started",
+            "status": "not_started",
+            "record": None,
+        }
+        current_state = state.get("state", "not_started")
+        current_status = state.get("status", "clocked_out")
+        record = self._timer_record if self._timer_record is not None else state.get("record")
+
         try:
-            elapsed = self._mongo.get_live_seconds(record)
+            if current_state == "working" or current_status == "clocked_in":
+                elapsed = (
+                    self._mongo.get_live_seconds(record) if self._mongo else 0
+                )
+            elif current_state == "on_break" or current_status == "on_break":
+                elapsed = (
+                    self._mongo.get_live_seconds(record) if self._mongo else 0
+                )
+            elif current_state == "completed" or current_status == "clocked_out":
+                if record and isinstance(record, dict):
+                    try:
+                        elapsed = int(float(record.get("hours_worked") or 0) * 3600)
+                    except (TypeError, ValueError):
+                        elapsed = 0
+                else:
+                    elapsed = 0
+            else:
+                elapsed = 0
+
             self.timer_label.configure(text=self._format_seconds(elapsed))
         except Exception as exc:
             print(f"⚠️ Timer render error: {exc}")
@@ -580,57 +811,131 @@ class AttendanceView(ctk.CTkFrame):
             print(f"⚠️ Error rendering totals: {exc}")
 
     def _render(self, record, timer, employee_id):
-        """Render cached state only. No network I/O happens here."""
+        """Render cached state only. No network I/O happens here.
+
+        State handling mirrors MainWindow.TimerWidget so both timers stay in sync.
+        """
         if self._is_destroyed:
             return
 
-        self._timer_state = timer or {}
-        self._timer_record = record
+        # Keep the authoritative state + active record (do not clear while clocked in)
+        self._timer_state = dict(timer or {})
+        if record is not None:
+            self._timer_record = record
+        elif self._timer_state.get("record") is not None:
+            self._timer_record = self._timer_state.get("record")
+        # else: leave existing self._timer_record alone
 
-        status = self._timer_state.get("status", "not_started")
-        status_display = {
+        state = self._timer_state or {}
+        current_state = str(state.get("state") or "not_started").lower().replace(" ", "_")
+        current_status = str(state.get("status") or "clocked_out").lower().replace(" ", "_")
+        break_minutes = int(state.get("break_minutes", 0) or 0)
+
+        rec_probe = self._timer_record if isinstance(self._timer_record, dict) else {}
+        has_in = bool(rec_probe.get("clock_in_at") or rec_probe.get("started_at"))
+        has_out = bool(rec_probe.get("clock_out_at"))
+        on_break_flag = bool(rec_probe.get("break_started_at")) and has_in and not has_out
+
+        # Normalize into the same buckets TimerWidget uses; also trust the record
+        if (
+            current_state in ("working", "clocked_in")
+            or current_status in ("clocked_in", "working", "in", "active")
+            or (has_in and not has_out and not on_break_flag)
+        ):
+            phase = "clocked_in"
+        elif (
+            current_state == "on_break"
+            or current_status in ("on_break", "break")
+            or on_break_flag
+        ):
+            phase = "on_break"
+        elif (
+            current_state in ("completed", "clocked_out")
+            or current_status in ("clocked_out", "completed", "out")
+            or (has_in and has_out)
+        ):
+            phase = "clocked_out"
+        else:
+            phase = "not_started"
+
+        phase_display = {
             "not_started": ("Not started", "#757575"),
-            "clocked_in": ("Clocked in", "#4CAF50"),
-            "on_break": ("On break", "#FFC107"),
+            "clocked_in": ("You are clocked in", PRIMARY),
+            "on_break": ("On break", ORANGE),
             "clocked_out": ("Clocked out", "#9E9E9E"),
         }
-        display_text, dot_color = status_display.get(
-            status, ("Unknown", "#757575")
-        )
+        display_text, dot_color = phase_display[phase]
 
         self._status_dot.configure(text_color=dot_color)
         self._status_dot_label.configure(text=display_text)
+
         self._render_live_timer()
 
-        break_minutes = self._timer_state.get("break_minutes", 0)
-        if status == "not_started":
-            self.status_label.configure(text="⏳ Not clocked in today")
-        elif status == "on_break":
-            self.status_label.configure(
-                text=f"☕ On break • {break_minutes} min today"
-            )
-        elif status == "clocked_out":
+        rec = self._timer_record if isinstance(self._timer_record, dict) else {}
+        since_text = ""
+        clock_in = rec.get("clock_in_at") if rec else None
+        if clock_in:
+            since_text = f"Since {self._time(clock_in)}"
+
+        if phase == "not_started":
+            self.status_label.configure(text="⏳  Not clocked in today")
+            self._since_label.configure(text="")
             try:
-                hours = float(record.get("hours_worked", 0) or 0) if record else 0
+                self._banner.configure(fg_color="#F8FAFC", border_color=BORDER)
+            except Exception:
+                pass
+        elif phase == "on_break":
+            self.status_label.configure(text=f"☕  On break  •  {break_minutes} min today")
+            self._since_label.configure(text=since_text)
+            try:
+                self._banner.configure(fg_color="#FFFBEB", border_color="#FDE68A")
+            except Exception:
+                pass
+        elif phase == "clocked_out":
+            try:
+                hours = float(rec.get("hours_worked", 0) or 0) if rec else 0
             except (TypeError, ValueError):
                 hours = 0
-            self.status_label.configure(
-                text=f"✅ Shift completed • {hours:.2f} hours"
-            )
-        else:
-            self.status_label.configure(
-                text=f"💼 Clocked in • {break_minutes} min break"
-            )
+            self.status_label.configure(text=f"✅  Shift completed  •  {hours:.2f} hours")
+            self._since_label.configure(text=since_text)
+            try:
+                self._banner.configure(fg_color="#F8FAFC", border_color=BORDER)
+            except Exception:
+                pass
+        else:  # clocked_in / working
+            self.status_label.configure(text="●  Currently Clocked In")
+            self._since_label.configure(text=since_text or f"☕ {break_minutes} min break")
+            try:
+                self._banner.configure(fg_color=SOFT_BANNER, border_color=SOFT_BANNER_BORDER)
+            except Exception:
+                pass
 
+        # Today's Summary values
+        if rec:
+            tin = self._time(rec.get("clock_in_at"))
+            tout = self._time(rec.get("clock_out_at"))
+            brk = int(rec.get("break_duration_minutes", 0) or break_minutes or 0)
+            brk_txt = f"{brk} min" if brk else "—"
+        else:
+            tin, tout, brk_txt = "—", "—", "—"
+
+        try:
+            self._summary_time_in.configure(text=tin)
+            self._summary_time_out.configure(text=tout)
+            self._summary_break.configure(text=brk_txt)
+        except Exception:
+            pass
+
+        # Button enablement matches phase (same rules as before, driven by normalized phase)
         self._set_actions(
-            "disabled" if status in ["clocked_in", "on_break", "clocked_out"] else "normal",
-            "disabled" if status in ["not_started", "on_break", "clocked_out"] else "normal",
-            "normal" if status == "clocked_in" else "disabled",
-            "normal" if status == "on_break" else "disabled",
+            "disabled" if phase in ("clocked_in", "on_break", "clocked_out") else "normal",
+            "disabled" if phase in ("not_started", "on_break", "clocked_out") else "normal",
+            "normal" if phase == "clocked_in" else "disabled",
+            "normal" if phase == "on_break" else "disabled",
         )
 
     @staticmethod
-    def _punctuality(record) -> tuple[str, str, str]:
+    def _punctuality(record) -> tuple:
         """Return status, emoji and label for the 08:00-09:00 SA policy."""
         from zoneinfo import ZoneInfo
         from datetime import time as dtime
@@ -650,14 +955,12 @@ class AttendanceView(ctk.CTkFrame):
                 local = local.astimezone(sa)
             else:
                 s = str(clock_in).strip().replace("Z", "+00:00")
-                # ISO with T
                 if "T" in s:
                     local = datetime.fromisoformat(s)
                     if local.tzinfo is None:
                         local = local.replace(tzinfo=utc)
                     local = local.astimezone(sa)
                 else:
-                    # "YYYY-MM-DD HH:MM:SS" treated as UTC then to SA
                     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
                         try:
                             local = datetime.strptime(s[:19], fmt).replace(tzinfo=utc).astimezone(sa)
@@ -671,177 +974,172 @@ class AttendanceView(ctk.CTkFrame):
             return "unknown", "⚪", "Unknown"
 
         t = local.time()
-        if t < dtime(8, 0, 0):
+        # Policy: working hours 09:00 AM – 04:00 PM
+        if t < dtime(8, 45, 0):
             return "early", "🟡", "Early"
         if t <= dtime(9, 0, 0):
             return "on_time", "🟢", "On Time"
         return "late", "🔴", "Late"
 
     def _render_calendar(self, employee_id):
-        """Render the weekly calendar with error handling."""
+        """Kept for API compatibility (calendar not shown in mockup layout)."""
         if self._is_destroyed:
             return
-            
-        for child in self.calendar_frame.winfo_children():
-            child.destroy()
         try:
-            records = self._mongo.get_weekly_timesheet(employee_id) if self._mongo else []
+            for child in self.calendar_frame.winfo_children():
+                child.destroy()
+        except Exception:
+            pass
+        try:
+            _ = self._mongo.get_weekly_timesheet(employee_id) if self._mongo else []
         except Exception as e:
             print(f"⚠️ Error loading calendar: {e}")
-            records = []
-            
-        # Normalise work_date keys to YYYY-MM-DD
-        by_date = {}
-        for r in records:
-            if not isinstance(r, dict):
-                continue
-            wd = r.get("work_date", "")
-            if hasattr(wd, "isoformat"):
-                key = wd.isoformat()[:10]
-            else:
-                key = str(wd)[:10]
-            if key:
-                by_date[key] = r
-
-        # Company calendar day = Africa/Johannesburg (not Windows system date)
-        from datetime import date, timedelta
-        from zoneinfo import ZoneInfo
-        today = datetime.now(ZoneInfo("Africa/Johannesburg")).date()
-        start = today - timedelta(days=6)
-        row = ctk.CTkFrame(self.calendar_frame, fg_color="transparent")
-        row.grid(row=0, column=0, sticky="ew")
-        for i in range(7):
-            row.grid_columnconfigure(i, weight=1)
-            day = start + timedelta(days=i)
-            record = by_date.get(day.isoformat())
-            status, emoji, _label = self._punctuality(record or {})
-            is_today = day == today
-            cell = ctk.CTkFrame(
-                row, fg_color=Theme.PANEL_ALT, corner_radius=8,
-                border_width=2 if is_today else 1,
-                border_color=self._status_colors.get(status, Theme.BORDER),
-            )
-            cell.grid(row=0, column=i, padx=2, sticky="nsew")
-            ctk.CTkLabel(cell, text=day.strftime("%a"), font=ctk.CTkFont(size=9, weight="bold"),
-                         text_color=Theme.MUTED_TEXT).pack(pady=(5, 0))
-            ctk.CTkLabel(cell, text=emoji, font=ctk.CTkFont(size=17)).pack()
-            day_color = Theme.TEXT if not is_today else "#2196F3"
-            ctk.CTkLabel(cell, text=day.strftime("%d"), font=ctk.CTkFont(size=10, weight="bold"),
-                         text_color=day_color).pack(pady=(0, 5))
 
     def _render_history(self, employee_id):
-        """Render the history with error handling."""
+        """Render Recent Activity as a vertical timeline."""
         if self._is_destroyed:
             return
-            
+
         for child in self.history_frame.winfo_children():
             child.destroy()
-        
-        try:    
+
+        try:
             records = self._mongo.get_weekly_timesheet(employee_id) if self._mongo else []
         except Exception as e:
             print(f"⚠️ Error loading history: {e}")
             records = []
-            
-        if not records:
-            empty_frame = ctk.CTkFrame(self.history_frame, fg_color="transparent")
-            empty_frame.grid(row=0, column=0, sticky="nsew")
-            empty_frame.grid_columnconfigure(0, weight=1)
-            empty_frame.grid_rowconfigure(0, weight=1)
-            
+
+        events = []
+        for record in records or []:
+            if not isinstance(record, dict):
+                continue
+            date = record.get("work_date", "—")
+            punctuality, _emoji, punctuality_label = self._punctuality(record)
+
+            if record.get("clock_in_at"):
+                events.append({
+                    "title": "Clocked In",
+                    "when": f"{date} at {self._time(record.get('clock_in_at'))}",
+                    "badge": punctuality_label,
+                    "kind": punctuality,
+                    "sort": str(record.get("clock_in_at") or ""),
+                })
+            if record.get("clock_out_at"):
+                events.append({
+                    "title": "Clocked Out",
+                    "when": f"{date} at {self._time(record.get('clock_out_at'))}",
+                    "badge": "Normal",
+                    "kind": "normal",
+                    "sort": str(record.get("clock_out_at") or ""),
+                })
+
+            breaks = record.get("breaks") or []
+            if isinstance(breaks, list):
+                for b in breaks:
+                    if not isinstance(b, dict):
+                        continue
+                    if b.get("start"):
+                        events.append({
+                            "title": "Break Started",
+                            "when": f"{date} at {self._time(b.get('start'))}",
+                            "badge": "Normal",
+                            "kind": "normal",
+                            "sort": str(b.get("start") or ""),
+                        })
+                    if b.get("end"):
+                        events.append({
+                            "title": "Break Ended",
+                            "when": f"{date} at {self._time(b.get('end'))}",
+                            "badge": "Normal",
+                            "kind": "normal",
+                            "sort": str(b.get("end") or ""),
+                        })
+
+        events.sort(key=lambda e: e.get("sort") or "", reverse=True)
+
+        if not events:
+            empty = ctk.CTkFrame(self.history_frame, fg_color="transparent")
+            empty.grid(row=0, column=0, sticky="nsew", pady=20)
             ctk.CTkLabel(
-                empty_frame,
-                text="📭 No attendance records in the last 7 days",
+                empty,
+                text="📭  No recent activity this week",
                 font=ctk.CTkFont(size=13),
-                text_color=Theme.MUTED_TEXT,
-            ).grid(row=0, column=0)
+                text_color=MUTED,
+            ).pack()
             return
 
-        for row_idx, record in enumerate(records):
-            # Each history item as a modern card
-            item = ctk.CTkFrame(
-                self.history_frame,
-                fg_color=Theme.PANEL_ALT,
-                corner_radius=8,
-            )
-            item.grid(row=row_idx, column=0, sticky="ew", pady=(0, 6))
-            item.grid_columnconfigure(0, weight=1)
-            
-            # Get all fields with proper fallbacks
-            date = record.get('work_date', '—')
-            clock_in = self._time(record.get('clock_in_at'))
-            clock_out = self._time(record.get('clock_out_at'))
-            break_mins = int(record.get('break_duration_minutes', 0) or 0)
-            hours = float(record.get('hours_worked', 0) or 0)
-            status_text = record.get('status', '').replace('_', ' ').title() or 'Unknown'
-            punctuality, punctuality_emoji, punctuality_label = self._punctuality(record)
-            
-            # Status color
-            status_color = {
-                "completed": "#4CAF50",
-                "clocked_in": "#2196F3",
-                "on_break": "#FFC107",
-                "clocked_out": "#9E9E9E",
-            }.get(record.get('status', ''), "#9E9E9E")
-            
-            # Date and status row
-            header_row = ctk.CTkFrame(item, fg_color="transparent")
-            header_row.grid(row=0, column=0, padx=12, pady=(8, 2), sticky="ew")
-            header_row.grid_columnconfigure(0, weight=1)
-            
+        badge_styles = {
+            "on_time": (PRIMARY, "#DCFCE7"),
+            "early": (ORANGE, "#FEF3C7"),
+            "late": (RED, "#FEE2E2"),
+            "normal": (MUTED, "#F1F5F9"),
+            "absent": (MUTED, "#F1F5F9"),
+            "unknown": (MUTED, "#F1F5F9"),
+        }
+
+        for row_idx, ev in enumerate(events[:20]):
+            item = ctk.CTkFrame(self.history_frame, fg_color="transparent")
+            item.grid(row=row_idx, column=0, sticky="ew", pady=5)
+            item.grid_columnconfigure(1, weight=1)
+
+            kind = ev.get("kind", "normal")
+            dot_color = {
+                "on_time": PRIMARY,
+                "early": ORANGE,
+                "late": RED,
+                "normal": "#94A3B8",
+                "absent": "#94A3B8",
+            }.get(kind, "#94A3B8")
+
             ctk.CTkLabel(
-                header_row,
-                text=date,
+                item,
+                text="●",
+                font=ctk.CTkFont(size=11),
+                text_color=dot_color,
+                width=18,
+            ).grid(row=0, column=0, rowspan=2, sticky="n", pady=(4, 0))
+
+            ctk.CTkLabel(
+                item,
+                text=ev["title"],
                 font=ctk.CTkFont(size=13, weight="bold"),
-                text_color=Theme.TEXT,
-            ).grid(row=0, column=0, sticky="w")
-            
-            # Status badge
-            status_badge = ctk.CTkLabel(
-                header_row,
-                text=f"{punctuality_emoji} {punctuality_label} • {status_text}",
-                font=ctk.CTkFont(size=10, weight="bold"),
-                text_color="#1a1a1a",
-                fg_color=status_color,
+                text_color=TEXT,
+                anchor="w",
+            ).grid(row=0, column=1, sticky="w", padx=(4, 8))
+
+            ctk.CTkLabel(
+                item,
+                text=ev["when"],
+                font=ctk.CTkFont(size=11),
+                text_color=MUTED,
+                anchor="w",
+            ).grid(row=1, column=1, sticky="w", padx=(4, 8), pady=(0, 2))
+
+            badge_text = ev.get("badge") or "Normal"
+            style_key = kind if kind in badge_styles else "normal"
+            if badge_text == "On Time":
+                style_key = "on_time"
+            elif badge_text == "Late":
+                style_key = "late"
+            elif badge_text == "Early":
+                style_key = "early"
+
+            fg, bg = badge_styles.get(style_key, badge_styles["normal"])
+            badge = ctk.CTkLabel(
+                item,
+                text=badge_text,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=fg,
+                fg_color=bg,
                 corner_radius=10,
                 padx=10,
-                pady=2,
+                pady=3,
             )
-            status_badge.grid(row=0, column=1, sticky="e")
-            
-            # Details row - show full info
-            details_frame = ctk.CTkFrame(item, fg_color="transparent")
-            details_frame.grid(row=1, column=0, padx=12, pady=(0, 8), sticky="ew")
-            details_frame.grid_columnconfigure(0, weight=1)
-            details_frame.grid_columnconfigure(1, weight=0)
-            details_frame.grid_columnconfigure(2, weight=0)
-            
-            # Clock in/out times
-            ctk.CTkLabel(
-                details_frame,
-                text=f"🕐 {clock_in} → {clock_out}",
-                font=ctk.CTkFont(size=12),
-                text_color=Theme.TEXT,
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w")
-            
-            # Break minutes
-            ctk.CTkLabel(
-                details_frame,
-                text=f"☕ {break_mins}min",
-                font=ctk.CTkFont(size=12),
-                text_color=Theme.MUTED_TEXT,
-                anchor="e",
-            ).grid(row=0, column=1, padx=(10, 0))
-            
-            # Hours worked
-            ctk.CTkLabel(
-                details_frame,
-                text=f"⏱ {hours:.1f}h",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=Theme.ACCENT,
-                anchor="e",
-            ).grid(row=0, column=2, padx=(10, 0))
+            badge.grid(row=0, column=2, rowspan=2, sticky="e", padx=(4, 6))
+
+    # ------------------------------------------------------------------
+    # Actions
+    # ------------------------------------------------------------------
 
     def _clock_in(self):
         self._run_action("clock_in")
@@ -866,11 +1164,15 @@ class AttendanceView(ctk.CTkFrame):
             )
             return
 
+        # Match MainWindow.TimerWidget signatures exactly (employee_id only).
+        def _clock_in_op():
+            try:
+                return self._mongo.clock_in(employee_id, employee_name)
+            except TypeError:
+                return self._mongo.clock_in(employee_id)
+
         action_map = {
-            "clock_in": (
-                lambda: self._mongo.clock_in(employee_id, employee_name),
-                "Clock in",
-            ),
+            "clock_in": (_clock_in_op, "Clock in"),
             "clock_out": (
                 lambda: self._mongo.clock_out(employee_id),
                 "Clock out",
@@ -904,7 +1206,9 @@ class AttendanceView(ctk.CTkFrame):
 
         self._action_inflight = False
         self._timer_state = dict(result or {})
-        self._timer_record = self._timer_state.get("record")
+        incoming = self._timer_state.get("record")
+        if incoming is not None:
+            self._timer_record = incoming
 
         employee_id, _ = self._employee_identity()
         self._render(self._timer_record, self._timer_state, employee_id)
@@ -928,10 +1232,16 @@ class AttendanceView(ctk.CTkFrame):
 
     @staticmethod
     def _format_seconds(seconds):
-        seconds = max(0, int(seconds))
-        h, rem = divmod(seconds, 3600)
-        m, s = divmod(rem, 60)
-        return f"{h:02d}:{m:02d}:{s:02d}"
+        # Same implementation as MainWindow.TimerWidget
+        try:
+            total_seconds = max(0, int(float(seconds or 0)))
+        except (TypeError, ValueError):
+            total_seconds = 0
+        return (
+            f"{total_seconds // 3600:02d}:"
+            f"{(total_seconds % 3600) // 60:02d}:"
+            f"{total_seconds % 60:02d}"
+        )
 
     def _time(self, value):
         return self._mongo.format_local_time(value) if self._mongo else "—"

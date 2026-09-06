@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from app.services.backend_api_client import BackendAPIClient, BackendAPIError
 from app.services.attendance_service import AttendanceService
@@ -11,8 +12,9 @@ from app.services.attendance_service import AttendanceService
 
 class MongoAttendanceService:
     """
-    Provides the surface the TimerWidget expects while talking only to the Backend API.
-    Live elapsed seconds are computed on the client from the last known clock-in time.
+    Provides the surface the TimerWidget / AttendanceView expect while talking
+    only to the Backend API. Live elapsed seconds are computed on the client
+    from the last known clock-in time.
     """
 
     def __init__(self, backend: BackendAPIClient) -> None:
@@ -21,7 +23,7 @@ class MongoAttendanceService:
         self._last_state: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
-    # Core API used by TimerWidget
+    # Core API used by TimerWidget + AttendanceView
     # ------------------------------------------------------------------
 
     def refresh_state(self, employee_id: Any = None) -> Dict[str, Any]:
@@ -29,24 +31,94 @@ class MongoAttendanceService:
         try:
             data = self._backend.attendance_status()
         except BackendAPIError as exc:
-            data = {"error": str(exc), "state": "unknown", "status": "clocked_out"}
+            data = {
+                "error": str(exc),
+                "state": "unknown",
+                "status": "clocked_out",
+                "record": None,
+            }
 
-        # Normalise into the shape TimerWidget understands
-        status = (data.get("status") or data.get("state") or "clocked_out").lower()
+        if not isinstance(data, dict):
+            data = {}
+
+        # Pull nested record if present; otherwise treat payload as the record
+        record = data.get("record")
+        if not isinstance(record, dict):
+            record = {}
+            # Promote common top-level fields into a record dict
+            for key in (
+                "clock_in_at", "clock_out_at", "started_at", "start_time",
+                "break_started_at", "break_duration_minutes", "hours_worked",
+                "work_date", "employee_id", "employee_name", "status", "state",
+                "elapsed_seconds", "seconds",
+            ):
+                if key in data and data[key] is not None:
+                    record[key] = data[key]
+
+        # Normalise status strings from various backend shapes
+        raw_status = (
+            data.get("status")
+            or data.get("state")
+            or record.get("status")
+            or record.get("state")
+            or ""
+        )
+        status = str(raw_status).strip().lower().replace(" ", "_").replace("-", "_")
+
+        # Infer from record when status is missing/ambiguous
+        has_in = bool(record.get("clock_in_at") or record.get("started_at") or record.get("start_time"))
+        has_out = bool(record.get("clock_out_at") or record.get("ended_at"))
+        on_break = bool(record.get("break_started_at")) and not has_out
+
+        if status in ("clocked_in", "working", "in", "active", "checked_in"):
+            status = "clocked_in"
+        elif status in ("on_break", "break", "paused"):
+            status = "on_break"
+        elif status in ("clocked_out", "completed", "out", "checked_out", "done"):
+            status = "clocked_out" if has_out or status == "completed" else "clocked_out"
+            if status == "completed" or (has_in and has_out):
+                status = "clocked_out"
+        elif has_in and not has_out:
+            status = "on_break" if on_break else "clocked_in"
+        elif has_in and has_out:
+            status = "clocked_out"
+        else:
+            status = "not_started"
+
+        # TimerWidget state field
         state_map = {
             "clocked_in": "working",
             "working": "working",
             "on_break": "on_break",
-            "break": "on_break",
-            "clocked_out": "not_started",
+            "clocked_out": "completed",
             "completed": "completed",
+            "not_started": "not_started",
         }
+        state = state_map.get(status, "not_started")
+
+        # Ensure record exposes clock_in_at for get_live_seconds
+        if not record.get("clock_in_at"):
+            for alt in ("started_at", "start_time", "clockInAt", "clock_in"):
+                if record.get(alt):
+                    record["clock_in_at"] = record[alt]
+                    break
+            if not record.get("clock_in_at") and data.get("clock_in_at"):
+                record["clock_in_at"] = data["clock_in_at"]
+
+        break_minutes = int(
+            data.get("break_minutes")
+            or data.get("break_duration_minutes")
+            or record.get("break_duration_minutes")
+            or 0
+        )
+
         normalised = {
-            "state": state_map.get(status, status),
+            "state": state,
             "status": status,
-            "record": data.get("record") or data,
-            "clock_in_at": data.get("clock_in_at") or data.get("started_at"),
-            "break_started_at": data.get("break_started_at"),
+            "record": record if record else None,
+            "clock_in_at": record.get("clock_in_at"),
+            "break_started_at": record.get("break_started_at"),
+            "break_minutes": break_minutes,
             "raw": data,
         }
         self._last_state = normalised
@@ -55,6 +127,9 @@ class MongoAttendanceService:
     def get_live_seconds(self, record: Optional[dict] = None) -> int:
         """Compute elapsed working seconds from the last clock-in timestamp."""
         record = record or (self._last_state.get("record") if self._last_state else {}) or {}
+        if not isinstance(record, dict):
+            record = {}
+
         start_raw = (
             record.get("clock_in_at")
             or record.get("started_at")
@@ -66,23 +141,33 @@ class MongoAttendanceService:
 
         try:
             if isinstance(start_raw, (int, float)):
-                start = datetime.fromtimestamp(start_raw, tz=timezone.utc)
+                start = datetime.fromtimestamp(float(start_raw), tz=timezone.utc)
             else:
-                text = str(start_raw).replace("Z", "+00:00")
+                text = str(start_raw).strip().replace("Z", "+00:00")
                 start = datetime.fromisoformat(text)
                 if start.tzinfo is None:
                     start = start.replace(tzinfo=timezone.utc)
             now = datetime.now(timezone.utc)
-            return max(0, int((now - start).total_seconds()))
+            elapsed = max(0, int((now - start).total_seconds()))
+
+            # Subtract completed break minutes if provided
+            break_mins = int(record.get("break_duration_minutes") or 0)
+            if break_mins > 0:
+                elapsed = max(0, elapsed - break_mins * 60)
+            return elapsed
         except Exception:
             return int(record.get("elapsed_seconds") or 0)
 
-    def clock_in(self, employee_id: Any = None) -> Dict[str, Any]:
-        result = self._inner.clock_in(employee_id)
+    def get_live_hours(self, record: Optional[dict] = None) -> float:
+        return self.get_live_seconds(record) / 3600.0
+
+    def clock_in(self, employee_id: Any = None, employee_name: Any = None) -> Dict[str, Any]:
+        # Backend API only needs employee_id; name is accepted for call-site compatibility
+        self._inner.clock_in(employee_id)
         return self.refresh_state(employee_id)
 
     def clock_out(self, employee_id: Any = None) -> Dict[str, Any]:
-        result = self._inner.clock_out(employee_id)
+        self._inner.clock_out(employee_id)
         return self.refresh_state(employee_id)
 
     def start_break(self, employee_id: Any = None) -> Dict[str, Any]:
@@ -93,7 +178,6 @@ class MongoAttendanceService:
         self._inner.break_end(employee_id)
         return self.refresh_state(employee_id)
 
-    # Aliases
     def break_start(self, employee_id: Any = None) -> Dict[str, Any]:
         return self.start_break(employee_id)
 
@@ -102,3 +186,68 @@ class MongoAttendanceService:
 
     def status(self) -> Dict[str, Any]:
         return self.refresh_state()
+
+    # ------------------------------------------------------------------
+    # Helpers used by AttendanceView (history / totals / formatting)
+    # ------------------------------------------------------------------
+
+    def format_local_time(self, value: Any) -> str:
+        if not value:
+            return "—"
+        try:
+            sa = ZoneInfo("Africa/Johannesburg")
+            utc = ZoneInfo("UTC")
+            if isinstance(value, datetime):
+                dt = value if value.tzinfo else value.replace(tzinfo=utc)
+            else:
+                text = str(value).strip().replace("Z", "+00:00")
+                if "T" in text:
+                    dt = datetime.fromisoformat(text)
+                else:
+                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+                        try:
+                            dt = datetime.strptime(text[:19], fmt)
+                            break
+                        except ValueError:
+                            dt = None
+                    if dt is None:
+                        return str(value)[:16]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=utc)
+            local = dt.astimezone(sa)
+            return local.strftime("%I:%M %p").lstrip("0")
+        except Exception:
+            return str(value)[:16]
+
+    def get_weekly_timesheet(self, employee_id: Any = None) -> List[dict]:
+        try:
+            data = self._backend.request("GET", "/api/attendance/history?days=7")
+            items = data.get("records") or data.get("items") or data.get("history") or []
+            return [i for i in items if isinstance(i, dict)]
+        except BackendAPIError:
+            return []
+
+    def get_weekly_total(self, employee_id: Any = None) -> float:
+        total = 0.0
+        for r in self.get_weekly_timesheet(employee_id):
+            try:
+                total += float(r.get("hours_worked") or 0)
+            except (TypeError, ValueError):
+                pass
+        return total
+
+    def get_monthly_total(self, employee_id: Any = None) -> float:
+        try:
+            data = self._backend.request("GET", "/api/attendance/history?days=31")
+            items = data.get("records") or data.get("items") or data.get("history") or []
+        except BackendAPIError:
+            return 0.0
+        total = 0.0
+        for r in items:
+            if not isinstance(r, dict):
+                continue
+            try:
+                total += float(r.get("hours_worked") or 0)
+            except (TypeError, ValueError):
+                pass
+        return total

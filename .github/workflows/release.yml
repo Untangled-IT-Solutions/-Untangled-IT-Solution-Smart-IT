@@ -177,8 +177,7 @@ jobs:
         run: |
           $version = "${{ steps.version.outputs.version }}"
 
-          $installer =
-            "dist\installer\Untangled-Nexus-Setup-$version.exe"
+          $installer = "dist\installer\Untangled-Nexus-Setup-$version.exe"
 
           if (-not (Test-Path $installer)) {
             throw "Installer was not created: $installer"
