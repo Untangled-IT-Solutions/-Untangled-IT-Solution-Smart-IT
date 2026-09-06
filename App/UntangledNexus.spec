@@ -1,6 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for Untangled Nexus desktop client (Windows, Python 3.12)."""
-
 from pathlib import Path
 
 block_cipher = None
@@ -9,6 +8,7 @@ ROOT = Path(SPECPATH)
 # Only package runtime assets – never .env secrets
 datas = [
     (str(ROOT / "assets"), "assets"),
+    (str(ROOT / "app" / "assets"), "app/assets"),   # notification.wav lives here
     (str(ROOT / ".env.example"), "."),
 ]
 
