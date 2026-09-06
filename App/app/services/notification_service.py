@@ -1,5 +1,4 @@
 """Notifications – Backend API only."""
-
 from __future__ import annotations
 
 from typing import Any, List, Optional
@@ -56,6 +55,59 @@ class NotificationService:
             print(f"⚠️ notifications fetch failed: {exc}")
             return []
 
+    def mark_read(self, notification_id: str) -> bool:
+        """Mark a single notification as read on the backend."""
+        if not notification_id:
+            return False
+        try:
+            # Try the most common REST patterns
+            try:
+                self._backend.request("PATCH", f"/api/notifications/{notification_id}/read")
+                return True
+            except BackendAPIError:
+                pass
+            try:
+                self._backend.request("POST", f"/api/notifications/{notification_id}/read")
+                return True
+            except BackendAPIError:
+                pass
+            # Fallback: generic update
+            self._backend.request(
+                "PATCH",
+                f"/api/notifications/{notification_id}",
+                {"is_read": True, "read": True},
+            )
+            return True
+        except BackendAPIError as exc:
+            print(f"⚠️ mark_read failed for {notification_id}: {exc}")
+            return False
+
+    def mark_all_read(self, role: str = "All") -> int:
+        """Mark all unread notifications as read. Returns how many were marked."""
+        try:
+            # Prefer a bulk endpoint if the backend supports it
+            try:
+                data = self._backend.request(
+                    "POST",
+                    "/api/notifications/mark-all-read",
+                    {"role": role} if role and role != "All" else {},
+                )
+                return int(data.get("count") or data.get("marked") or 0)
+            except BackendAPIError:
+                pass
+
+            # Fallback: mark one by one
+            items = self.get_notifications(role=role, unread_only=True)
+            count = 0
+            for n in items:
+                nid = getattr(n, "id", None)
+                if nid and self.mark_read(str(nid)):
+                    count += 1
+            return count
+        except Exception as exc:
+            print(f"⚠️ mark_all_read failed: {exc}")
+            return 0
+
     @staticmethod
     def _dedupe(items: List[Notification]) -> List[Notification]:
         """Collapse identical assignment notices (backend + client both posting)."""
@@ -100,8 +152,6 @@ class NotificationService:
             except BackendAPIError as exc:
                 print(f"⚠️ notify_operational failed for {role}: {exc}")
 
-
-
     def count_unread(self, role: str = "All") -> int:
         """Return number of unread notifications (for sidebar badge)."""
         try:
@@ -112,6 +162,7 @@ class NotificationService:
                 return len([n for n in self.get_notifications(role=role) if not n.is_read])
             except Exception:
                 return 0
+
 
 # Backward-compatible alias used by older controllers
 MongoNotificationService = NotificationService

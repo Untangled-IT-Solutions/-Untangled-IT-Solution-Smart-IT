@@ -4,26 +4,52 @@
 Windows-first: uses winsound with the bundled WAV (most reliable).
 Falls back to playsound / system sounds on other platforms.
 """
+from __future__ import annotations
 
-import platform
 import os
+import platform
+import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 
 def _candidate_sound_paths() -> List[Path]:
     """Return possible locations for notification.wav / .mp3 / .ogg."""
+    bases: List[Path] = []
+
+    # 1. PyInstaller frozen path (most important for installed app)
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = Path(sys._MEIPASS)
+        bases.extend([
+            meipass / "app" / "assets",
+            meipass / "assets",
+            meipass / "app" / "assets" / "sounds",
+            meipass / "assets" / "sounds",
+        ])
+
+    # 2. Development / normal paths
     here = Path(__file__).resolve()
-    bases = [
-        here.parent.parent / "assets",           # app/assets
-        here.parent.parent.parent / "assets",    # project/assets
+    bases.extend([
+        here.parent.parent / "assets",                 # app/assets
+        here.parent.parent.parent / "assets",          # project/assets
         Path.cwd() / "app" / "assets",
         Path.cwd() / "assets",
         Path.cwd() / "app" / "assets" / "sounds",
         Path.cwd() / "assets" / "sounds",
-    ]
+    ])
+
+    # 3. Next to the executable (Inno Setup install location)
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).parent
+        bases.extend([
+            exe_dir / "app" / "assets",
+            exe_dir / "assets",
+            exe_dir / "_internal" / "app" / "assets",
+            exe_dir / "_internal" / "assets",
+        ])
+
     names = ["notification.wav", "notification.mp3", "notification.ogg"]
     paths: List[Path] = []
     for base in bases:
@@ -45,10 +71,8 @@ class SoundManager:
     - One-shot play for newly arrived notifications
     - Repeating reminder until stop_reminder() (while unread remain)
     """
-
     _instance = None
     _enabled = True
-
     _reminder_active = False
     _reminder_thread: Optional[threading.Thread] = None
     _reminder_interval_seconds = 18
@@ -95,7 +119,6 @@ class SoundManager:
                     try:
                         import winsound
                         if sound_file and sound_file.suffix.lower() == ".wav":
-                            # SND_FILENAME | SND_ASYNC = play WAV without blocking
                             winsound.PlaySound(
                                 str(sound_file),
                                 winsound.SND_FILENAME | winsound.SND_ASYNC,
@@ -173,7 +196,6 @@ class SoundManager:
                 # Last resort: terminal bell
                 print("\a", end="", flush=True)
                 print("🔔 Fell back to terminal bell")
-
             except Exception as e:
                 print(f"⚠️ Sound play error: {e}")
                 import traceback
@@ -189,7 +211,6 @@ class SoundManager:
         """Repeat the notification sound until stop_reminder()."""
         if not cls._enabled:
             return
-
         with cls._lock:
             if cls._reminder_active:
                 return
@@ -245,5 +266,4 @@ class SoundManager:
             print(f"   {'✅' if exists else '❌'} {p}")
             if exists and found is None:
                 found = p
-        print(f"   → Using: {found}")
-        return found
+        print(f"→ Using: {found}")
