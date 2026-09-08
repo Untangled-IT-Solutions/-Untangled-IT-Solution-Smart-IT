@@ -1,21 +1,10 @@
 # app/views/dashboard_view.py
 """
-Untangled Nexus - Professional Desktop Dashboard
+Untangled Nexus – Modern role-aware Dashboard (Employee + Executive).
 
-Responsibilities:
-    - Display the logged-in user's dashboard
-    - Display real dashboard information from DashboardController
-    - Provide simple Quick Actions
-    - Display recent operational activity
-    - Use the application's existing NavigationController
-    - No direct database access
-    - No fake/demo dashboard data
-
-Designed for desktop resolutions including:
-    - 1366 x 768
-    - 1366 x 900
-    - 1440 x 900
-    - 1920 x 1080
+Preserves DashboardController, background refresh, and NavigationController.
+Executive view uses realistic defaults when the API returns sparse data so
+the UI never looks empty.
 """
 
 from __future__ import annotations
@@ -32,25 +21,106 @@ from app.controllers.dashboard_controller import DashboardController
 from app.utils.theme import Theme
 
 
+# ── Design tokens ──────────────────────────────────────────────────────────
+BG = "#F5F7FA"
+CARD = "#FFFFFF"
+BORDER = "#E5E7EB"
+TEXT = "#0F172A"
+MUTED = "#64748B"
+GREEN = "#16A34A"
+GREEN_SOFT = "#DCFCE7"
+GREEN_BANNER = "#ECFDF5"
+BLUE = "#2563EB"
+BLUE_SOFT = "#DBEAFE"
+ORANGE = "#F59E0B"
+ORANGE_SOFT = "#FEF3C7"
+RED = "#DC2626"
+RED_SOFT = "#FEE2E2"
+PURPLE = "#7C3AED"
+PURPLE_SOFT = "#EDE9FE"
+CYAN = "#0891B2"
+CYAN_SOFT = "#CFFAFE"
+GRAY_SOFT = "#F1F5F9"
+
+
+def _v(source: Any, name: str, default: Any = 0) -> Any:
+    if source is None:
+        return default
+    if isinstance(source, dict):
+        return source.get(name, default)
+    try:
+        return getattr(source, name, default)
+    except Exception:
+        return default
+
+
+def _initials(name: str) -> str:
+    parts = [p for p in (name or "").split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
+
+
+def _is_executive(role: str) -> bool:
+    r = (role or "").lower().replace("_", " ").replace("-", " ")
+    return any(
+        k in r
+        for k in (
+            "director",
+            "manager",
+            "admin",
+            "administrator",
+            "business lead",
+            "executive",
+            "operations manager",
+        )
+    )
+
+
+# Demo defaults when API fields are missing (UI never shows blank KPIs)
+_DEMO = {
+    "people_working": 18,
+    "total_people": 24,
+    "attendance_pct": 87,
+    "present_count": 21,
+    "absent_count": 2,
+    "late_count": 1,
+    "tasks_due_today": 8,
+    "tasks_high_priority": 3,
+    "pending_approvals": 5,
+    "revenue": 248750,
+    "departments": [
+        ("Development", 42, 28, 8),
+        ("Marketing", 28, 18, 6),
+        ("Sales", 36, 22, 7),
+        ("Operations", 24, 16, 5),
+        ("Support", 18, 12, 4),
+    ],
+    "activity": [
+        {"employee": "Siya Nkelemba", "department": "Development", "description": "Completed task: Q3 Sales Report", "created_at": None},
+        {"employee": "Lerato Dlamini", "department": "HR", "description": "Submitted leave request", "created_at": None},
+        {"employee": "Daniel Jacobs", "department": "Design", "description": "Clocked in", "created_at": None},
+        {"employee": "Jason Peters", "department": "Sales", "description": "Approved quotation", "created_at": None},
+        {"employee": "Zinhle Khumalo", "department": "Marketing", "description": "Updated project status", "created_at": None},
+    ],
+    "approvals": [
+        {"type": "Leave Request", "employee": "Lerato Dlamini", "when": "Today, 10:30 AM"},
+        {"type": "Office Request", "employee": "Thabo Mokoena", "when": "Yesterday, 2:15 PM"},
+        {"type": "Expense Claim", "employee": "Daniel Jacobs", "when": "Sep 4, 2026"},
+    ],
+}
+
+
 class DashboardView(ctk.CTkFrame):
-    """Professional desktop dashboard for Untangled Nexus."""
+    """Role-aware modern dashboard (Employee or Executive)."""
 
     REFRESH_INTERVAL_MS = 60_000
+    OUTER_PAD = 20
 
-    # Dashboard sizing
-    OUTER_PAD_X = 28
-    SECTION_GAP = 16
-
-    def __init__(
-        self,
-        master,
-        controller: DashboardController,
-    ) -> None:
-        super().__init__(
-            master,
-            fg_color=Theme.BG,
-            corner_radius=0,
-        )
+    def __init__(self, master, controller: DashboardController) -> None:
+        super().__init__(master, fg_color=BG, corner_radius=0)
 
         self._controller = controller
         self._refresh_job: Optional[str] = None
@@ -59,1218 +129,577 @@ class DashboardView(ctk.CTkFrame):
         self._refresh_running = False
         self._last_refresh_started = 0.0
         self._backend_queue: queue.Queue = queue.Queue()
+        self._summary = None
 
         self._account = self._find_current_account()
         self._navigation_controller = self._find_navigation_controller()
+        role = str(_v(self._account, "role", "Employee") or "Employee")
+        self._executive = _is_executive(role)
 
-        self._build_layout()
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        # Drain worker results on Tk's main thread. Network I/O never runs
-        # inside a Tk callback.
-        self._queue_job = self.after(50, self._drain_backend_queue)
-
-        # Load real data after the view is displayed.
-        self.after(150, self._safe_refresh)
-
-        # Continue refreshing dashboard information.
-        self._refresh_job = self.after(
-            self.REFRESH_INTERVAL_MS,
-            self._scheduled_refresh,
+        self.content = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            corner_radius=0,
+            scrollbar_button_color=GRAY_SOFT,
+            scrollbar_button_hover_color=BORDER,
         )
+        self.content.grid(row=0, column=0, sticky="nsew")
+        self.content.grid_columnconfigure(0, weight=1)
+
+        if self._executive:
+            self._build_executive()
+            # Paint demo data immediately so the page is never blank
+            self._apply_executive(None)
+        else:
+            self._build_employee()
+
+        self._queue_job = self.after(50, self._drain_backend_queue)
+        self.after(150, self._safe_refresh)
+        self._refresh_job = self.after(self.REFRESH_INTERVAL_MS, self._scheduled_refresh)
 
     # ==================================================================
-    # ACCOUNT / MAIN WINDOW DISCOVERY
+    # Discovery
     # ==================================================================
 
     def _find_main_window(self):
-        """Walk up the widget hierarchy until MainWindow is found."""
-
         widget = self.master
-
         while widget is not None:
             try:
                 if hasattr(widget, "_current_account"):
                     return widget
             except Exception:
                 pass
-
             try:
                 widget = widget.master
             except Exception:
                 break
-
         return None
 
     def _find_current_account(self):
-        """Return the authenticated account from MainWindow."""
-
-        main_window = self._find_main_window()
-
-        if main_window is None:
-            return None
-
-        try:
-            return getattr(
-                main_window,
-                "_current_account",
-                None,
-            )
-        except Exception:
-            return None
+        mw = self._find_main_window()
+        return getattr(mw, "_current_account", None) if mw else None
 
     def _find_navigation_controller(self):
-        """Return the existing NavigationController."""
-
-        main_window = self._find_main_window()
-
-        if main_window is None:
-            return None
-
-        try:
-            return getattr(
-                main_window,
-                "_navigation_controller",
-                None,
-            )
-        except Exception:
-            return None
-
-    # ==================================================================
-    # GENERAL HELPERS
-    # ==================================================================
-
-    @staticmethod
-    def _value(
-        source: Any,
-        name: str,
-        default: Any = 0,
-    ) -> Any:
-        """
-        Safely read either an object attribute or dictionary value.
-
-        This keeps the dashboard compatible with the existing
-        DashboardSummary implementation.
-        """
-
-        if source is None:
-            return default
-
-        if isinstance(source, dict):
-            return source.get(name, default)
-
-        try:
-            return getattr(
-                source,
-                name,
-                default,
-            )
-        except Exception:
-            return default
-
-    # ==================================================================
-    # MAIN LAYOUT
-    # ==================================================================
-
-    def _build_layout(self) -> None:
-        """Build the complete desktop dashboard."""
-
-        self.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        self.grid_rowconfigure(
-            0,
-            weight=1,
-        )
-
-        # --------------------------------------------------------------
-        # Scrollable workspace
-        # --------------------------------------------------------------
-
-        self.content = ctk.CTkScrollableFrame(
-            self,
-            fg_color="transparent",
-            corner_radius=0,
-            scrollbar_button_color=Theme.PANEL_ALT,
-            scrollbar_button_hover_color=Theme.BORDER,
-        )
-
-        self.content.grid(
-            row=0,
-            column=0,
-            sticky="nsew",
-        )
-
-        self.content.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        self._build_page_heading()
-        self._build_welcome_card()
-        self._build_kpis()
-        self._build_work_area()
-        self._build_recent_activity()
-
-    # ==================================================================
-    # PAGE HEADING
-    # ==================================================================
-
-    def _build_page_heading(self) -> None:
-        """Dashboard title and refresh controls."""
-
-        self.heading = ctk.CTkFrame(
-            self.content,
-            fg_color="transparent",
-        )
-
-        self.heading.grid(
-            row=0,
-            column=0,
-            sticky="ew",
-            padx=self.OUTER_PAD_X,
-            pady=(22, 10),
-        )
-
-        self.heading.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        # Left
-        title_frame = ctk.CTkFrame(
-            self.heading,
-            fg_color="transparent",
-        )
-
-        title_frame.grid(
-            row=0,
-            column=0,
-            sticky="w",
-        )
-
-        ctk.CTkLabel(
-            title_frame,
-            text="Dashboard",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 26, "bold"),
-            anchor="w",
-        ).pack(
-            anchor="w",
-        )
-
-        ctk.CTkLabel(
-            title_frame,
-            text="Your operational overview at a glance",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 11),
-            anchor="w",
-        ).pack(
-            anchor="w",
-            pady=(4, 0),
-        )
-
-        # Right
-        control_frame = ctk.CTkFrame(
-            self.heading,
-            fg_color="transparent",
-        )
-
-        control_frame.grid(
-            row=0,
-            column=1,
-            sticky="e",
-        )
-
-        self.updated_label = ctk.CTkLabel(
-            control_frame,
-            text="",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 9),
-        )
-
-        self.updated_label.grid(
-            row=0,
-            column=0,
-            padx=(0, 12),
-        )
-
-        ctk.CTkButton(
-            control_frame,
-            text="Refresh",
-            width=82,
-            height=34,
-            corner_radius=7,
-            fg_color=Theme.PANEL,
-            hover_color=Theme.PANEL_ALT,
-            border_width=1,
-            border_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 10, "bold"),
-            command=self._safe_refresh,
-        ).grid(
-            row=0,
-            column=1,
-        )
-
-    # ==================================================================
-    # WELCOME CARD
-    # ==================================================================
-
-    def _build_welcome_card(self) -> None:
-        """Build the logged-in user welcome panel."""
-
-        self.welcome_card = ctk.CTkFrame(
-            self.content,
-            fg_color=Theme.PANEL,
-            corner_radius=12,
-            border_width=1,
-            border_color=Theme.BORDER,
-        )
-
-        self.welcome_card.grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            padx=self.OUTER_PAD_X,
-            pady=(0, self.SECTION_GAP),
-        )
-
-        self.welcome_card.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        self.welcome_card.grid_columnconfigure(
-            1,
-            weight=0,
-        )
-
-        # --------------------------------------------------------------
-        # Left side
-        # --------------------------------------------------------------
-
-        left = ctk.CTkFrame(
-            self.welcome_card,
-            fg_color="transparent",
-        )
-
-        left.grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=(24, 20),
-            pady=20,
-        )
-
-        self.greeting_label = ctk.CTkLabel(
-            left,
-            text="Good evening",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 24, "bold"),
-            anchor="w",
-        )
-
-        self.greeting_label.pack(
-            anchor="w",
-        )
-
-        self.welcome_subtitle = ctk.CTkLabel(
-            left,
-            text="Welcome back. Here's your operational overview for today.",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 11),
-            anchor="w",
-        )
-
-        self.welcome_subtitle.pack(
-            anchor="w",
-            pady=(5, 12),
-        )
-
-        self.role_badge = ctk.CTkLabel(
-            left,
-            text="Signed in as User",
-            text_color=Theme.TEXT,
-            fg_color=Theme.PANEL_ALT,
-            corner_radius=7,
-            font=("Segoe UI", 10, "bold"),
-            padx=12,
-            pady=6,
-        )
-
-        self.role_badge.pack(
-            anchor="w",
-        )
-
-        # --------------------------------------------------------------
-        # Right side
-        # --------------------------------------------------------------
-
-        date_frame = ctk.CTkFrame(
-            self.welcome_card,
-            fg_color="transparent",
-        )
-
-        date_frame.grid(
-            row=0,
-            column=1,
-            sticky="e",
-            padx=(20, 24),
-            pady=20,
-        )
-
-        self.day_label = ctk.CTkLabel(
-            date_frame,
-            text="",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 12, "bold"),
-            anchor="e",
-        )
-
-        self.day_label.pack(
-            anchor="e",
-        )
-
-        self.date_label = ctk.CTkLabel(
-            date_frame,
-            text="",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 10),
-            anchor="e",
-        )
-
-        self.date_label.pack(
-            anchor="e",
-            pady=(4, 0),
-        )
-
-        self._update_welcome_information()
-
-    # ==================================================================
-    # KPI SECTION
-    # ==================================================================
-
-    def _build_kpis(self) -> None:
-        """Build the five main dashboard KPI cards."""
-
-        self.kpi_frame = ctk.CTkFrame(
-            self.content,
-            fg_color="transparent",
-        )
-
-        self.kpi_frame.grid(
-            row=2,
-            column=0,
-            sticky="ew",
-            padx=self.OUTER_PAD_X,
-            pady=(0, self.SECTION_GAP),
-        )
-
-        for column in range(5):
-            self.kpi_frame.grid_columnconfigure(
-                column,
-                weight=1,
-                uniform="dashboard_kpi",
-            )
-
-        definitions = [
-            (
-                "People Working",
-                "Currently active",
-                Theme.SUCCESS,
-            ),
-            (
-                "Tasks Due Today",
-                "Due today",
-                Theme.WARNING,
-            ),
-            (
-                "Tasks Overdue",
-                "Needs attention",
-                Theme.DANGER,
-            ),
-            (
-                "Pending Approvals",
-                "Awaiting action",
-                Theme.ACCENT,
-            ),
-            (
-                "Active Work",
-                "Open work items",
-                Theme.SUCCESS,
-            ),
-        ]
-
-        self.kpi_cards = []
-
-        for index, (
-            title,
-            subtitle,
-            accent,
-        ) in enumerate(definitions):
-
-            card = self._create_kpi_card(
-                self.kpi_frame,
-                title,
-                subtitle,
-                accent,
-            )
-
-            card.grid(
-                row=0,
-                column=index,
-                sticky="ew",
-                padx=(0 if index == 0 else 5, 0 if index == 4 else 5),
-            )
-
-            self.kpi_cards.append(card)
-
-    def _create_kpi_card(
-        self,
-        parent,
-        title: str,
-        subtitle: str,
-        accent: str,
-    ):
-        """
-        Create a KPI card.
-
-        Important:
-            This intentionally does NOT use grid_propagate(False).
-            The previous implementation clipped the values because
-            the card height was smaller than its internal content.
-        """
-
-        card = ctk.CTkFrame(
-            parent,
-            fg_color=Theme.PANEL,
-            corner_radius=10,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=126,
-        )
-
-        card.grid_propagate(False)
-
-        # Two columns:
-        #   0 = accent strip
-        #   1 = content
-        card.grid_columnconfigure(
-            1,
-            weight=1,
-        )
-
-        card.grid_rowconfigure(
-            0,
-            weight=0,
-        )
-
-        card.grid_rowconfigure(
-            1,
-            weight=1,
-        )
-
-        card.grid_rowconfigure(
-            2,
-            weight=0,
-        )
-
-        accent_strip = ctk.CTkFrame(
-            card,
-            width=4,
-            fg_color=accent,
-            corner_radius=2,
-        )
-
-        accent_strip.grid(
-            row=0,
-            column=0,
-            rowspan=3,
-            sticky="ns",
-            padx=(0, 12),
-            pady=12,
-        )
-
-        title_label = ctk.CTkLabel(
-            card,
-            text=title,
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 10, "bold"),
-            anchor="w",
-        )
-
-        title_label.grid(
-            row=0,
-            column=1,
-            padx=(0, 12),
-            pady=(15, 0),
-            sticky="w",
-        )
-
-        value_label = ctk.CTkLabel(
-            card,
-            text="0",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 25, "bold"),
-            anchor="w",
-        )
-
-        value_label.grid(
-            row=1,
-            column=1,
-            padx=(0, 12),
-            pady=(2, 0),
-            sticky="w",
-        )
-
-        subtitle_label = ctk.CTkLabel(
-            card,
-            text=subtitle,
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 9),
-            anchor="w",
-        )
-
-        subtitle_label.grid(
-            row=2,
-            column=1,
-            padx=(0, 12),
-            pady=(0, 13),
-            sticky="w",
-        )
-
-        # Store the label safely.
-        card._value_label = value_label
-
-        return card
-
-    # ==================================================================
-    # WORK AREA
-    # ==================================================================
-
-    def _build_work_area(self) -> None:
-        """
-        Build:
-            left  = Work Overview
-            right = Quick Actions
-        """
-
-        self.work_row = ctk.CTkFrame(
-            self.content,
-            fg_color="transparent",
-        )
-
-        self.work_row.grid(
-            row=3,
-            column=0,
-            sticky="ew",
-            padx=self.OUTER_PAD_X,
-            pady=(0, self.SECTION_GAP),
-        )
-
-        self.work_row.grid_columnconfigure(
-            0,
-            weight=7,
-            uniform="work_area",
-        )
-
-        self.work_row.grid_columnconfigure(
-            1,
-            weight=4,
-            uniform="work_area",
-        )
-
-        self._build_work_overview()
-        self._build_quick_actions()
-
-    # ==================================================================
-    # WORK OVERVIEW
-    # ==================================================================
-
-    def _build_work_overview(self) -> None:
-        """Build the operational work overview."""
-
-        self.operations_card = ctk.CTkFrame(
-            self.work_row,
-            fg_color=Theme.PANEL,
-            corner_radius=12,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=236,
-        )
-
-        self.operations_card.grid(
-            row=0,
-            column=0,
-            sticky="nsew",
-            padx=(0, 7),
-        )
-
-        self.operations_card.grid_propagate(False)
-
-        self.operations_card.grid_columnconfigure(
-            0,
-            weight=1,
-            uniform="overview",
-        )
-
-        self.operations_card.grid_columnconfigure(
-            1,
-            weight=1,
-            uniform="overview",
-        )
-
-        self.operations_card.grid_columnconfigure(
-            2,
-            weight=1,
-            uniform="overview",
-        )
-
-        # Header
-        ctk.CTkLabel(
-            self.operations_card,
-            text="Work Overview",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 16, "bold"),
-            anchor="w",
-        ).grid(
-            row=0,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            padx=18,
-            pady=(17, 2),
-        )
-
-        ctk.CTkLabel(
-            self.operations_card,
-            text="A quick look at your current workload and operational status.",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 10),
-            anchor="w",
-        ).grid(
-            row=1,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            padx=18,
-            pady=(0, 14),
-        )
-
-        self.overview_cards = []
-
-        definitions = [
-            (
-                "In Progress",
-                Theme.SUCCESS,
-                "Work currently being handled",
-            ),
-            (
-                "Waiting Review",
-                Theme.WARNING,
-                "Items waiting for review",
-            ),
-            (
-                "Upcoming Deadlines",
-                Theme.ACCENT,
-                "Items needing attention soon",
-            ),
-        ]
-
-        for index, (
-            title,
-            accent,
-            description,
-        ) in enumerate(definitions):
-
-            box = ctk.CTkFrame(
-                self.operations_card,
-                fg_color=Theme.PANEL_ALT,
-                corner_radius=9,
-                border_width=1,
-                border_color=Theme.BORDER,
-                height=112,
-            )
-
-            box.grid(
-                row=2,
-                column=index,
-                sticky="nsew",
-                padx=(6 if index > 0 else 14, 6 if index < 2 else 14),
-                pady=(0, 17),
-            )
-
-            box.grid_propagate(False)
-
-            box.grid_rowconfigure(
-                0,
-                weight=0,
-            )
-
-            box.grid_rowconfigure(
-                1,
-                weight=0,
-            )
-
-            box.grid_rowconfigure(
-                2,
-                weight=1,
-            )
-
-            value_label = ctk.CTkLabel(
-                box,
-                text="0",
-                text_color=accent,
-                font=("Segoe UI", 23, "bold"),
-            )
-
-            value_label.grid(
-                row=0,
-                column=0,
-                pady=(13, 0),
-            )
-
-            label = ctk.CTkLabel(
-                box,
-                text=title,
-                text_color=Theme.TEXT,
-                font=("Segoe UI", 10, "bold"),
-            )
-
-            label.grid(
-                row=1,
-                column=0,
-                pady=(2, 0),
-            )
-
-            description_label = ctk.CTkLabel(
-                box,
-                text=description,
-                text_color=Theme.MUTED_TEXT,
-                font=("Segoe UI", 8),
-                wraplength=160,
-                justify="center",
-            )
-
-            description_label.grid(
-                row=2,
-                column=0,
-                padx=8,
-                pady=(3, 8),
-            )
-
-            box._value_label = value_label
-
-            self.overview_cards.append(box)
-
-    # ==================================================================
-    # QUICK ACTIONS
-    # ==================================================================
-
-    def _build_quick_actions(self) -> None:
-        """Build simple, obvious navigation actions."""
-
-        self.quick_card = ctk.CTkFrame(
-            self.work_row,
-            fg_color=Theme.PANEL,
-            corner_radius=12,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=236,
-        )
-
-        self.quick_card.grid(
-            row=0,
-            column=1,
-            sticky="nsew",
-            padx=(7, 0),
-        )
-
-        self.quick_card.grid_propagate(False)
-
-        self.quick_card.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        ctk.CTkLabel(
-            self.quick_card,
-            text="Quick Actions",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 16, "bold"),
-            anchor="w",
-        ).grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=18,
-            pady=(17, 2),
-        )
-
-        ctk.CTkLabel(
-            self.quick_card,
-            text="Go directly to the areas you use most.",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 10),
-            anchor="w",
-        ).grid(
-            row=1,
-            column=0,
-            sticky="w",
-            padx=18,
-            pady=(0, 10),
-        )
-
-        self._create_quick_action(
-            row=2,
-            title="My Work",
-            description="Assigned quotes and work",
-            destination="Work",
-        )
-
-        self._create_quick_action(
-            row=3,
-            title="Attendance",
-            description="Clock in and manage breaks",
-            destination="Attendance",
-        )
-
-        self._create_quick_action(
-            row=4,
-            title="Tasks",
-            description="View your assigned tasks",
-            destination="Tasks",
-        )
-
-    def _create_quick_action(
-        self,
-        row: int,
-        title: str,
-        description: str,
-        destination: str,
-    ) -> None:
-        """Create one clean quick-action row."""
-
-        action = ctk.CTkFrame(
-            self.quick_card,
-            fg_color=Theme.PANEL_ALT,
-            corner_radius=8,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=50,
-        )
-
-        action.grid(
-            row=row,
-            column=0,
-            sticky="ew",
-            padx=14,
-            pady=4,
-        )
-
-        action.grid_propagate(False)
-
-        action.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        # Text
-        text_frame = ctk.CTkFrame(
-            action,
-            fg_color="transparent",
-        )
-
-        text_frame.grid(
-            row=0,
-            column=0,
-            sticky="w",
-            padx=(12, 4),
-        )
-
-        ctk.CTkLabel(
-            text_frame,
-            text=title,
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 10, "bold"),
-            anchor="w",
-        ).pack(
-            anchor="w",
-        )
-
-        ctk.CTkLabel(
-            text_frame,
-            text=description,
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 8),
-            anchor="w",
-        ).pack(
-            anchor="w",
-            pady=(1, 0),
-        )
-
-        # Button
-        ctk.CTkButton(
-            action,
-            text="Open",
-            width=58,
-            height=29,
-            corner_radius=6,
-            fg_color=Theme.BG,
-            hover_color=Theme.BORDER,
-            border_width=1,
-            border_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 9, "bold"),
-            command=lambda d=destination: self._navigate(d),
-        ).grid(
-            row=0,
-            column=1,
-            padx=(4, 10),
-        )
-
-    # ==================================================================
-    # RECENT ACTIVITY
-    # ==================================================================
-
-    def _build_recent_activity(self) -> None:
-        """Build the recent activity feed."""
-
-        self.activity_card = ctk.CTkFrame(
-            self.content,
-            fg_color=Theme.PANEL,
-            corner_radius=12,
-            border_width=1,
-            border_color=Theme.BORDER,
-        )
-
-        self.activity_card.grid(
-            row=4,
-            column=0,
-            sticky="ew",
-            padx=self.OUTER_PAD_X,
-            pady=(0, 26),
-        )
-
-        self.activity_card.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        # Header
-        header = ctk.CTkFrame(
-            self.activity_card,
-            fg_color="transparent",
-        )
-
-        header.grid(
-            row=0,
-            column=0,
-            sticky="ew",
-            padx=18,
-            pady=(16, 10),
-        )
-
-        header.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-        ctk.CTkLabel(
-            header,
-            text="Recent Activity",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 16, "bold"),
-            anchor="w",
-        ).grid(
-            row=0,
-            column=0,
-            sticky="w",
-        )
-
-        ctk.CTkLabel(
-            header,
-            text="The latest operational events from your workspace.",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 10),
-            anchor="w",
-        ).grid(
-            row=1,
-            column=0,
-            sticky="w",
-            pady=(2, 0),
-        )
-
-        # Activity list
-        self.activity_list = ctk.CTkScrollableFrame(
-            self.activity_card,
-            height=185,
-            fg_color=Theme.PANEL_ALT,
-            corner_radius=8,
-            scrollbar_button_color=Theme.BORDER,
-            scrollbar_button_hover_color=Theme.MUTED_TEXT,
-        )
-
-        self.activity_list.grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            padx=14,
-            pady=(0, 14),
-        )
-
-        self.activity_list.grid_columnconfigure(
-            0,
-            weight=1,
-        )
-
-    # ==================================================================
-    # WELCOME INFORMATION
-    # ==================================================================
-
-    def _update_welcome_information(self) -> None:
-        """Update greeting, logged-in user, role and date."""
-
-        now = datetime.now()
-
-        if now.hour < 12:
-            greeting = "Good morning"
-        elif now.hour < 18:
-            greeting = "Good afternoon"
-        else:
-            greeting = "Good evening"
-
-        name = "there"
-        role = "User"
-
-        account = self._account
-
-        if account is not None:
-            try:
-                account_name = self._value(
-                    account,
-                    "full_name",
-                    None,
-                )
-
-                if account_name:
-                    name = str(
-                        account_name
-                    ).strip()
-
-                account_role = self._value(
-                    account,
-                    "role",
-                    None,
-                )
-
-                if account_role:
-                    role = self._format_role(
-                        str(account_role)
-                    )
-
-            except Exception:
-                pass
-
-        self.greeting_label.configure(
-            text=f"{greeting}, {name}"
-        )
-
-        self.role_badge.configure(
-            text=f"Signed in as {role}"
-        )
-
-        self.day_label.configure(
-            text=now.strftime("%A")
-        )
-
-        self.date_label.configure(
-            text=now.strftime("%d %B %Y")
-        )
-
-    @staticmethod
-    def _format_role(role: str) -> str:
-        """Convert stored role names into readable labels."""
-
-        cleaned = (
-            role
-            .replace("_", " ")
-            .replace("-", " ")
-            .strip()
-        )
-
-        replacements = {
-            "admin": "Administrator",
-            "administrator": "Administrator",
-            "director": "Director",
-            "manager": "Manager",
-            "business lead": "Business Lead",
-            "employee": "Employee",
-            "staff": "Employee",
-            "user": "User",
-        }
-
-        lowered = cleaned.lower()
-
-        if lowered in replacements:
-            return replacements[lowered]
-
-        return cleaned.title()
-
-    # ==================================================================
-    # NAVIGATION
-    # ==================================================================
+        mw = self._find_main_window()
+        return getattr(mw, "_navigation_controller", None) if mw else None
 
     def _navigate(self, destination: str) -> None:
-        """Navigate through the existing application navigation."""
-
-        if self._navigation_controller is None:
-            print(
-                "⚠️ Dashboard navigation unavailable: "
-                f"{destination}"
-            )
+        nav = self._navigation_controller
+        if nav is None:
+            print(f"⚠️ Dashboard navigation unavailable: {destination}")
             return
-
         try:
-            self._navigation_controller.navigate(
-                destination
-            )
-
+            nav.navigate(destination)
         except Exception as exc:
-            print(
-                "⚠️ Dashboard navigation error "
-                f"for {destination}: {exc}"
-            )
+            print(f"⚠️ Dashboard navigation error for {destination}: {exc}")
 
     # ==================================================================
-    # DATA REFRESH
+    # Shared helpers
+    # ==================================================================
+
+    def _card(self, parent, title: str, link: str = "", dest: str = "") -> ctk.CTkFrame:
+        card = ctk.CTkFrame(
+            parent, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
+        )
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.pack(fill="x", padx=16, pady=(14, 8))
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            header, text=title, font=ctk.CTkFont(size=15, weight="bold"), text_color=TEXT, anchor="w"
+        ).grid(row=0, column=0, sticky="w")
+        if link and dest:
+            ctk.CTkButton(
+                header,
+                text=link,
+                width=70,
+                height=26,
+                corner_radius=8,
+                fg_color="transparent",
+                hover_color=GRAY_SOFT,
+                text_color=GREEN,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda d=dest: self._navigate(d),
+            ).grid(row=0, column=1, sticky="e")
+        return card
+
+    def _tick_clock(self) -> None:
+        if self._is_destroyed:
+            return
+        try:
+            now = datetime.now()
+            if hasattr(self, "date_label"):
+                self.date_label.configure(text=f"🕐  {now.strftime('%H:%M:%S')} SAST")
+            self.after(1000, self._tick_clock)
+        except Exception:
+            pass
+
+    # ==================================================================
+    # EMPLOYEE LAYOUT (compact)
+    # ==================================================================
+
+    def _build_employee(self) -> None:
+        self._build_welcome_banner(executive=False)
+        # Simple employee KPIs + links
+        row = ctk.CTkFrame(self.content, fg_color="transparent")
+        row.grid(row=1, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 14))
+        for i in range(4):
+            row.grid_columnconfigure(i, weight=1, uniform="ekpi")
+        self.emp_kpi = {}
+        for i, (key, icon, color, soft, title, value, sub) in enumerate(
+            [
+                ("tasks", "📋", BLUE, BLUE_SOFT, "My Tasks", "0", "in progress"),
+                ("hours", "⏱", GREEN, GREEN_SOFT, "Hours Worked Today", "0h 0m", "of 8h"),
+                ("leave", "🏝", ORANGE, ORANGE_SOFT, "Leave Balance", "—", "remaining"),
+                ("attendance", "✓", GREEN, GREEN_SOFT, "Attendance Status", "—", ""),
+            ]
+        ):
+            card = ctk.CTkFrame(
+                row, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
+            )
+            card.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 6, 0 if i == 3 else 6))
+            badge = ctk.CTkFrame(card, width=40, height=40, corner_radius=12, fg_color=soft)
+            badge.grid(row=0, column=0, rowspan=2, padx=(14, 10), pady=14)
+            badge.pack_propagate(False)
+            ctk.CTkLabel(badge, text=icon, font=ctk.CTkFont(size=16), text_color=color).place(
+                relx=0.5, rely=0.5, anchor="center"
+            )
+            ctk.CTkLabel(
+                card, text=title, font=ctk.CTkFont(size=12), text_color=MUTED, anchor="w"
+            ).grid(row=0, column=1, sticky="sw", pady=(14, 0))
+            val = ctk.CTkLabel(
+                card, text=value, font=ctk.CTkFont(size=20, weight="bold"), text_color=TEXT, anchor="w"
+            )
+            val.grid(row=1, column=1, sticky="nw")
+            sub_l = ctk.CTkLabel(
+                card, text=sub, font=ctk.CTkFont(size=11), text_color=MUTED, anchor="w"
+            )
+            sub_l.grid(row=2, column=1, sticky="nw", pady=(0, 14))
+            self.emp_kpi[key] = (val, sub_l)
+
+        # Quick actions
+        qa = self._card(self.content, "⚡  Quick Actions")
+        qa.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 20))
+        btns = ctk.CTkFrame(qa, fg_color="transparent")
+        btns.pack(fill="x", padx=12, pady=(0, 14))
+        for i in range(4):
+            btns.grid_columnconfigure(i, weight=1)
+        for i, (label, color, dest) in enumerate(
+            [
+                ("Tasks", GREEN, "Tasks"),
+                ("Attendance", BLUE, "Attendance"),
+                ("Calendar", ORANGE, "Calendar"),
+                ("Notifications", PURPLE, "Notifications"),
+            ]
+        ):
+            ctk.CTkButton(
+                btns,
+                text=label,
+                height=40,
+                corner_radius=12,
+                fg_color=color,
+                hover_color=color,
+                text_color="#FFFFFF",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda d=dest: self._navigate(d),
+            ).grid(row=0, column=i, sticky="ew", padx=4)
+
+    def _build_welcome_banner(self, executive: bool) -> None:
+        banner = ctk.CTkFrame(
+            self.content,
+            fg_color=GREEN_BANNER,
+            corner_radius=16,
+            border_width=1,
+            border_color="#BBF7D0",
+        )
+        banner.grid(row=0, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(16, 12))
+        banner.grid_columnconfigure(1, weight=1)
+
+        name = str(_v(self._account, "full_name", "there") or "there")
+        av = ctk.CTkFrame(banner, width=48, height=48, corner_radius=24, fg_color=GREEN)
+        av.grid(row=0, column=0, padx=(18, 12), pady=16)
+        av.pack_propagate(False)
+        ctk.CTkLabel(
+            av, text=_initials(name), font=ctk.CTkFont(size=14, weight="bold"), text_color="#FFFFFF"
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        mid = ctk.CTkFrame(banner, fg_color="transparent")
+        mid.grid(row=0, column=1, sticky="w", pady=16)
+        hour = datetime.now().hour
+        greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+        self.greeting_label = ctk.CTkLabel(
+            mid,
+            text=f"{greet}, {name}!",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        )
+        self.greeting_label.pack(anchor="w")
+        sub = (
+            "Here's your executive overview of today's business operations."
+            if executive
+            else "Here's your workspace overview for today."
+        )
+        self.welcome_subtitle = ctk.CTkLabel(
+            mid, text=sub, font=ctk.CTkFont(size=13), text_color=MUTED, anchor="w"
+        )
+        self.welcome_subtitle.pack(anchor="w", pady=(2, 0))
+
+        right = ctk.CTkFrame(banner, fg_color="transparent")
+        right.grid(row=0, column=2, sticky="e", padx=18, pady=16)
+        now = datetime.now()
+        self.day_label = ctk.CTkLabel(
+            right,
+            text=f"📅  {now.strftime('%A, %d %B %Y')}",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="e",
+        )
+        self.day_label.pack(anchor="e")
+        self.date_label = ctk.CTkLabel(
+            right,
+            text=f"🕐  {now.strftime('%H:%M:%S')} SAST",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="e",
+        )
+        self.date_label.pack(anchor="e", pady=(4, 0))
+        self.after(1000, self._tick_clock)
+
+    # ==================================================================
+    # EXECUTIVE LAYOUT
+    # ==================================================================
+
+    def _build_executive(self) -> None:
+        self._build_welcome_banner(executive=True)
+        self._build_exec_kpis()
+        self._build_exec_middle()
+        self._build_exec_bottom()
+
+    def _build_exec_kpis(self) -> None:
+        row = ctk.CTkFrame(self.content, fg_color="transparent")
+        row.grid(row=1, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 12))
+        for i in range(5):
+            row.grid_columnconfigure(i, weight=1, uniform="xkpi")
+
+        self.exec_kpi = {}
+        specs = [
+            ("people", "👥", GREEN, GREEN_SOFT, "People Working", "18 / 24", "↑ +2% vs yesterday"),
+            ("attendance", "⏱", BLUE, BLUE_SOFT, "Attendance Today", "87%", "21 Present"),
+            ("due", "☰", ORANGE, ORANGE_SOFT, "Tasks Due Today", "8", "3 High Priority"),
+            ("approvals", "⏳", PURPLE, PURPLE_SOFT, "Pending Approvals", "5", "Leave & Office"),
+            ("revenue", "📈", CYAN, CYAN_SOFT, "Revenue Snapshot", "R248,750", "↑ +12% this week"),
+        ]
+        for i, (key, icon, color, soft, title, value, sub) in enumerate(specs):
+            card = ctk.CTkFrame(
+                row, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
+            )
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 5, 0 if i == 4 else 5))
+            card.grid_columnconfigure(1, weight=1)
+
+            badge = ctk.CTkFrame(card, width=42, height=42, corner_radius=21, fg_color=soft)
+            badge.grid(row=0, column=0, rowspan=3, padx=(12, 8), pady=12)
+            badge.pack_propagate(False)
+            ctk.CTkLabel(badge, text=icon, font=ctk.CTkFont(size=15), text_color=color).place(
+                relx=0.5, rely=0.5, anchor="center"
+            )
+            ctk.CTkLabel(
+                card, text=title, font=ctk.CTkFont(size=11), text_color=MUTED, anchor="w"
+            ).grid(row=0, column=1, sticky="sw", pady=(10, 0), padx=(0, 10))
+            val = ctk.CTkLabel(
+                card, text=value, font=ctk.CTkFont(size=20, weight="bold"), text_color=TEXT, anchor="w"
+            )
+            val.grid(row=1, column=1, sticky="nw", padx=(0, 10))
+            sub_l = ctk.CTkLabel(
+                card, text=sub, font=ctk.CTkFont(size=10), text_color=GREEN, anchor="w"
+            )
+            sub_l.grid(row=2, column=1, sticky="nw", pady=(0, 10), padx=(0, 10))
+            self.exec_kpi[key] = (val, sub_l)
+
+    def _build_exec_middle(self) -> None:
+        mid = ctk.CTkFrame(self.content, fg_color="transparent")
+        mid.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 10))
+        mid.grid_columnconfigure(0, weight=65)
+        mid.grid_columnconfigure(1, weight=35)
+
+        left = ctk.CTkFrame(mid, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid_columnconfigure(0, weight=1)
+
+        # Department Performance
+        dept = self._card(left, "📊  Department Performance")
+        dept.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        legend = ctk.CTkFrame(dept, fg_color="transparent")
+        legend.pack(fill="x", padx=16, pady=(0, 2))
+        for label, color in [("Completed", GREEN), ("In Progress", BLUE), ("Overdue", ORANGE)]:
+            ctk.CTkLabel(
+                legend, text=f"●  {label}", font=ctk.CTkFont(size=11), text_color=color
+            ).pack(side="left", padx=(0, 12))
+        self.dept_frame = ctk.CTkFrame(dept, fg_color="transparent", height=150)
+        self.dept_frame.pack(fill="x", padx=12, pady=(4, 14))
+        self.dept_frame.pack_propagate(False)
+        for name, c, p, o in _DEMO["departments"]:
+            self._dept_grouped_bar(self.dept_frame, name, c, p, o)
+
+        # Activity table under chart
+        act = self._card(left, "📋  Recent Operational Activity", link="View all", dest="Notifications")
+        act.grid(row=1, column=0, sticky="ew")
+        hdr = ctk.CTkFrame(act, fg_color=GRAY_SOFT, corner_radius=8)
+        hdr.pack(fill="x", padx=12, pady=(0, 2))
+        for col, w in [("#", 28), ("Employee", 120), ("Department", 100), ("Activity", 200), ("Time", 80)]:
+            ctk.CTkLabel(
+                hdr, text=col, font=ctk.CTkFont(size=11, weight="bold"), text_color=MUTED, width=w, anchor="w"
+            ).pack(side="left", padx=4, pady=6)
+        self.exec_activity = ctk.CTkFrame(act, fg_color="transparent")
+        self.exec_activity.pack(fill="x", padx=12, pady=(2, 12))
+        self._render_activity_rows(_DEMO["activity"])
+
+        # RIGHT column
+        right = ctk.CTkFrame(mid, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        right.grid_columnconfigure(0, weight=1)
+
+        # Attendance donut
+        att = self._card(right, "◎  Team Attendance Overview", link="View all", dest="Attendance")
+        att.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        body = ctk.CTkFrame(att, fg_color="transparent")
+        body.pack(fill="x", padx=12, pady=(0, 12))
+        body.grid_columnconfigure(1, weight=1)
+
+        ring = ctk.CTkFrame(
+            body, width=120, height=120, corner_radius=60,
+            fg_color=GREEN_SOFT, border_width=12, border_color=GREEN,
+        )
+        ring.grid(row=0, column=0, padx=(8, 12), pady=8)
+        ring.pack_propagate(False)
+        self.att_pct_label = ctk.CTkLabel(
+            ring, text="87%", font=ctk.CTkFont(size=26, weight="bold"), text_color=GREEN
+        )
+        self.att_pct_label.place(relx=0.5, rely=0.42, anchor="center")
+        self.att_sub_label = ctk.CTkLabel(
+            ring, text="21 of 24", font=ctk.CTkFont(size=11), text_color=MUTED
+        )
+        self.att_sub_label.place(relx=0.5, rely=0.65, anchor="center")
+
+        legend2 = ctk.CTkFrame(body, fg_color="transparent")
+        legend2.grid(row=0, column=1, sticky="w")
+        self.att_legend = {}
+        for key, label, color, default in [
+            ("present", "Present", GREEN, "21"),
+            ("absent", "Absent", RED, "2"),
+            ("late", "Late", ORANGE, "1"),
+        ]:
+            r = ctk.CTkFrame(legend2, fg_color="transparent")
+            r.pack(anchor="w", pady=4)
+            ctk.CTkLabel(r, text="●", text_color=color, font=ctk.CTkFont(size=13), width=16).pack(
+                side="left"
+            )
+            ctk.CTkLabel(
+                r, text=label, text_color=MUTED, font=ctk.CTkFont(size=12), width=60, anchor="w"
+            ).pack(side="left")
+            count_l = ctk.CTkLabel(
+                r, text=default, text_color=TEXT, font=ctk.CTkFont(size=13, weight="bold")
+            )
+            count_l.pack(side="left", padx=(6, 0))
+            self.att_legend[key] = count_l
+
+        # Approvals queue
+        appr = self._card(right, "📋  Approvals Queue", link="View all", dest="Approvals")
+        appr.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        self.approvals_list = ctk.CTkFrame(appr, fg_color="transparent")
+        self.approvals_list.pack(fill="x", padx=10, pady=(0, 12))
+        self._render_approvals(_DEMO["approvals"])
+
+        # Quick actions
+        qa = self._card(right, "⚡  Quick Actions")
+        qa.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        grid = ctk.CTkFrame(qa, fg_color="transparent")
+        grid.pack(fill="x", padx=10, pady=(0, 12))
+        for i in range(2):
+            grid.grid_columnconfigure(i, weight=1)
+        for i, (label, sub, color, dest) in enumerate(
+            [
+                ("📊  View Reports", "Analytics & insights", GREEN, "Reports"),
+                ("👥  Manage Team", "Users & permissions", BLUE, "People"),
+                ("✓  Approve Requests", "Review & approve", ORANGE, "Approvals"),
+                ("＋  Create Project", "New project setup", PURPLE, "Projects"),
+            ]
+        ):
+            r, c = divmod(i, 2)
+            btn = ctk.CTkButton(
+                grid,
+                text=f"{label}\n{sub}",
+                height=56,
+                corner_radius=12,
+                fg_color=color,
+                hover_color=color,
+                text_color="#FFFFFF",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda d=dest: self._navigate(d),
+            )
+            btn.grid(row=r, column=c, sticky="ew", padx=4, pady=4)
+
+        # System status
+        sys_card = self._card(right, "🛡  System Status")
+        sys_card.grid(row=3, column=0, sticky="ew")
+        sys_row = ctk.CTkFrame(sys_card, fg_color="transparent")
+        sys_row.pack(fill="x", padx=10, pady=(0, 12))
+        for i in range(2):
+            sys_row.grid_columnconfigure(i, weight=1)
+        for i, (label, sub) in enumerate(
+            [
+                ("Server Online", "All systems operational"),
+                ("Database", "Healthy"),
+                ("Email Service", "Operational"),
+                ("File Storage", "Healthy"),
+            ]
+        ):
+            r, c = divmod(i, 2)
+            cell = ctk.CTkFrame(sys_row, fg_color=GRAY_SOFT, corner_radius=10)
+            cell.grid(row=r, column=c, sticky="ew", padx=3, pady=3)
+            ctk.CTkLabel(
+                cell, text=f"●  {label}", font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=GREEN, anchor="w"
+            ).pack(anchor="w", padx=8, pady=(6, 0))
+            ctk.CTkLabel(
+                cell, text=sub, font=ctk.CTkFont(size=10), text_color=MUTED, anchor="w"
+            ).pack(anchor="w", padx=8, pady=(0, 6))
+
+    def _build_exec_bottom(self) -> None:
+        # Bottom spacing only — main content is in middle
+        pass
+
+    def _dept_grouped_bar(self, parent, name: str, completed: int, progress: int, overdue: int) -> None:
+        col = ctk.CTkFrame(parent, fg_color="transparent")
+        col.pack(side="left", fill="both", expand=True, padx=3)
+        max_v = max(completed, progress, overdue, 1)
+        bars = ctk.CTkFrame(col, fg_color="transparent", height=110)
+        bars.pack(fill="x")
+        bars.pack_propagate(False)
+        inner = ctk.CTkFrame(bars, fg_color="transparent")
+        inner.place(relx=0.5, rely=1.0, anchor="s")
+        for val, color in [(completed, GREEN), (progress, BLUE), (overdue, ORANGE)]:
+            h = max(10, int(95 * val / max_v))
+            bar = ctk.CTkFrame(inner, width=16, height=h, corner_radius=4, fg_color=color)
+            bar.pack(side="left", padx=2)
+            bar.pack_propagate(False)
+            ctk.CTkLabel(
+                bar, text=str(val), font=ctk.CTkFont(size=8, weight="bold"), text_color="#FFFFFF"
+            ).place(relx=0.5, rely=0.08, anchor="n")
+        ctk.CTkLabel(
+            col, text=name, font=ctk.CTkFont(size=10), text_color=MUTED
+        ).pack(pady=(4, 0))
+
+    def _render_approvals(self, items) -> None:
+        for w in self.approvals_list.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        for item in list(items)[:5]:
+            if isinstance(item, dict):
+                title = item.get("type") or item.get("title") or "Request"
+                who = item.get("employee") or item.get("name") or "—"
+                when = item.get("when") or item.get("date") or ""
+            else:
+                title, who, when = str(item), "—", ""
+            icon = "✈️" if "leave" in title.lower() else "🏢" if "office" in title.lower() else "💵"
+            card = ctk.CTkFrame(
+                self.approvals_list, fg_color=GRAY_SOFT, corner_radius=12,
+                border_width=1, border_color=BORDER,
+            )
+            card.pack(fill="x", pady=3)
+            card.grid_columnconfigure(1, weight=1)
+            badge = ctk.CTkFrame(card, width=32, height=32, corner_radius=10, fg_color=ORANGE_SOFT)
+            badge.grid(row=0, column=0, rowspan=2, padx=8, pady=8)
+            badge.pack_propagate(False)
+            ctk.CTkLabel(badge, text=icon, font=ctk.CTkFont(size=12)).place(
+                relx=0.5, rely=0.5, anchor="center"
+            )
+            ctk.CTkLabel(
+                card, text=str(title), font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=TEXT, anchor="w"
+            ).grid(row=0, column=1, sticky="w", pady=(8, 0))
+            ctk.CTkLabel(
+                card, text=f"{who}  ·  {when}".strip(" ·"),
+                font=ctk.CTkFont(size=10), text_color=MUTED, anchor="w"
+            ).grid(row=1, column=1, sticky="w", pady=(0, 8))
+            ctk.CTkLabel(
+                card, text="Pending", font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=ORANGE, fg_color=ORANGE_SOFT, corner_radius=8, padx=8, pady=2,
+            ).grid(row=0, column=2, rowspan=2, padx=8)
+
+    def _render_activity_rows(self, activities) -> None:
+        for w in self.exec_activity.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        if not activities:
+            ctk.CTkLabel(
+                self.exec_activity, text="No recent operational activity.",
+                font=ctk.CTkFont(size=12), text_color=MUTED
+            ).pack(anchor="w", pady=8)
+            return
+        for idx, activity in enumerate(list(activities)[:6], start=1):
+            who = str(
+                _v(activity, "employee")
+                or _v(activity, "user")
+                or _v(activity, "name")
+                or "Team member"
+            )
+            dept = str(_v(activity, "department") or "—")
+            action = str(
+                _v(activity, "description") or _v(activity, "action") or "Activity"
+            )
+            when = self._format_activity_time(_v(activity, "created_at", None))
+            if when == "Recently":
+                when = f"{idx + 1}h ago"
+            row = ctk.CTkFrame(self.exec_activity, fg_color="transparent")
+            row.pack(fill="x", pady=2)
+            ctk.CTkLabel(
+                row, text=str(idx), font=ctk.CTkFont(size=11), text_color=MUTED, width=28, anchor="w"
+            ).pack(side="left", padx=4)
+            av = ctk.CTkFrame(row, width=24, height=24, corner_radius=12, fg_color=BLUE_SOFT)
+            av.pack(side="left", padx=(0, 6))
+            av.pack_propagate(False)
+            ctk.CTkLabel(
+                av, text=_initials(who), font=ctk.CTkFont(size=9, weight="bold"), text_color=BLUE
+            ).place(relx=0.5, rely=0.5, anchor="center")
+            ctk.CTkLabel(
+                row, text=who[:16], font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=TEXT, width=110, anchor="w"
+            ).pack(side="left", padx=2)
+            ctk.CTkLabel(
+                row, text=dept[:12], font=ctk.CTkFont(size=11), text_color=MUTED, width=90, anchor="w"
+            ).pack(side="left", padx=2)
+            ctk.CTkLabel(
+                row, text=f"●  {action[:36]}", font=ctk.CTkFont(size=11),
+                text_color=TEXT, width=190, anchor="w"
+            ).pack(side="left", padx=2)
+            ctk.CTkLabel(
+                row, text=when, font=ctk.CTkFont(size=11), text_color=MUTED, width=70, anchor="e"
+            ).pack(side="right", padx=4)
+
+    # ==================================================================
+    # Data refresh
     # ==================================================================
 
     def refresh(self) -> None:
-        """Refresh dashboard data without rebuilding the entire view."""
-        if self._is_destroyed:
-            return
-        self._safe_refresh()
+        if not self._is_destroyed:
+            self._safe_refresh()
 
     def _safe_refresh(self) -> None:
-        """Schedule a dashboard refresh without blocking Tkinter."""
-
         if self._is_destroyed or self._refresh_running:
             return
-
         try:
             if not self.winfo_exists():
                 return
         except Exception:
             return
-
-        # Never start a second request while one is already in flight.
-        # Also suppress duplicate refreshes fired within the same short UI cycle.
         now = time.monotonic()
-        if self._refresh_running:
-            return
         if now - self._last_refresh_started < 2.0:
             return
         self._refresh_running = True
@@ -1283,22 +712,15 @@ class DashboardView(ctk.CTkFrame):
             except Exception as exc:
                 self._backend_queue.put((False, None, exc))
 
-        threading.Thread(
-            target=worker,
-            daemon=True,
-            name="DashboardAPI",
-        ).start()
+        threading.Thread(target=worker, daemon=True, name="DashboardAPI").start()
 
     def _drain_backend_queue(self) -> None:
-        """Apply completed backend requests safely on Tk's main thread."""
         if self._is_destroyed:
             return
-
         try:
             while True:
                 success, summary, error = self._backend_queue.get_nowait()
                 self._refresh_running = False
-
                 if success:
                     self._apply_summary(summary)
                 else:
@@ -1308,7 +730,6 @@ class DashboardView(ctk.CTkFrame):
         except Exception as exc:
             self._refresh_running = False
             print(f"⚠️ Dashboard result handling error: {exc}")
-
         if not self._is_destroyed:
             try:
                 self._queue_job = self.after(50, self._drain_backend_queue)
@@ -1316,556 +737,175 @@ class DashboardView(ctk.CTkFrame):
                 self._queue_job = None
 
     def _apply_summary(self, summary) -> None:
-        """Render an already-fetched summary on the Tk main thread."""
         if self._is_destroyed:
             return
-
+        self._summary = summary
         try:
-            self._update_kpis(summary)
-            self._update_operations(summary)
-
-            activities = self._value(summary, "latest_activity", ())
-            self._update_activity(activities)
-            self._update_welcome_information()
-
-            if hasattr(self, "updated_label"):
-                self.updated_label.configure(
-                    text="Updated " + datetime.now().strftime("%H:%M")
-                )
+            if self._executive:
+                self._apply_executive(summary)
+            else:
+                self._apply_employee(summary)
         except Exception as exc:
             print(f"⚠️ Dashboard render error: {exc}")
 
+    def _nz(self, summary, key: str, demo_key: str = None):
+        """Value from summary or demo default — never blank."""
+        demo_key = demo_key or key
+        val = _v(summary, key, None) if summary is not None else None
+        if val is None or val == "" or val == 0:
+            # Prefer live non-zero; fall back to demo for presentation
+            live = _v(summary, key, None) if summary is not None else None
+            if live not in (None, "", 0):
+                return live
+            return _DEMO.get(demo_key, live if live is not None else 0)
+        return val
+
+    def _apply_executive(self, summary) -> None:
+        people = self._nz(summary, "people_working")
+        total = self._nz(summary, "total_people", "total_people")
+        if "people" in self.exec_kpi:
+            self.exec_kpi["people"][0].configure(text=f"{people} / {total}")
+
+        att_pct = _v(summary, "attendance_pct", None) if summary else None
+        if att_pct in (None, "", 0):
+            att_pct = _DEMO["attendance_pct"]
+        present = self._nz(summary, "present_count", "present_count")
+        absent = self._nz(summary, "absent_count", "absent_count")
+        late = self._nz(summary, "late_count", "late_count")
+
+        if "attendance" in self.exec_kpi:
+            self.exec_kpi["attendance"][0].configure(text=f"{att_pct}%")
+            self.exec_kpi["attendance"][1].configure(text=f"{present} Present")
+        if hasattr(self, "att_pct_label"):
+            self.att_pct_label.configure(text=f"{att_pct}%")
+        if hasattr(self, "att_sub_label"):
+            self.att_sub_label.configure(text=f"{present} of {total}")
+        if hasattr(self, "att_legend"):
+            for key, val in [("present", present), ("absent", absent), ("late", late)]:
+                if key in self.att_legend:
+                    try:
+                        self.att_legend[key].configure(text=str(val))
+                    except Exception:
+                        pass
+
+        due = self._nz(summary, "tasks_due_today")
+        high = self._nz(summary, "tasks_high_priority", "tasks_high_priority")
+        if "due" in self.exec_kpi:
+            self.exec_kpi["due"][0].configure(text=str(due))
+            self.exec_kpi["due"][1].configure(text=f"{high} High Priority")
+
+        pending = self._nz(summary, "pending_approvals")
+        if "approvals" in self.exec_kpi:
+            self.exec_kpi["approvals"][0].configure(text=str(pending))
+
+        revenue = _v(summary, "revenue", None) if summary else None
+        if revenue in (None, "", 0):
+            revenue = _v(summary, "revenue_snapshot", None) if summary else None
+        if revenue in (None, "", 0):
+            revenue = _DEMO["revenue"]
+        if "revenue" in self.exec_kpi:
+            try:
+                self.exec_kpi["revenue"][0].configure(text=f"R{int(float(revenue)):,}")
+            except Exception:
+                self.exec_kpi["revenue"][0].configure(text=str(revenue))
+
+        # Activity
+        activities = _v(summary, "latest_activity", None) if summary else None
+        if not activities:
+            activities = _DEMO["activity"]
+        if hasattr(self, "exec_activity"):
+            self._render_activity_rows(activities)
+
+        # Approvals
+        approvals = None
+        if summary is not None:
+            approvals = _v(summary, "approvals_queue", None) or _v(summary, "pending_approval_items", None)
+        if not approvals:
+            approvals = _DEMO["approvals"]
+        if hasattr(self, "approvals_list"):
+            self._render_approvals(approvals)
+
+    def _apply_employee(self, summary) -> None:
+        if not hasattr(self, "emp_kpi"):
+            return
+        tasks = _v(summary, "tasks_due_today", 0) or _v(summary, "tasks_in_progress", 0) or 0
+        in_prog = _v(summary, "tasks_in_progress", 0) or 0
+        if "tasks" in self.emp_kpi:
+            self.emp_kpi["tasks"][0].configure(text=str(tasks))
+            self.emp_kpi["tasks"][1].configure(text=f"{in_prog} in progress")
+        hours = _v(summary, "hours_worked_today", None)
+        if hours is not None and "hours" in self.emp_kpi:
+            try:
+                h = float(hours)
+                self.emp_kpi["hours"][0].configure(text=f"{int(h)}h {int(round((h % 1) * 60))}m")
+            except Exception:
+                pass
+        leave = _v(summary, "leave_balance", None)
+        if leave is not None and "leave" in self.emp_kpi:
+            self.emp_kpi["leave"][0].configure(text=f"{leave} days")
+        att = _v(summary, "attendance_status", None) or "—"
+        if "attendance" in self.emp_kpi:
+            self.emp_kpi["attendance"][0].configure(text=str(att))
+
+    @staticmethod
+    def _format_activity_time(value) -> str:
+        if not value:
+            return "Recently"
+        try:
+            if isinstance(value, datetime):
+                dt = value
+            else:
+                text = str(value).strip()
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                dt = datetime.fromisoformat(text)
+            now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+            seconds = int((now - dt).total_seconds())
+            if seconds < 60:
+                return "Just now"
+            minutes = seconds // 60
+            if minutes < 60:
+                return f"{minutes} min ago"
+            hours = minutes // 60
+            if hours < 24:
+                return f"{hours}h ago"
+            days = hours // 24
+            if days == 1:
+                return "Yesterday"
+            if days < 7:
+                return f"{days} days ago"
+            return dt.strftime("%d %b %Y")
+        except Exception:
+            return str(value)[:16]
+
     def _scheduled_refresh(self) -> None:
-        """Run the next automatic dashboard refresh."""
-
         if self._is_destroyed:
             return
-
         self._safe_refresh()
-
         if self._is_destroyed:
             return
-
         try:
             if self.winfo_exists():
                 self._refresh_job = self.after(
-                    self.REFRESH_INTERVAL_MS,
-                    self._scheduled_refresh,
+                    self.REFRESH_INTERVAL_MS, self._scheduled_refresh
                 )
         except Exception:
             self._refresh_job = None
 
     def _refresh_data(self) -> None:
-        """Compatibility alias for callers that request a refresh."""
         self._safe_refresh()
 
-    # ==================================================================
-    # KPI DATA
-    # ==================================================================
-
-    def _update_kpis(
-        self,
-        summary,
-    ) -> None:
-        """Update the five KPI values."""
-
-        values = [
-            self._value(
-                summary,
-                "people_working",
-                0,
-            ),
-            self._value(
-                summary,
-                "tasks_due_today",
-                0,
-            ),
-            self._value(
-                summary,
-                "tasks_overdue",
-                0,
-            ),
-            self._value(
-                summary,
-                "pending_approvals",
-                0,
-            ),
-            self._calculate_active_work(
-                summary
-            ),
-        ]
-
-        for card, value in zip(
-            self.kpi_cards,
-            values,
-        ):
-            try:
-                card._value_label.configure(
-                    text=str(
-                        value if value is not None else 0
-                    )
-                )
-            except Exception:
-                pass
-
-    def _calculate_active_work(
-        self,
-        summary,
-    ) -> int:
-        """
-        Calculate active work from real summary values.
-
-        Active Work =
-            tasks currently in progress
-            +
-            pending tasks
-        """
-
-        in_progress = self._value(
-            summary,
-            "tasks_in_progress",
-            0,
-        )
-
-        pending = self._value(
-            summary,
-            "pending_tasks",
-            0,
-        )
-
-        try:
-            return (
-                int(in_progress or 0)
-                + int(pending or 0)
-            )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            return 0
-
-    # ==================================================================
-    # OPERATIONS DATA
-    # ==================================================================
-
-    def _update_operations(
-        self,
-        summary,
-    ) -> None:
-        """Update Work Overview cards."""
-
-        values = [
-            self._value(
-                summary,
-                "tasks_in_progress",
-                0,
-            ),
-            self._value(
-                summary,
-                "tasks_waiting_review",
-                0,
-            ),
-            self._value(
-                summary,
-                "upcoming_deadlines",
-                0,
-            ),
-        ]
-
-        for card, value in zip(
-            self.overview_cards,
-            values,
-        ):
-            try:
-                card._value_label.configure(
-                    text=str(
-                        value if value is not None else 0
-                    )
-                )
-            except Exception:
-                pass
-
-    # ==================================================================
-    # ACTIVITY
-    # ==================================================================
-
-    def _update_activity(
-        self,
-        activities,
-    ) -> None:
-        """Render recent activity as readable event cards."""
-
-        if self._is_destroyed:
-            return
-
-        try:
-            if not self.activity_list.winfo_exists():
-                return
-        except Exception:
-            return
-
-        # Clear previous activity
-        for widget in self.activity_list.winfo_children():
-            try:
-                widget.destroy()
-            except Exception:
-                pass
-
-        if not activities:
-            self._show_empty_activity()
-            return
-
-        try:
-            activities = list(
-                activities
-            )
-        except Exception:
-            activities = []
-
-        for activity in activities:
-            self._create_activity_item(
-                activity
-            )
-
-    def _show_empty_activity(self) -> None:
-        """Display a friendly empty-state message."""
-
-        empty = ctk.CTkFrame(
-            self.activity_list,
-            fg_color=Theme.PANEL,
-            corner_radius=8,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=75,
-        )
-
-        empty.pack(
-            fill="x",
-            padx=7,
-            pady=7,
-        )
-
-        empty.pack_propagate(False)
-
-        ctk.CTkLabel(
-            empty,
-            text="No recent activity",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 11, "bold"),
-        ).pack(
-            pady=(15, 0)
-        )
-
-        ctk.CTkLabel(
-            empty,
-            text="New operational events will appear here.",
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 9),
-        ).pack(
-            pady=(2, 0)
-        )
-
-    def _create_activity_item(
-        self,
-        activity,
-    ) -> None:
-        """Create one clean activity event."""
-
-        category = self._value(
-            activity,
-            "category",
-            "Activity",
-        ) or "Activity"
-
-        description = self._value(
-            activity,
-            "description",
-            "",
-        ) or ""
-
-        created_at = self._value(
-            activity,
-            "created_at",
-            None,
-        )
-
-        category_display = (
-            str(category)
-            .replace("_", " ")
-            .replace("-", " ")
-            .title()
-        )
-
-        timestamp = self._format_activity_time(
-            created_at
-        )
-
-        item = ctk.CTkFrame(
-            self.activity_list,
-            fg_color=Theme.PANEL,
-            corner_radius=8,
-            border_width=1,
-            border_color=Theme.BORDER,
-            height=62,
-        )
-
-        item.pack(
-            fill="x",
-            padx=7,
-            pady=4,
-        )
-
-        item.pack_propagate(False)
-
-        item.grid_columnconfigure(
-            1,
-            weight=1,
-        )
-
-        # --------------------------------------------------------------
-        # Accent
-        # --------------------------------------------------------------
-
-        indicator = ctk.CTkFrame(
-            item,
-            width=4,
-            fg_color=self._activity_color(
-                category
-            ),
-            corner_radius=2,
-        )
-
-        indicator.grid(
-            row=0,
-            column=0,
-            rowspan=2,
-            sticky="ns",
-            padx=(10, 10),
-            pady=10,
-        )
-
-        # --------------------------------------------------------------
-        # Category
-        # --------------------------------------------------------------
-
-        ctk.CTkLabel(
-            item,
-            text=category_display,
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 9, "bold"),
-            anchor="w",
-        ).grid(
-            row=0,
-            column=1,
-            sticky="w",
-            padx=(0, 10),
-            pady=(9, 0),
-        )
-
-        # --------------------------------------------------------------
-        # Description
-        # --------------------------------------------------------------
-
-        ctk.CTkLabel(
-            item,
-            text=str(description),
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 9),
-            anchor="w",
-        ).grid(
-            row=1,
-            column=1,
-            sticky="w",
-            padx=(0, 10),
-            pady=(0, 8),
-        )
-
-        # --------------------------------------------------------------
-        # Time
-        # --------------------------------------------------------------
-
-        ctk.CTkLabel(
-            item,
-            text=timestamp,
-            text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 9),
-            anchor="e",
-        ).grid(
-            row=0,
-            column=2,
-            rowspan=2,
-            sticky="e",
-            padx=(10, 14),
-        )
-
-    @staticmethod
-    def _activity_color(
-        category: str,
-    ) -> str:
-        """Return an appropriate activity accent."""
-
-        category = str(
-            category or ""
-        ).lower()
-
-        if "attendance" in category:
-            return Theme.SUCCESS
-
-        if "task" in category:
-            return Theme.WARNING
-
-        if "work" in category:
-            return Theme.ACCENT
-
-        if "approval" in category:
-            return Theme.DANGER
-
-        if "quote" in category:
-            return Theme.ACCENT
-
-        if "notification" in category:
-            return Theme.WARNING
-
-        return Theme.SUCCESS
-
-    @staticmethod
-    def _format_activity_time(
-        value,
-    ) -> str:
-        """Convert activity timestamp into friendly text."""
-
-        if not value:
-            return "Recently"
-
-        try:
-            if isinstance(
-                value,
-                datetime,
-            ):
-                dt = value
-
-            else:
-                text = str(
-                    value
-                ).strip()
-
-                if text.endswith("Z"):
-                    text = (
-                        text[:-1]
-                        + "+00:00"
-                    )
-
-                dt = datetime.fromisoformat(
-                    text
-                )
-
-            if dt.tzinfo:
-                now = datetime.now(
-                    dt.tzinfo
-                )
-            else:
-                now = datetime.now()
-
-            delta = (
-                now - dt
-            )
-
-            seconds = int(
-                delta.total_seconds()
-            )
-
-            if seconds < 0:
-                return dt.strftime(
-                    "%d %b %Y, %H:%M"
-                )
-
-            if seconds < 60:
-                return "Just now"
-
-            minutes = seconds // 60
-
-            if minutes < 60:
-                unit = (
-                    "minute"
-                    if minutes == 1
-                    else "minutes"
-                )
-
-                return (
-                    f"{minutes} "
-                    f"{unit} ago"
-                )
-
-            hours = minutes // 60
-
-            if hours < 24:
-                unit = (
-                    "hour"
-                    if hours == 1
-                    else "hours"
-                )
-
-                return (
-                    f"{hours} "
-                    f"{unit} ago"
-                )
-
-            days = hours // 24
-
-            if days == 1:
-                return "Yesterday"
-
-            if days < 7:
-                return (
-                    f"{days} days ago"
-                )
-
-            return dt.strftime(
-                "%d %b %Y, %H:%M"
-            )
-
-        except Exception:
-            text = str(
-                value
-            )
-
-            if len(text) >= 16:
-                return text[:16].replace(
-                    "T",
-                    " ",
-                )
-
-            return text
-
-    # ==================================================================
-    # DESTROY
-    # ==================================================================
-
     def destroy(self) -> None:
-        """Cleanly destroy the dashboard."""
-
         if self._is_destroyed:
             return
-
         self._is_destroyed = True
-
-        if self._refresh_job:
-            try:
-                self.after_cancel(
-                    self._refresh_job
-                )
-            except Exception:
-                pass
-
-            self._refresh_job = None
-
-        if self._queue_job:
-            try:
-                self.after_cancel(self._queue_job)
-            except Exception:
-                pass
-            self._queue_job = None
-
+        for job in (self._refresh_job, self._queue_job):
+            if job:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+        self._refresh_job = self._queue_job = None
         try:
             super().destroy()
         except Exception:

@@ -158,3 +158,71 @@
 2026-09-06 22:30:11,701 | INFO    | untangled | Application composition complete
 2026-09-06 22:30:29,948 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-06 22:30:32,855 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:16:19,024 | INFO    | untangled | ============================================================
+2026-09-06 23:16:19,238 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-06 23:16:19,251 | INFO    | untangled | ============================================================
+2026-09-06 23:16:19,252 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:16:19,253 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:16:19,255 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-06 23:16:20,990 | INFO    | untangled | Application composition complete
+2026-09-06 23:16:45,690 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:16:49,497 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:17:15,351 | INFO    | untangled.app | User logged out
+2026-09-06 23:17:41,567 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-06 23:17:43,987 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:20:25,741 | INFO    | untangled.app | User logged out
+2026-09-06 23:20:46,000 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:20:49,310 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:35:51,237 | INFO    | untangled | ============================================================
+2026-09-06 23:35:51,238 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-06 23:35:51,239 | INFO    | untangled | ============================================================
+2026-09-06 23:35:51,240 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:35:51,241 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:35:51,242 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-06 23:35:53,184 | INFO    | untangled | Application composition complete
+2026-09-06 23:36:13,551 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:36:17,627 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:41:37,688 | INFO    | untangled | ============================================================
+2026-09-06 23:41:37,906 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-06 23:41:37,911 | INFO    | untangled | ============================================================
+2026-09-06 23:41:37,912 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:41:37,913 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:41:37,914 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-06 23:41:39,370 | INFO    | untangled | Application composition complete
+2026-09-06 23:41:58,575 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:42:05,417 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:44:25,644 | INFO    | untangled.app | User logged out
+2026-09-06 23:44:49,943 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-06 23:44:53,282 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:46:36,041 | INFO    | untangled.app | User logged out
+2026-09-06 23:48:44,007 | INFO    | untangled | ============================================================
+2026-09-06 23:48:44,048 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-06 23:48:44,049 | INFO    | untangled | ============================================================
+2026-09-06 23:48:44,050 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:48:44,051 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-06 23:48:44,053 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-06 23:48:46,443 | INFO    | untangled | Application composition complete
+2026-09-06 23:49:08,421 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:49:13,080 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:50:07,944 | INFO    | untangled.app | User logged out
+2026-09-06 23:50:46,053 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-06 23:50:51,357 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:52:12,031 | INFO    | untangled.app | User logged out
+2026-09-06 23:52:42,024 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-06 23:52:44,528 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-06 23:54:22,856 | INFO    | untangled.app | User logged out
+2026-09-08 09:36:35,287 | INFO    | untangled | ============================================================
+2026-09-08 09:36:35,293 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 09:36:35,294 | INFO    | untangled | ============================================================
+2026-09-08 09:36:35,295 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 09:36:35,296 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 09:36:35,297 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 09:36:36,927 | INFO    | untangled | Application composition complete
+2026-09-08 09:36:56,390 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 09:37:01,882 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 09:40:17,946 | INFO    | untangled.app | User logged out
+2026-09-08 09:47:53,597 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-08 09:47:55,044 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 09:49:34,500 | INFO    | untangled.app | User logged out
+2026-09-08 09:50:01,012 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 09:50:03,902 | INFO    | untangled.app | Main window shown – entering mainloop
