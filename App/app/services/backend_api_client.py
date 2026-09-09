@@ -305,6 +305,19 @@ class BackendAPIClient:
     def attendance_status(self) -> dict[str, Any]:
         return self.request("GET", "/api/attendance/status")
 
+    def attendance_today(self, date: str | None = None) -> dict[str, Any]:
+        """Today's attendance records (team scope when role allows)."""
+        path = "/api/attendance/today"
+        if date:
+            path = f"{path}?date={date}"
+        return self.request("GET", path, use_cache=False)
+
+    def attendance_history(self, days: int = 1, employee_id: Any = None) -> dict[str, Any]:
+        path = f"/api/attendance/history?days={int(days)}"
+        if employee_id is not None:
+            path = f"{path}&employee_id={employee_id}"
+        return self.request("GET", path, use_cache=False)
+
     def clock_in(self, employee_id: Optional[int] = None) -> dict[str, Any]:
         payload = {"employee_id": employee_id} if employee_id is not None else {}
         return self.request("POST", "/api/attendance/clock-in", payload)

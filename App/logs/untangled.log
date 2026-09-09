@@ -226,3 +226,682 @@
 2026-09-08 09:49:34,500 | INFO    | untangled.app | User logged out
 2026-09-08 09:50:01,012 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-08 09:50:03,902 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:13:20,217 | INFO    | untangled | ============================================================
+2026-09-08 11:13:20,266 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 11:13:20,268 | INFO    | untangled | ============================================================
+2026-09-08 11:13:20,269 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:13:20,270 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:13:20,271 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 11:13:21,814 | INFO    | untangled | Application composition complete
+2026-09-08 11:13:40,802 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:13:45,230 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:14:11,961 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-08 11:14:41,194 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-08 11:23:35,320 | INFO    | untangled.app | User logged out
+2026-09-08 11:23:53,033 | INFO    | untangled | ============================================================
+2026-09-08 11:23:53,034 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 11:23:53,035 | INFO    | untangled | ============================================================
+2026-09-08 11:23:53,036 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:23:53,038 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:23:53,038 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 11:23:54,083 | INFO    | untangled | Application composition complete
+2026-09-08 11:24:15,649 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:24:20,003 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:34:12,080 | INFO    | untangled | ============================================================
+2026-09-08 11:34:12,121 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 11:34:12,122 | INFO    | untangled | ============================================================
+2026-09-08 11:34:12,123 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:34:12,124 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:34:12,126 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 11:34:16,315 | INFO    | untangled | Application composition complete
+2026-09-08 11:34:37,239 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:34:41,529 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:43:17,453 | INFO    | untangled | ============================================================
+2026-09-08 11:43:17,541 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 11:43:17,542 | INFO    | untangled | ============================================================
+2026-09-08 11:43:17,543 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:43:17,544 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:43:17,545 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 11:43:19,019 | INFO    | untangled | Application composition complete
+2026-09-08 11:43:35,212 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:43:39,970 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:46:50,817 | INFO    | untangled | ============================================================
+2026-09-08 11:46:50,821 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 11:46:50,824 | INFO    | untangled | ============================================================
+2026-09-08 11:46:50,825 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:46:50,827 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 11:46:50,828 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 11:46:52,113 | INFO    | untangled | Application composition complete
+2026-09-08 11:47:06,732 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:47:13,174 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:48:00,330 | INFO    | untangled.app | User logged out
+2026-09-08 11:48:32,785 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-08 11:48:34,315 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:49:00,617 | INFO    | untangled.app | User logged out
+2026-09-08 11:50:26,202 | INFO    | untangled.app | Opening main window for Gift Wesi (Staff)
+2026-09-08 11:50:27,608 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 11:51:46,311 | INFO    | untangled.app | User logged out
+2026-09-08 11:52:01,277 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 11:52:03,506 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:01:15,994 | INFO    | untangled.app | User logged out
+2026-09-08 12:01:42,983 | INFO    | untangled.app | Opening main window for Ubuntu Hadebe (Operations Manager)
+2026-09-08 12:01:45,306 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:04:10,031 | INFO    | untangled | ============================================================
+2026-09-08 12:04:10,216 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:04:10,217 | INFO    | untangled | ============================================================
+2026-09-08 12:04:10,219 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:04:10,220 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:04:10,221 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:04:12,700 | INFO    | untangled | Application composition complete
+2026-09-08 12:04:35,877 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:04:39,266 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:11:17,857 | INFO    | untangled | ============================================================
+2026-09-08 12:11:17,884 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:11:17,885 | INFO    | untangled | ============================================================
+2026-09-08 12:11:17,886 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:11:17,888 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:11:17,894 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:11:19,337 | INFO    | untangled | Application composition complete
+2026-09-08 12:11:35,766 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:11:41,357 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:22:38,798 | INFO    | untangled | ============================================================
+2026-09-08 12:22:38,864 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:22:38,951 | INFO    | untangled | ============================================================
+2026-09-08 12:22:38,952 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:22:38,953 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:22:38,954 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:22:40,483 | INFO    | untangled | Application composition complete
+2026-09-08 12:23:06,789 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:23:10,751 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:25:28,656 | INFO    | untangled | ============================================================
+2026-09-08 12:25:29,026 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:25:29,170 | INFO    | untangled | ============================================================
+2026-09-08 12:25:29,748 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:25:29,951 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:25:32,002 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:25:35,693 | INFO    | untangled | Application composition complete
+2026-09-08 12:25:50,077 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:25:53,608 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:27:33,551 | INFO    | untangled | ============================================================
+2026-09-08 12:27:33,921 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:27:33,925 | INFO    | untangled | ============================================================
+2026-09-08 12:27:33,942 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:27:33,944 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:27:33,945 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:27:35,501 | INFO    | untangled | Application composition complete
+2026-09-08 12:27:54,003 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:27:59,026 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:35:38,726 | INFO    | untangled | ============================================================
+2026-09-08 12:35:38,748 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:35:38,749 | INFO    | untangled | ============================================================
+2026-09-08 12:35:38,751 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:35:38,754 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:35:38,755 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:35:40,087 | INFO    | untangled | Application composition complete
+2026-09-08 12:35:57,373 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:36:01,837 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:37:26,337 | INFO    | untangled | ============================================================
+2026-09-08 12:37:26,379 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:37:26,381 | INFO    | untangled | ============================================================
+2026-09-08 12:37:26,382 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:37:26,383 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:37:26,385 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:37:28,048 | INFO    | untangled | Application composition complete
+2026-09-08 12:37:54,996 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:37:59,952 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:39:49,554 | INFO    | untangled | ============================================================
+2026-09-08 12:39:49,588 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:39:49,590 | INFO    | untangled | ============================================================
+2026-09-08 12:39:49,591 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:39:49,592 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:39:49,594 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:39:50,752 | INFO    | untangled | Application composition complete
+2026-09-08 12:40:05,932 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:40:10,231 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:44:13,503 | INFO    | untangled | ============================================================
+2026-09-08 12:44:13,556 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:44:13,557 | INFO    | untangled | ============================================================
+2026-09-08 12:44:13,635 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:44:13,636 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:44:13,637 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:44:14,742 | INFO    | untangled | Application composition complete
+2026-09-08 12:44:46,229 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:44:49,559 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:48:59,755 | INFO    | untangled | ============================================================
+2026-09-08 12:48:59,770 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:48:59,770 | INFO    | untangled | ============================================================
+2026-09-08 12:48:59,772 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:48:59,773 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:48:59,774 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:49:01,352 | INFO    | untangled | Application composition complete
+2026-09-08 12:49:21,186 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:49:29,313 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:55:05,893 | INFO    | untangled | ============================================================
+2026-09-08 12:55:05,903 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:55:05,943 | INFO    | untangled | ============================================================
+2026-09-08 12:55:05,944 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:55:05,945 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:55:05,946 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:55:07,629 | INFO    | untangled | Application composition complete
+2026-09-08 12:55:39,161 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 12:55:44,363 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 12:59:53,181 | INFO    | untangled | ============================================================
+2026-09-08 12:59:53,215 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 12:59:53,287 | INFO    | untangled | ============================================================
+2026-09-08 12:59:53,288 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:59:53,290 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 12:59:53,291 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 12:59:54,701 | INFO    | untangled | Application composition complete
+2026-09-08 13:00:11,315 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 13:00:15,890 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 13:13:53,216 | INFO    | untangled | ============================================================
+2026-09-08 13:13:53,234 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 13:13:53,235 | INFO    | untangled | ============================================================
+2026-09-08 13:13:53,237 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:13:53,238 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:13:53,239 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 13:13:55,176 | INFO    | untangled | Application composition complete
+2026-09-08 13:14:16,005 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 13:14:22,672 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 13:25:24,817 | INFO    | untangled | ============================================================
+2026-09-08 13:25:24,879 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 13:25:24,880 | INFO    | untangled | ============================================================
+2026-09-08 13:25:24,884 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:25:24,886 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:25:24,887 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 13:25:27,736 | INFO    | untangled | Application composition complete
+2026-09-08 13:25:50,673 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 13:25:58,421 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 13:37:31,736 | INFO    | untangled | ============================================================
+2026-09-08 13:37:31,763 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 13:37:31,764 | INFO    | untangled | ============================================================
+2026-09-08 13:37:31,765 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:37:31,766 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 13:37:31,768 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 13:37:33,080 | INFO    | untangled | Application composition complete
+2026-09-08 13:37:50,186 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 13:37:54,806 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 13:47:41,598 | INFO    | untangled.app | User logged out
+2026-09-08 13:48:05,773 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-08 13:48:08,749 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 14:01:01,884 | INFO    | untangled | ============================================================
+2026-09-08 14:01:01,940 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 14:01:01,941 | INFO    | untangled | ============================================================
+2026-09-08 14:01:01,941 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:01:01,942 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:01:01,944 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 14:01:03,223 | INFO    | untangled | Application composition complete
+2026-09-08 14:01:39,284 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 14:01:43,663 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 14:08:12,262 | INFO    | untangled | ============================================================
+2026-09-08 14:08:12,308 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 14:08:12,323 | INFO    | untangled | ============================================================
+2026-09-08 14:08:12,392 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:08:12,405 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:08:12,406 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 14:08:15,493 | INFO    | untangled | Application composition complete
+2026-09-08 14:08:53,403 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 14:08:56,793 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 14:13:49,413 | INFO    | untangled | ============================================================
+2026-09-08 14:13:49,533 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 14:13:49,639 | INFO    | untangled | ============================================================
+2026-09-08 14:13:49,877 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:13:50,232 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:13:50,649 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 14:13:53,545 | INFO    | untangled | Application composition complete
+2026-09-08 14:14:34,021 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 14:14:38,359 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 14:24:14,658 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/admin/users
+2026-09-08 14:24:15,946 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/notifications?unread=1
+2026-09-08 14:24:57,082 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectTimeoutError(<HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443) at 0x2419a624910>, 'Connection to untangled-nexus-api.onrender.com timed out. (connect timeout=20)')': /api/admin/users
+2026-09-08 14:24:58,375 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectTimeoutError(<HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443) at 0x2419a624a50>, 'Connection to untangled-nexus-api.onrender.com timed out. (connect timeout=20)')': /api/notifications?unread=1
+2026-09-08 14:25:37,086 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to establish a new connection: [WinError 10053] An established connection was aborted by the software in your host machine")': /api/admin/users
+2026-09-08 14:25:37,086 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to establish a new connection: [WinError 10053] An established connection was aborted by the software in your host machine")': /api/notifications?unread=1
+2026-09-08 14:25:37,102 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/users?include_inactive=0
+2026-09-08 14:25:37,157 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:25:39,559 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:25:44,375 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:25:58,048 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/users?include_inactive=0
+2026-09-08 14:26:02,103 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:26:02,851 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/users?include_inactive=0
+2026-09-08 14:26:02,855 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=all
+2026-09-08 14:26:04,506 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:26:05,257 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=all
+2026-09-08 14:26:09,310 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:26:09,357 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:26:10,059 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=all
+2026-09-08 14:26:10,066 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=team
+2026-09-08 14:26:11,762 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:26:12,470 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=team
+2026-09-08 14:26:16,569 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-08 14:26:17,272 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&scope=team
+2026-09-08 14:26:17,276 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&all=1&team=1
+2026-09-08 14:26:19,678 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&all=1&team=1
+2026-09-08 14:26:24,504 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-08&all=1&team=1
+2026-09-08 14:26:24,515 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=all
+2026-09-08 14:26:26,921 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=all
+2026-09-08 14:26:31,723 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=all
+2026-09-08 14:26:31,726 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=team
+2026-09-08 14:26:34,169 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=team
+2026-09-08 14:26:34,318 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:26:36,720 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:26:38,975 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?scope=team
+2026-09-08 14:26:38,983 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?all=1
+2026-09-08 14:26:41,389 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?all=1
+2026-09-08 14:26:42,226 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-08 14:42:02,001 | INFO    | untangled.app | User logged out
+2026-09-08 14:42:23,916 | INFO    | untangled | ============================================================
+2026-09-08 14:42:23,956 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 14:42:23,959 | INFO    | untangled | ============================================================
+2026-09-08 14:42:23,960 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:42:23,961 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:42:23,963 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 14:42:25,406 | INFO    | untangled | Application composition complete
+2026-09-08 14:42:48,713 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 14:42:53,161 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 14:56:40,567 | INFO    | untangled | ============================================================
+2026-09-08 14:56:40,581 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 14:56:40,582 | INFO    | untangled | ============================================================
+2026-09-08 14:56:40,585 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:56:40,586 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 14:56:40,587 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 14:56:42,009 | INFO    | untangled | Application composition complete
+2026-09-08 14:59:04,404 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 14:59:17,029 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:04:50,948 | INFO    | untangled | ============================================================
+2026-09-08 15:04:50,981 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:04:50,983 | INFO    | untangled | ============================================================
+2026-09-08 15:04:51,031 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:04:51,033 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:04:51,034 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:04:53,813 | INFO    | untangled | Application composition complete
+2026-09-08 15:05:56,868 | INFO    | untangled | ============================================================
+2026-09-08 15:05:56,900 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:05:57,098 | INFO    | untangled | ============================================================
+2026-09-08 15:05:57,375 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:05:57,539 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:05:57,757 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:06:00,452 | INFO    | untangled | Application composition complete
+2026-09-08 15:06:20,074 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:06:23,685 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:07:24,697 | INFO    | untangled | ============================================================
+2026-09-08 15:07:24,744 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:07:24,745 | INFO    | untangled | ============================================================
+2026-09-08 15:07:24,746 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:07:24,748 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:07:24,749 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:07:25,978 | INFO    | untangled | Application composition complete
+2026-09-08 15:07:44,558 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:07:51,476 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:10:54,024 | INFO    | untangled.app | User logged out
+2026-09-08 15:11:27,247 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-08 15:11:28,851 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:11:35,951 | INFO    | untangled.app | User logged out
+2026-09-08 15:11:59,782 | INFO    | untangled.app | Opening main window for Nonhlanhla Hlatshwayo (Staff)
+2026-09-08 15:12:01,810 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:19:49,874 | INFO    | untangled.app | User logged out
+2026-09-08 15:22:11,706 | INFO    | untangled | ============================================================
+2026-09-08 15:22:11,755 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:22:11,756 | INFO    | untangled | ============================================================
+2026-09-08 15:22:11,757 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:22:11,758 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:22:11,759 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:22:14,206 | INFO    | untangled | Application composition complete
+2026-09-08 15:22:39,901 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:22:43,945 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:36:43,906 | INFO    | untangled | ============================================================
+2026-09-08 15:36:43,914 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:36:43,916 | INFO    | untangled | ============================================================
+2026-09-08 15:36:43,917 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:36:43,919 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:36:43,927 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:36:45,605 | INFO    | untangled | Application composition complete
+2026-09-08 15:37:10,634 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:37:16,013 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:53:21,244 | INFO    | untangled | ============================================================
+2026-09-08 15:53:21,268 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:53:21,269 | INFO    | untangled | ============================================================
+2026-09-08 15:53:21,270 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:53:21,272 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:53:21,273 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:53:22,886 | INFO    | untangled | Application composition complete
+2026-09-08 15:53:40,110 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:53:45,102 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:54:26,397 | INFO    | untangled.app | User logged out
+2026-09-08 15:55:47,894 | INFO    | untangled | ============================================================
+2026-09-08 15:55:47,974 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 15:55:47,975 | INFO    | untangled | ============================================================
+2026-09-08 15:55:48,252 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:55:48,368 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 15:55:48,700 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 15:55:51,732 | INFO    | untangled | Application composition complete
+2026-09-08 15:56:11,398 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 15:56:16,371 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 15:59:53,753 | INFO    | untangled.app | User logged out
+2026-09-08 16:00:22,884 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-08 16:00:24,751 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 16:00:58,384 | INFO    | untangled.app | User logged out
+2026-09-08 16:01:38,910 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 16:01:42,233 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 16:05:02,588 | INFO    | untangled | ============================================================
+2026-09-08 16:05:02,664 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-08 16:05:02,748 | INFO    | untangled | ============================================================
+2026-09-08 16:05:02,806 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 16:05:02,886 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-08 16:05:03,083 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-08 16:05:05,604 | INFO    | untangled | Application composition complete
+2026-09-08 16:06:46,653 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-08 16:06:50,752 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-08 16:07:30,076 | INFO    | untangled.app | User logged out
+2026-09-09 10:30:51,893 | INFO    | untangled | ============================================================
+2026-09-09 10:30:52,038 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 10:30:52,082 | INFO    | untangled | ============================================================
+2026-09-09 10:30:52,084 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 10:30:52,085 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 10:30:52,086 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 10:30:53,872 | INFO    | untangled | Application composition complete
+2026-09-09 10:31:15,394 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 10:31:21,526 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 10:44:37,168 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 10:47:38,231 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/notifications?unread=1
+2026-09-09 10:47:40,635 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:47:45,437 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:47:45,505 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:47:47,910 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:47:52,713 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:00,875 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='untangled-nexus-api.onrender.com', port=443): Read timed out. (read timeout=45.0)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:48:03,277 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:48:08,079 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:48:08,082 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:48:10,448 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:10,483 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:48:12,849 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:15,285 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:48:15,288 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:48:17,650 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:17,686 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:17,690 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:48:20,089 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:22,491 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:48:22,494 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:48:24,890 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:24,896 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:48:29,698 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:48:29,701 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:48:32,103 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:48:36,907 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:48:36,914 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:48:39,333 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:48:42,663 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:44,135 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:48:44,139 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:48:45,067 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:46,540 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:48:49,868 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:48:49,912 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:51,342 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:48:51,346 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:48:52,315 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:53,749 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:48:57,119 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:48:58,582 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:48:58,625 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:49:01,078 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:49:05,880 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:49:05,883 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:49:08,285 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:49:13,088 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:49:13,091 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&scope=all
+2026-09-09 10:49:14,873 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:15,492 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&scope=all
+2026-09-09 10:49:17,275 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:20,294 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&scope=all
+2026-09-09 10:49:20,297 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&all=1
+2026-09-09 10:49:22,078 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:22,100 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:49:22,776 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&all=1
+2026-09-09 10:49:24,503 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:49:27,761 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1&all=1
+2026-09-09 10:49:27,764 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:29,305 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:49:30,166 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:34,969 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:34,971 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:37,374 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:42,176 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:49:42,178 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:49:44,579 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:49:47,089 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:49,382 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:49:49,385 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:49:49,492 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:51,786 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:49:54,295 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:49:54,312 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:49:56,588 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:49:56,591 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/tasks?scope=all
+2026-09-09 10:49:56,717 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:49:58,992 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/tasks?scope=all
+2026-09-09 10:50:01,520 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:50:03,795 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/tasks?scope=all
+2026-09-09 10:50:03,799 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals?status=Pending
+2026-09-09 10:50:06,200 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals?status=Pending
+2026-09-09 10:50:11,003 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals?status=Pending
+2026-09-09 10:50:11,009 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals
+2026-09-09 10:50:13,411 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals
+2026-09-09 10:50:18,213 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/approvals
+2026-09-09 10:50:19,310 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:21,713 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:26,515 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:26,536 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:50:26,554 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:50:28,937 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:50:28,964 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:50:33,740 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/dashboard/summary
+2026-09-09 10:50:33,743 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:50:33,771 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:50:36,144 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:50:40,946 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/employees
+2026-09-09 10:50:40,949 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:50:43,349 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:50:48,151 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/employees
+2026-09-09 10:50:48,155 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:50:50,627 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:50:51,520 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:53,923 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:55,556 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/today?date=2026-09-09
+2026-09-09 10:50:55,572 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:50:57,976 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:50:58,733 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:50:58,768 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:01,171 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:02,778 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/today
+2026-09-09 10:51:02,780 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:51:05,182 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:51:05,978 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:09,985 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/team
+2026-09-09 10:51:09,988 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:51:12,391 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:51:17,194 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/team
+2026-09-09 10:51:17,197 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:51:19,600 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:51:23,743 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:51:24,402 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance?date=2026-09-09
+2026-09-09 10:51:24,404 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:51:26,146 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:51:26,805 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:51:30,948 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:51:30,981 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:31,610 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/records?date=2026-09-09
+2026-09-09 10:51:31,613 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:51:33,398 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:34,022 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:51:38,201 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-09 10:51:38,825 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=1
+2026-09-09 10:51:38,830 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:51:41,232 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:51:46,033 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=1
+2026-09-09 10:51:46,038 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:51:48,439 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:51:53,297 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/admin/attendance/history?days=2
+2026-09-09 10:51:53,384 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:51:55,787 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:51:55,958 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:51:58,360 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:52:00,589 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/history?days=2
+2026-09-09 10:52:03,207 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications?unread=1
+2026-09-09 10:55:36,498 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/notifications?unread=1
+2026-09-09 11:48:05,961 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/attendance/status
+2026-09-09 11:48:06,999 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ConnectionResetError(10054, 'An existing connection was forcibly closed by the remote host', None, 10054, None)': /api/notifications?unread=1
+2026-09-09 11:48:46,384 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='untangled-nexus-api.onrender.com', port=443): Read timed out. (read timeout=45.0)")': /api/dashboard/summary
+2026-09-09 11:56:36,261 | INFO    | untangled | ============================================================
+2026-09-09 11:56:36,487 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 11:56:36,487 | INFO    | untangled | ============================================================
+2026-09-09 11:56:36,488 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 11:56:36,489 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 11:56:36,490 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 11:56:37,951 | INFO    | untangled | Application composition complete
+2026-09-09 11:57:01,286 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 11:57:07,294 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 12:12:21,747 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 12:12:22,695 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 12:12:34,697 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 12:12:35,379 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 12:12:51,012 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 12:13:28,440 | INFO    | untangled.app | User logged out

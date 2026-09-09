@@ -2,9 +2,9 @@
 """
 Untangled Nexus – Modern role-aware Dashboard (Employee + Executive).
 
-Preserves DashboardController, background refresh, and NavigationController.
-Executive view uses realistic defaults when the API returns sparse data so
-the UI never looks empty.
+Business metrics are rendered ONLY from DashboardController.get_summary()
+→ Backend API. Missing values are shown as unavailable ("—" / "No data").
+Explicit backend zeros are shown as 0. No demo / fake / guessed numbers.
 """
 
 from __future__ import annotations
@@ -42,8 +42,11 @@ CYAN = "#0891B2"
 CYAN_SOFT = "#CFFAFE"
 GRAY_SOFT = "#F1F5F9"
 
+UNAVAILABLE = "—"
 
-def _v(source: Any, name: str, default: Any = 0) -> Any:
+
+def _v(source: Any, name: str, default: Any = None) -> Any:
+    """Safe attribute / dict lookup. Never invents business data."""
     if source is None:
         return default
     if isinstance(source, dict):
@@ -52,6 +55,42 @@ def _v(source: Any, name: str, default: Any = 0) -> Any:
         return getattr(source, name, default)
     except Exception:
         return default
+
+
+def _has_value(value: Any) -> bool:
+    """True when the backend actually supplied a value (including 0)."""
+    return value is not None and value != ""
+
+
+def _as_int_or_none(value: Any) -> Optional[int]:
+    """
+    Parse a non-negative int when present.
+    Returns None when the backend did not supply a usable value.
+    Explicit 0 stays 0.
+    """
+    if not _has_value(value):
+        return None
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float_or_none(value: Any) -> Optional[float]:
+    if not _has_value(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt_int(value: Optional[int]) -> str:
+    return UNAVAILABLE if value is None else str(value)
+
+
+def _fmt_pct(value: Optional[int]) -> str:
+    return UNAVAILABLE if value is None else f"{value}%"
 
 
 def _initials(name: str) -> str:
@@ -79,42 +118,87 @@ def _is_executive(role: str) -> bool:
     )
 
 
-# Demo defaults when API fields are missing (UI never shows blank KPIs)
-_DEMO = {
-    "people_working": 18,
-    "total_people": 24,
-    "attendance_pct": 87,
-    "present_count": 21,
-    "absent_count": 2,
-    "late_count": 1,
-    "tasks_due_today": 8,
-    "tasks_high_priority": 3,
-    "pending_approvals": 5,
-    "revenue": 248750,
-    "departments": [
-        ("Development", 42, 28, 8),
-        ("Marketing", 28, 18, 6),
-        ("Sales", 36, 22, 7),
-        ("Operations", 24, 16, 5),
-        ("Support", 18, 12, 4),
-    ],
-    "activity": [
-        {"employee": "Siya Nkelemba", "department": "Development", "description": "Completed task: Q3 Sales Report", "created_at": None},
-        {"employee": "Lerato Dlamini", "department": "HR", "description": "Submitted leave request", "created_at": None},
-        {"employee": "Daniel Jacobs", "department": "Design", "description": "Clocked in", "created_at": None},
-        {"employee": "Jason Peters", "department": "Sales", "description": "Approved quotation", "created_at": None},
-        {"employee": "Zinhle Khumalo", "department": "Marketing", "description": "Updated project status", "created_at": None},
-    ],
-    "approvals": [
-        {"type": "Leave Request", "employee": "Lerato Dlamini", "when": "Today, 10:30 AM"},
-        {"type": "Office Request", "employee": "Thabo Mokoena", "when": "Yesterday, 2:15 PM"},
-        {"type": "Expense Claim", "employee": "Daniel Jacobs", "when": "Sep 4, 2026"},
-    ],
-}
+def _attendance_block(summary: Any) -> dict:
+    """
+    Read attendance from canonical places only.
+    Supports either flat summary fields or nested summary['attendance'].
+    Present is always aligned with people currently working when the backend
+    reports people_working / people_on_site.
+    Does not invent values beyond that alignment.
+    """
+    nested = _v(summary, "attendance")
+    if not isinstance(nested, dict):
+        nested = {}
+
+    people_working = _as_int_or_none(
+        _v(summary, "people_working")
+        if _has_value(_v(summary, "people_working"))
+        else _v(summary, "people_on_site")
+    )
+
+    present = _as_int_or_none(
+        _v(nested, "present")
+        if "present" in nested
+        else _v(summary, "present_count")
+    )
+    # Present must match people currently working (open clock-ins)
+    if people_working is not None and (present is None or present != people_working):
+        present = people_working
+
+    late = _as_int_or_none(
+        _v(nested, "late")
+        if "late" in nested
+        else _v(summary, "late_count")
+    )
+
+    total = _as_int_or_none(
+        _v(nested, "total")
+        if "total" in nested
+        else (
+            _v(summary, "attendance_total")
+            if _has_value(_v(summary, "attendance_total"))
+            else (
+                _v(summary, "total_people")
+                if _has_value(_v(summary, "total_people"))
+                else _v(summary, "total_employees")
+            )
+        )
+    )
+
+    absent = _as_int_or_none(
+        _v(nested, "absent")
+        if "absent" in nested
+        else _v(summary, "absent_count")
+    )
+    # Keep absent consistent with present/total when both are known
+    if total is not None and present is not None:
+        absent = max(0, total - present)
+
+    pct = _as_int_or_none(
+        _v(nested, "percentage")
+        if "percentage" in nested
+        else (
+            _v(nested, "pct")
+            if "pct" in nested
+            else _v(summary, "attendance_pct")
+        )
+    )
+
+    # Only compute percentage when both present and total were supplied
+    if present is not None and total is not None and total > 0:
+        pct = int(round((present / total) * 100))
+
+    return {
+        "present": present,
+        "absent": absent,
+        "late": late,
+        "total": total,
+        "percentage": pct,
+    }
 
 
 class DashboardView(ctk.CTkFrame):
-    """Role-aware modern dashboard (Employee or Executive)."""
+    """Role-aware modern dashboard (Employee or Executive). Real data only."""
 
     REFRESH_INTERVAL_MS = 60_000
     OUTER_PAD = 20
@@ -129,7 +213,8 @@ class DashboardView(ctk.CTkFrame):
         self._refresh_running = False
         self._last_refresh_started = 0.0
         self._backend_queue: queue.Queue = queue.Queue()
-        self._summary = None
+        self._summary: Any = None
+        self._last_error: Optional[str] = None
 
         self._account = self._find_current_account()
         self._navigation_controller = self._find_navigation_controller()
@@ -149,9 +234,35 @@ class DashboardView(ctk.CTkFrame):
         self.content.grid(row=0, column=0, sticky="nsew")
         self.content.grid_columnconfigure(0, weight=1)
 
+        # Error banner (hidden until an API failure)
+        self._error_banner = ctk.CTkFrame(
+            self.content, fg_color=RED_SOFT, corner_radius=12, border_width=1, border_color=RED
+        )
+        self._error_banner.grid(row=0, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(12, 0))
+        self._error_banner.grid_remove()
+        self._error_label = ctk.CTkLabel(
+            self._error_banner,
+            text="",
+            font=ctk.CTkFont(size=13),
+            text_color=RED,
+            anchor="w",
+            wraplength=700,
+        )
+        self._error_label.pack(side="left", padx=14, pady=10, fill="x", expand=True)
+        ctk.CTkButton(
+            self._error_banner,
+            text="Retry",
+            width=80,
+            height=28,
+            fg_color=RED,
+            hover_color="#B91C1C",
+            text_color="#FFFFFF",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._safe_refresh,
+        ).pack(side="right", padx=12, pady=8)
+
         if self._executive:
             self._build_executive()
-            # Paint demo data immediately so the page is never blank
             self._apply_executive(None)
         else:
             self._build_employee()
@@ -236,13 +347,27 @@ class DashboardView(ctk.CTkFrame):
         except Exception:
             pass
 
+    def _show_error(self, message: str) -> None:
+        self._last_error = message
+        try:
+            self._error_label.configure(text=f"Unable to load dashboard data: {message}")
+            self._error_banner.grid()
+        except Exception:
+            pass
+
+    def _clear_error(self) -> None:
+        self._last_error = None
+        try:
+            self._error_banner.grid_remove()
+        except Exception:
+            pass
+
     # ==================================================================
     # EMPLOYEE LAYOUT (compact)
     # ==================================================================
 
     def _build_employee(self) -> None:
         self._build_welcome_banner(executive=False)
-        # Simple employee KPIs + links
         row = ctk.CTkFrame(self.content, fg_color="transparent")
         row.grid(row=1, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 14))
         for i in range(4):
@@ -250,10 +375,10 @@ class DashboardView(ctk.CTkFrame):
         self.emp_kpi = {}
         for i, (key, icon, color, soft, title, value, sub) in enumerate(
             [
-                ("tasks", "📋", BLUE, BLUE_SOFT, "My Tasks", "0", "in progress"),
-                ("hours", "⏱", GREEN, GREEN_SOFT, "Hours Worked Today", "0h 0m", "of 8h"),
-                ("leave", "🏝", ORANGE, ORANGE_SOFT, "Leave Balance", "—", "remaining"),
-                ("attendance", "✓", GREEN, GREEN_SOFT, "Attendance Status", "—", ""),
+                ("tasks", "📋", BLUE, BLUE_SOFT, "My Tasks", UNAVAILABLE, ""),
+                ("hours", "⏱", GREEN, GREEN_SOFT, "Hours Worked Today", UNAVAILABLE, ""),
+                ("leave", "🏝", ORANGE, ORANGE_SOFT, "Leave Balance", UNAVAILABLE, "remaining"),
+                ("attendance", "✓", GREEN, GREEN_SOFT, "Attendance Status", UNAVAILABLE, ""),
             ]
         ):
             card = ctk.CTkFrame(
@@ -279,7 +404,6 @@ class DashboardView(ctk.CTkFrame):
             sub_l.grid(row=2, column=1, sticky="nw", pady=(0, 14))
             self.emp_kpi[key] = (val, sub_l)
 
-        # Quick actions
         qa = self._card(self.content, "⚡  Quick Actions")
         qa.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 20))
         btns = ctk.CTkFrame(qa, fg_color="transparent")
@@ -314,7 +438,7 @@ class DashboardView(ctk.CTkFrame):
             border_width=1,
             border_color="#BBF7D0",
         )
-        banner.grid(row=0, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(16, 12))
+        banner.grid(row=1, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(16, 12))
         banner.grid_columnconfigure(1, weight=1)
 
         name = str(_v(self._account, "full_name", "there") or "there")
@@ -380,17 +504,18 @@ class DashboardView(ctk.CTkFrame):
 
     def _build_exec_kpis(self) -> None:
         row = ctk.CTkFrame(self.content, fg_color="transparent")
-        row.grid(row=1, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 12))
+        row.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 12))
         for i in range(5):
             row.grid_columnconfigure(i, weight=1, uniform="xkpi")
 
         self.exec_kpi = {}
+        # Initial state = unavailable, never fake business numbers
         specs = [
-            ("people", "👥", GREEN, GREEN_SOFT, "People Working", "18 / 24", "↑ +2% vs yesterday"),
-            ("attendance", "⏱", BLUE, BLUE_SOFT, "Attendance Today", "87%", "21 Present"),
-            ("due", "☰", ORANGE, ORANGE_SOFT, "Tasks Due Today", "8", "3 High Priority"),
-            ("approvals", "⏳", PURPLE, PURPLE_SOFT, "Pending Approvals", "5", "Leave & Office"),
-            ("revenue", "📈", CYAN, CYAN_SOFT, "Revenue Snapshot", "R248,750", "↑ +12% this week"),
+            ("people", "👥", GREEN, GREEN_SOFT, "People Working", f"{UNAVAILABLE} / {UNAVAILABLE}", ""),
+            ("attendance", "⏱", BLUE, BLUE_SOFT, "Attendance Today", UNAVAILABLE, "No data"),
+            ("due", "☰", ORANGE, ORANGE_SOFT, "Tasks Due Today", UNAVAILABLE, ""),
+            ("approvals", "⏳", PURPLE, PURPLE_SOFT, "Pending Approvals", UNAVAILABLE, ""),
+            ("revenue", "📈", CYAN, CYAN_SOFT, "Revenue Snapshot", UNAVAILABLE, "No revenue data"),
         ]
         for i, (key, icon, color, soft, title, value, sub) in enumerate(specs):
             card = ctk.CTkFrame(
@@ -413,14 +538,14 @@ class DashboardView(ctk.CTkFrame):
             )
             val.grid(row=1, column=1, sticky="nw", padx=(0, 10))
             sub_l = ctk.CTkLabel(
-                card, text=sub, font=ctk.CTkFont(size=10), text_color=GREEN, anchor="w"
+                card, text=sub, font=ctk.CTkFont(size=10), text_color=MUTED, anchor="w"
             )
             sub_l.grid(row=2, column=1, sticky="nw", pady=(0, 10), padx=(0, 10))
             self.exec_kpi[key] = (val, sub_l)
 
     def _build_exec_middle(self) -> None:
         mid = ctk.CTkFrame(self.content, fg_color="transparent")
-        mid.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 10))
+        mid.grid(row=3, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 10))
         mid.grid_columnconfigure(0, weight=65)
         mid.grid_columnconfigure(1, weight=35)
 
@@ -440,28 +565,27 @@ class DashboardView(ctk.CTkFrame):
         self.dept_frame = ctk.CTkFrame(dept, fg_color="transparent", height=150)
         self.dept_frame.pack(fill="x", padx=12, pady=(4, 14))
         self.dept_frame.pack_propagate(False)
-        for name, c, p, o in _DEMO["departments"]:
-            self._dept_grouped_bar(self.dept_frame, name, c, p, o)
+        self._render_departments(None)
 
-        # Activity table under chart
+        # Activity table
         act = self._card(left, "📋  Recent Operational Activity", link="View all", dest="Notifications")
         act.grid(row=1, column=0, sticky="ew")
         hdr = ctk.CTkFrame(act, fg_color=GRAY_SOFT, corner_radius=8)
         hdr.pack(fill="x", padx=12, pady=(0, 2))
-        for col, w in [("#", 28), ("Employee", 120), ("Department", 100), ("Activity", 200), ("Time", 80)]:
+        for col, w in [("#", 28), ("Employee", 110), ("Department", 90), ("Activity", 260), ("Time", 70)]:
             ctk.CTkLabel(
                 hdr, text=col, font=ctk.CTkFont(size=11, weight="bold"), text_color=MUTED, width=w, anchor="w"
             ).pack(side="left", padx=4, pady=6)
         self.exec_activity = ctk.CTkFrame(act, fg_color="transparent")
         self.exec_activity.pack(fill="x", padx=12, pady=(2, 12))
-        self._render_activity_rows(_DEMO["activity"])
+        self._render_activity_rows(None)
 
         # RIGHT column
         right = ctk.CTkFrame(mid, fg_color="transparent")
         right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
         right.grid_columnconfigure(0, weight=1)
 
-        # Attendance donut
+        # Attendance overview
         att = self._card(right, "◎  Team Attendance Overview", link="View all", dest="Attendance")
         att.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         body = ctk.CTkFrame(att, fg_color="transparent")
@@ -475,21 +599,21 @@ class DashboardView(ctk.CTkFrame):
         ring.grid(row=0, column=0, padx=(8, 12), pady=8)
         ring.pack_propagate(False)
         self.att_pct_label = ctk.CTkLabel(
-            ring, text="87%", font=ctk.CTkFont(size=26, weight="bold"), text_color=GREEN
+            ring, text=UNAVAILABLE, font=ctk.CTkFont(size=26, weight="bold"), text_color=GREEN
         )
         self.att_pct_label.place(relx=0.5, rely=0.42, anchor="center")
         self.att_sub_label = ctk.CTkLabel(
-            ring, text="21 of 24", font=ctk.CTkFont(size=11), text_color=MUTED
+            ring, text="No attendance data", font=ctk.CTkFont(size=11), text_color=MUTED
         )
         self.att_sub_label.place(relx=0.5, rely=0.65, anchor="center")
 
         legend2 = ctk.CTkFrame(body, fg_color="transparent")
         legend2.grid(row=0, column=1, sticky="w")
         self.att_legend = {}
-        for key, label, color, default in [
-            ("present", "Present", GREEN, "21"),
-            ("absent", "Absent", RED, "2"),
-            ("late", "Late", ORANGE, "1"),
+        for key, label, color in [
+            ("present", "Present", GREEN),
+            ("absent", "Absent", RED),
+            ("late", "Late", ORANGE),
         ]:
             r = ctk.CTkFrame(legend2, fg_color="transparent")
             r.pack(anchor="w", pady=4)
@@ -500,7 +624,7 @@ class DashboardView(ctk.CTkFrame):
                 r, text=label, text_color=MUTED, font=ctk.CTkFont(size=12), width=60, anchor="w"
             ).pack(side="left")
             count_l = ctk.CTkLabel(
-                r, text=default, text_color=TEXT, font=ctk.CTkFont(size=13, weight="bold")
+                r, text=UNAVAILABLE, text_color=TEXT, font=ctk.CTkFont(size=13, weight="bold")
             )
             count_l.pack(side="left", padx=(6, 0))
             self.att_legend[key] = count_l
@@ -510,7 +634,7 @@ class DashboardView(ctk.CTkFrame):
         appr.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         self.approvals_list = ctk.CTkFrame(appr, fg_color="transparent")
         self.approvals_list.pack(fill="x", padx=10, pady=(0, 12))
-        self._render_approvals(_DEMO["approvals"])
+        self._render_approvals(None)
 
         # Quick actions
         qa = self._card(right, "⚡  Quick Actions")
@@ -541,7 +665,7 @@ class DashboardView(ctk.CTkFrame):
             )
             btn.grid(row=r, column=c, sticky="ew", padx=4, pady=4)
 
-        # System status
+        # System status (static UI labels only)
         sys_card = self._card(right, "🛡  System Status")
         sys_card.grid(row=3, column=0, sticky="ew")
         sys_row = ctk.CTkFrame(sys_card, fg_color="transparent")
@@ -568,7 +692,6 @@ class DashboardView(ctk.CTkFrame):
             ).pack(anchor="w", padx=8, pady=(0, 6))
 
     def _build_exec_bottom(self) -> None:
-        # Bottom spacing only — main content is in middle
         pass
 
     def _dept_grouped_bar(self, parent, name: str, completed: int, progress: int, overdue: int) -> None:
@@ -592,20 +715,89 @@ class DashboardView(ctk.CTkFrame):
             col, text=name, font=ctk.CTkFont(size=10), text_color=MUTED
         ).pack(pady=(4, 0))
 
+    def _render_departments(self, departments) -> None:
+        for w in self.dept_frame.winfo_children():
+            try:
+                w.destroy()
+            except Exception:
+                pass
+        if departments is None:
+            ctk.CTkLabel(
+                self.dept_frame,
+                text="No department performance data available.",
+                font=ctk.CTkFont(size=12),
+                text_color=MUTED,
+            ).pack(anchor="w", pady=20, padx=8)
+            return
+        if not departments:
+            ctk.CTkLabel(
+                self.dept_frame,
+                text="No department performance data available.",
+                font=ctk.CTkFont(size=12),
+                text_color=MUTED,
+            ).pack(anchor="w", pady=20, padx=8)
+            return
+        for item in list(departments)[:8]:
+            if isinstance(item, (list, tuple)) and len(item) >= 4:
+                name, completed, progress, overdue = item[0], item[1], item[2], item[3]
+            elif isinstance(item, dict):
+                name = item.get("name") or item.get("department") or "—"
+                completed = _as_int_or_none(item.get("completed") if "completed" in item else item.get("done"))
+                progress = _as_int_or_none(
+                    item.get("in_progress") if "in_progress" in item else item.get("progress")
+                )
+                overdue = _as_int_or_none(item.get("overdue"))
+                if completed is None or progress is None or overdue is None:
+                    continue
+            else:
+                continue
+            self._dept_grouped_bar(
+                self.dept_frame,
+                str(name),
+                completed if completed is not None else 0,
+                progress if progress is not None else 0,
+                overdue if overdue is not None else 0,
+            )
+
     def _render_approvals(self, items) -> None:
         for w in self.approvals_list.winfo_children():
             try:
                 w.destroy()
             except Exception:
                 pass
-        for item in list(items)[:5]:
+        if items is None:
+            ctk.CTkLabel(
+                self.approvals_list,
+                text="No approval data available.",
+                font=ctk.CTkFont(size=12),
+                text_color=MUTED,
+            ).pack(anchor="w", pady=8)
+            return
+        items = list(items or [])
+        if not items:
+            ctk.CTkLabel(
+                self.approvals_list,
+                text="No pending approvals.",
+                font=ctk.CTkFont(size=12),
+                text_color=MUTED,
+            ).pack(anchor="w", pady=8)
+            return
+        for item in items[:5]:
             if isinstance(item, dict):
-                title = item.get("type") or item.get("title") or "Request"
-                who = item.get("employee") or item.get("name") or "—"
-                when = item.get("when") or item.get("date") or ""
+                title = item.get("type") or item.get("title") or item.get("request_type") or "Request"
+                who = item.get("employee") or item.get("name") or item.get("requested_by") or "—"
+                when = (
+                    item.get("when")
+                    or item.get("date")
+                    or item.get("submitted_at")
+                    or item.get("created_at")
+                    or ""
+                )
             else:
-                title, who, when = str(item), "—", ""
-            icon = "✈️" if "leave" in title.lower() else "🏢" if "office" in title.lower() else "💵"
+                title = getattr(item, "title", None) or getattr(item, "request_type", None) or "Request"
+                who = getattr(item, "requested_by", None) or "—"
+                when = getattr(item, "submitted_at", None) or getattr(item, "created_at", None) or ""
+            icon = "✈️" if "leave" in str(title).lower() else "🏢" if "office" in str(title).lower() else "💵"
             card = ctk.CTkFrame(
                 self.approvals_list, fg_color=GRAY_SOFT, corner_radius=12,
                 border_width=1, border_color=BORDER,
@@ -637,13 +829,19 @@ class DashboardView(ctk.CTkFrame):
                 w.destroy()
             except Exception:
                 pass
+        if activities is None:
+            ctk.CTkLabel(
+                self.exec_activity, text="No activity data available.",
+                font=ctk.CTkFont(size=12), text_color=MUTED
+            ).pack(anchor="w", pady=8)
+            return
         if not activities:
             ctk.CTkLabel(
                 self.exec_activity, text="No recent operational activity.",
                 font=ctk.CTkFont(size=12), text_color=MUTED
             ).pack(anchor="w", pady=8)
             return
-        for idx, activity in enumerate(list(activities)[:6], start=1):
+        for idx, activity in enumerate(list(activities)[:10], start=1):
             who = str(
                 _v(activity, "employee")
                 or _v(activity, "user")
@@ -651,12 +849,14 @@ class DashboardView(ctk.CTkFrame):
                 or "Team member"
             )
             dept = str(_v(activity, "department") or "—")
-            action = str(
-                _v(activity, "description") or _v(activity, "action") or "Activity"
+            action = self._format_activity_action(activity)
+            # Relative time: prefer clock-out moment, else clock-in
+            when_raw = (
+                _v(activity, "clock_out_at")
+                or _v(activity, "created_at")
+                or _v(activity, "clock_in_at")
             )
-            when = self._format_activity_time(_v(activity, "created_at", None))
-            if when == "Recently":
-                when = f"{idx + 1}h ago"
+            when = self._format_activity_time(when_raw)
             row = ctk.CTkFrame(self.exec_activity, fg_color="transparent")
             row.pack(fill="x", pady=2)
             ctk.CTkLabel(
@@ -670,18 +870,83 @@ class DashboardView(ctk.CTkFrame):
             ).place(relx=0.5, rely=0.5, anchor="center")
             ctk.CTkLabel(
                 row, text=who[:16], font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=TEXT, width=110, anchor="w"
+                text_color=TEXT, width=100, anchor="w"
             ).pack(side="left", padx=2)
             ctk.CTkLabel(
-                row, text=dept[:12], font=ctk.CTkFont(size=11), text_color=MUTED, width=90, anchor="w"
+                row, text=dept[:12], font=ctk.CTkFont(size=11), text_color=MUTED, width=80, anchor="w"
             ).pack(side="left", padx=2)
+            # Wider so "Clocked Out · 17:05 · In 09:29" is not cut off
             ctk.CTkLabel(
-                row, text=f"●  {action[:36]}", font=ctk.CTkFont(size=11),
-                text_color=TEXT, width=190, anchor="w"
+                row, text=f"●  {action}", font=ctk.CTkFont(size=11),
+                text_color=TEXT, width=250, anchor="w"
             ).pack(side="left", padx=2)
             ctk.CTkLabel(
                 row, text=when, font=ctk.CTkFont(size=11), text_color=MUTED, width=70, anchor="e"
             ).pack(side="right", padx=4)
+
+    @staticmethod
+    def _hm_sast(value) -> Optional[str]:
+        """Format a datetime/ISO value as HH:MM in local display (SAST data)."""
+        if not value:
+            return None
+        try:
+            if isinstance(value, datetime):
+                dt = value
+            else:
+                text = str(value).strip()
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                dt = datetime.fromisoformat(text)
+            # Prefer explicit timezone conversion when aware
+            if dt.tzinfo is not None:
+                try:
+                    from zoneinfo import ZoneInfo
+                    dt = dt.astimezone(ZoneInfo("Africa/Johannesburg"))
+                except Exception:
+                    pass
+            return dt.strftime("%H:%M")
+        except Exception:
+            return None
+
+    def _format_activity_action(self, activity) -> str:
+        """Build In/Out line from fields so clock-out is never hidden."""
+        nested = _v(activity, "record")
+        if not isinstance(nested, dict):
+            nested = {}
+
+        cin = self._hm_sast(
+            _v(activity, "clock_in_at")
+            or nested.get("clock_in_at")
+            or _v(activity, "started_at")
+            or _v(activity, "start_time")
+        )
+        cout = self._hm_sast(
+            _v(activity, "clock_out_at")
+            or nested.get("clock_out_at")
+            or _v(activity, "ended_at")
+            or _v(activity, "end_time")
+        )
+        status = str(
+            _v(activity, "status") or _v(activity, "state") or nested.get("status") or ""
+        ).strip().lower().replace(" ", "_").replace("-", "_")
+        if cout is None and status in ("clocked_out", "completed", "out", "done"):
+            cout = self._hm_sast(_v(activity, "updated_at") or nested.get("updated_at"))
+
+        desc = str(_v(activity, "description") or _v(activity, "action") or "")
+
+        if cin and cout:
+            return f"Out {cout} · In {cin}"
+        if cout:
+            return f"Out {cout}"
+        if "clocked out" in desc.lower() or desc.lower().startswith("out "):
+            return desc[:48]
+        if cin:
+            if "break" in status:
+                return f"On Break · In {cin}"
+            if status == "late" or "late" in desc.lower():
+                return f"In {cin} · Late · Still in"
+            return f"In {cin} · Still in"
+        return (desc or "Activity")[:48]
 
     # ==================================================================
     # Data refresh
@@ -722,9 +987,16 @@ class DashboardView(ctk.CTkFrame):
                 success, summary, error = self._backend_queue.get_nowait()
                 self._refresh_running = False
                 if success:
-                    self._apply_summary(summary)
+                    if isinstance(summary, dict) and summary.get("error"):
+                        self._show_error(str(summary.get("error")))
+                        # Do not invent zeros on partial/error payloads
+                        self._apply_summary(summary)
+                    else:
+                        self._clear_error()
+                        self._apply_summary(summary)
                 else:
                     print(f"⚠️ Dashboard refresh error: {error}")
+                    self._show_error(str(error) if error else "Unknown error")
         except queue.Empty:
             pass
         except Exception as exc:
@@ -748,109 +1020,179 @@ class DashboardView(ctk.CTkFrame):
         except Exception as exc:
             print(f"⚠️ Dashboard render error: {exc}")
 
-    def _nz(self, summary, key: str, demo_key: str = None):
-        """Value from summary or demo default — never blank."""
-        demo_key = demo_key or key
-        val = _v(summary, key, None) if summary is not None else None
-        if val is None or val == "" or val == 0:
-            # Prefer live non-zero; fall back to demo for presentation
-            live = _v(summary, key, None) if summary is not None else None
-            if live not in (None, "", 0):
-                return live
-            return _DEMO.get(demo_key, live if live is not None else 0)
-        return val
-
     def _apply_executive(self, summary) -> None:
-        people = self._nz(summary, "people_working")
-        total = self._nz(summary, "total_people", "total_people")
+        """
+        Render only values the backend actually supplied.
+        Missing → "—" / "No data". Explicit 0 → "0".
+        """
+        # ---- People Working (canonical fields only; no wrong OR chains) ----
+        people = _as_int_or_none(_v(summary, "people_working"))
+        total = _as_int_or_none(_v(summary, "total_people"))
+        if total is None:
+            # Accept only clearly equivalent total fields if total_people absent
+            total = _as_int_or_none(_v(summary, "total_employees"))
         if "people" in self.exec_kpi:
-            self.exec_kpi["people"][0].configure(text=f"{people} / {total}")
+            self.exec_kpi["people"][0].configure(
+                text=f"{_fmt_int(people)} / {_fmt_int(total)}"
+            )
+            self.exec_kpi["people"][1].configure(text="")
 
-        att_pct = _v(summary, "attendance_pct", None) if summary else None
-        if att_pct in (None, "", 0):
-            att_pct = _DEMO["attendance_pct"]
-        present = self._nz(summary, "present_count", "present_count")
-        absent = self._nz(summary, "absent_count", "absent_count")
-        late = self._nz(summary, "late_count", "late_count")
+        # ---- Attendance (no fake zeros) ----
+        att = _attendance_block(summary)
+        present, absent, late = att["present"], att["absent"], att["late"]
+        att_total = att["total"] if att["total"] is not None else total
+        att_pct = att["percentage"]
 
         if "attendance" in self.exec_kpi:
-            self.exec_kpi["attendance"][0].configure(text=f"{att_pct}%")
-            self.exec_kpi["attendance"][1].configure(text=f"{present} Present")
+            self.exec_kpi["attendance"][0].configure(text=_fmt_pct(att_pct))
+            if present is None:
+                self.exec_kpi["attendance"][1].configure(text="No data")
+            else:
+                self.exec_kpi["attendance"][1].configure(text=f"{present} Present")
+
         if hasattr(self, "att_pct_label"):
-            self.att_pct_label.configure(text=f"{att_pct}%")
+            self.att_pct_label.configure(text=_fmt_pct(att_pct) if att_pct is not None else UNAVAILABLE)
         if hasattr(self, "att_sub_label"):
-            self.att_sub_label.configure(text=f"{present} of {total}")
+            if present is None and att_total is None:
+                self.att_sub_label.configure(text="No attendance data")
+            else:
+                self.att_sub_label.configure(
+                    text=f"{_fmt_int(present)} of {_fmt_int(att_total)}"
+                )
         if hasattr(self, "att_legend"):
             for key, val in [("present", present), ("absent", absent), ("late", late)]:
                 if key in self.att_legend:
                     try:
-                        self.att_legend[key].configure(text=str(val))
+                        self.att_legend[key].configure(text=_fmt_int(val))
                     except Exception:
                         pass
 
-        due = self._nz(summary, "tasks_due_today")
-        high = self._nz(summary, "tasks_high_priority", "tasks_high_priority")
+        # ---- Tasks due today (do NOT substitute overdue for high priority) ----
+        tasks_block = _v(summary, "tasks")
+        if isinstance(tasks_block, dict):
+            due = _as_int_or_none(_v(tasks_block, "due_today"))
+            high = _as_int_or_none(_v(tasks_block, "high_priority_due_today"))
+        else:
+            due = _as_int_or_none(_v(summary, "tasks_due_today"))
+            high = _as_int_or_none(_v(summary, "tasks_high_priority"))
+
         if "due" in self.exec_kpi:
-            self.exec_kpi["due"][0].configure(text=str(due))
-            self.exec_kpi["due"][1].configure(text=f"{high} High Priority")
+            self.exec_kpi["due"][0].configure(text=_fmt_int(due))
+            if high is None:
+                self.exec_kpi["due"][1].configure(text="")
+            else:
+                self.exec_kpi["due"][1].configure(text=f"{high} High Priority")
 
-        pending = self._nz(summary, "pending_approvals")
+        # ---- Pending approvals ----
+        pending = _as_int_or_none(_v(summary, "pending_approvals"))
         if "approvals" in self.exec_kpi:
-            self.exec_kpi["approvals"][0].configure(text=str(pending))
+            self.exec_kpi["approvals"][0].configure(text=_fmt_int(pending))
+            self.exec_kpi["approvals"][1].configure(text="")
 
-        revenue = _v(summary, "revenue", None) if summary else None
-        if revenue in (None, "", 0):
-            revenue = _v(summary, "revenue_snapshot", None) if summary else None
-        if revenue in (None, "", 0):
-            revenue = _DEMO["revenue"]
+        # ---- Revenue: only show R0 when backend explicitly returns 0 ----
+        revenue = _v(summary, "revenue")
+        if not _has_value(revenue):
+            revenue = _v(summary, "revenue_snapshot")
         if "revenue" in self.exec_kpi:
-            try:
-                self.exec_kpi["revenue"][0].configure(text=f"R{int(float(revenue)):,}")
-            except Exception:
-                self.exec_kpi["revenue"][0].configure(text=str(revenue))
+            if not _has_value(revenue):
+                self.exec_kpi["revenue"][0].configure(text=UNAVAILABLE)
+                self.exec_kpi["revenue"][1].configure(text="No revenue data")
+            else:
+                try:
+                    amount = float(revenue)
+                    self.exec_kpi["revenue"][0].configure(text=f"R{int(amount):,}")
+                    self.exec_kpi["revenue"][1].configure(text="")
+                except (TypeError, ValueError):
+                    self.exec_kpi["revenue"][0].configure(text=str(revenue))
+                    self.exec_kpi["revenue"][1].configure(text="")
 
-        # Activity
-        activities = _v(summary, "latest_activity", None) if summary else None
-        if not activities:
-            activities = _DEMO["activity"]
+        # ---- Departments / activity / approvals list ----
+        if summary is None:
+            departments = None
+            activities = None
+            approvals = None
+        else:
+            departments = (
+                _v(summary, "departments")
+                if _has_value(_v(summary, "departments"))
+                else (
+                    _v(summary, "department_performance")
+                    if _has_value(_v(summary, "department_performance"))
+                    else (
+                        _v(summary, "dept_stats")
+                        if _has_value(_v(summary, "dept_stats"))
+                        else []
+                    )
+                )
+            )
+            activities = (
+                _v(summary, "latest_activity")
+                if _has_value(_v(summary, "latest_activity"))
+                else (
+                    _v(summary, "recent_activity")
+                    if _has_value(_v(summary, "recent_activity"))
+                    else (
+                        _v(summary, "activity")
+                        if _has_value(_v(summary, "activity"))
+                        else []
+                    )
+                )
+            )
+            approvals = (
+                _v(summary, "approvals_queue")
+                if _has_value(_v(summary, "approvals_queue"))
+                else (
+                    _v(summary, "pending_approval_items")
+                    if _has_value(_v(summary, "pending_approval_items"))
+                    else (
+                        _v(summary, "pending_approvals_list")
+                        if _has_value(_v(summary, "pending_approvals_list"))
+                        else []
+                    )
+                )
+            )
+
+        if hasattr(self, "dept_frame"):
+            self._render_departments(departments)
         if hasattr(self, "exec_activity"):
             self._render_activity_rows(activities)
-
-        # Approvals
-        approvals = None
-        if summary is not None:
-            approvals = _v(summary, "approvals_queue", None) or _v(summary, "pending_approval_items", None)
-        if not approvals:
-            approvals = _DEMO["approvals"]
         if hasattr(self, "approvals_list"):
             self._render_approvals(approvals)
 
     def _apply_employee(self, summary) -> None:
         if not hasattr(self, "emp_kpi"):
             return
-        tasks = _v(summary, "tasks_due_today", 0) or _v(summary, "tasks_in_progress", 0) or 0
-        in_prog = _v(summary, "tasks_in_progress", 0) or 0
+        tasks = _as_int_or_none(_v(summary, "tasks_due_today"))
+        in_prog = _as_int_or_none(_v(summary, "tasks_in_progress"))
         if "tasks" in self.emp_kpi:
-            self.emp_kpi["tasks"][0].configure(text=str(tasks))
-            self.emp_kpi["tasks"][1].configure(text=f"{in_prog} in progress")
-        hours = _v(summary, "hours_worked_today", None)
-        if hours is not None and "hours" in self.emp_kpi:
-            try:
-                h = float(hours)
-                self.emp_kpi["hours"][0].configure(text=f"{int(h)}h {int(round((h % 1) * 60))}m")
-            except Exception:
-                pass
-        leave = _v(summary, "leave_balance", None)
-        if leave is not None and "leave" in self.emp_kpi:
-            self.emp_kpi["leave"][0].configure(text=f"{leave} days")
-        att = _v(summary, "attendance_status", None) or "—"
+            self.emp_kpi["tasks"][0].configure(text=_fmt_int(tasks))
+            self.emp_kpi["tasks"][1].configure(
+                text="" if in_prog is None else f"{in_prog} in progress"
+            )
+        hours = _as_float_or_none(_v(summary, "hours_worked_today"))
+        if "hours" in self.emp_kpi:
+            if hours is None:
+                self.emp_kpi["hours"][0].configure(text=UNAVAILABLE)
+            else:
+                self.emp_kpi["hours"][0].configure(
+                    text=f"{int(hours)}h {int(round((hours % 1) * 60))}m"
+                )
+        leave = _v(summary, "leave_balance")
+        if "leave" in self.emp_kpi:
+            if not _has_value(leave):
+                self.emp_kpi["leave"][0].configure(text=UNAVAILABLE)
+            else:
+                self.emp_kpi["leave"][0].configure(text=f"{leave} days")
+        att = _v(summary, "attendance_status")
         if "attendance" in self.emp_kpi:
-            self.emp_kpi["attendance"][0].configure(text=str(att))
+            self.emp_kpi["attendance"][0].configure(
+                text=UNAVAILABLE if not _has_value(att) else str(att)
+            )
 
     @staticmethod
     def _format_activity_time(value) -> str:
         if not value:
-            return "Recently"
+            return UNAVAILABLE
         try:
             if isinstance(value, datetime):
                 dt = value
