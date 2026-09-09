@@ -72,3 +72,33 @@ class PeopleController:
 
     def get_statuses(self) -> list:
         return ["All", "active", "inactive", "on_leave"]
+
+    def get_current_tasks(self, employee_name: str = "") -> list:
+        """Tasks currently assigned to an employee (best-effort via people data).
+
+        PeopleView calls this for the profile panel. Full task lists live in Tasks;
+        return empty when work service is not wired into this controller.
+        """
+        # Soft dependency: if a work service was attached later, use it
+        work = getattr(self, "_work_service", None)
+        if work is None:
+            return []
+        try:
+            name = (employee_name or "").strip().lower()
+            tasks = work.get_tasks("All") if hasattr(work, "get_tasks") else []
+            out = []
+            for t in tasks or []:
+                assignee = (
+                    getattr(t, "assigned_employee", None)
+                    or (t.get("assigned_employee") if isinstance(t, dict) else "")
+                    or ""
+                )
+                if name and str(assignee).strip().lower() != name:
+                    continue
+                status = str(getattr(t, "status", None) or (t.get("status") if isinstance(t, dict) else "") or "").lower()
+                if status in ("completed", "cancelled", "canceled", "done", "closed"):
+                    continue
+                out.append(t)
+            return out[:20]
+        except Exception:
+            return []

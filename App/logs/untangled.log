@@ -914,3 +914,133 @@ AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
 2026-09-09 12:30:21,972 | INFO    | untangled | Application composition complete
 2026-09-09 12:31:00,303 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-09 12:31:05,020 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 12:57:40,780 | INFO    | untangled | ============================================================
+2026-09-09 12:57:40,810 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 12:57:40,811 | INFO    | untangled | ============================================================
+2026-09-09 12:57:40,812 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 12:57:40,813 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 12:57:40,814 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 12:57:43,610 | INFO    | untangled | Application composition complete
+2026-09-09 12:58:14,187 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 12:58:18,564 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 13:02:30,247 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 13:02:32,544 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 15:24:49,184 | INFO    | untangled | ============================================================
+2026-09-09 15:24:49,407 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 15:24:49,423 | INFO    | untangled | ============================================================
+2026-09-09 15:24:49,424 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 15:24:49,425 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 15:24:49,426 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 15:24:51,120 | INFO    | untangled | Application composition complete
+2026-09-09 15:25:08,047 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 15:25:12,408 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 15:25:24,579 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 15:25:56,338 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 15:25:59,397 | ERROR   | untangled.app | Failed to build view People
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\app_controller.py", line 252, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\controllers\navigation_controller.py", line 250, in get_view
+    return PeopleView(workspace, controller)
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 28, in __init__
+    self.refresh()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 101, in refresh
+    self._render_profile(selected)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\User\OneDrive\Untangled-ITS\App\app\views\people_view.py", line 146, in _render_profile
+    tasks = self._controller.get_current_tasks(employee.full_name)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
+2026-09-09 15:28:32,571 | INFO    | untangled.app | User logged out
+2026-09-09 15:29:01,632 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 15:29:04,101 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 15:41:59,615 | INFO    | untangled | ============================================================
+2026-09-09 15:41:59,901 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 15:41:59,903 | INFO    | untangled | ============================================================
+2026-09-09 15:41:59,905 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 15:41:59,907 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 15:41:59,909 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 15:42:01,328 | INFO    | untangled | Application composition complete
+2026-09-09 15:42:23,287 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 15:42:26,437 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 16:09:44,245 | INFO    | untangled | ============================================================
+2026-09-09 16:09:44,313 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 16:09:44,315 | INFO    | untangled | ============================================================
+2026-09-09 16:09:44,317 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 16:09:44,318 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 16:09:44,319 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 16:09:45,722 | INFO    | untangled | Application composition complete
+2026-09-09 16:10:03,301 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 16:10:09,067 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-09 16:10:55,848 | INFO    | untangled.app | User logged out

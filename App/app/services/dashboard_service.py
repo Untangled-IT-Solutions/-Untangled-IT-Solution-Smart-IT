@@ -1,12 +1,13 @@
-"""Dashboard data – Backend API only.
+"""Dashboard data – Backend API only (fast path).
 
-Recent Operational Activity = live view of REAL attendance clock-ins for today (SAST).
-Source of truth: backend attendance endpoints (MongoDB attendance collection on server).
-Never invent employees, times, or clock-in events.
+Primary source: GET /api/dashboard/summary (already includes KPIs + today's activity).
+Secondary: at most ONE attendance/today call if activity is missing.
+Never probe every employee. Never run a long sequential fallback chain.
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, date, time as dt_time
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -15,7 +16,7 @@ from app.services.backend_api_client import BackendAPIClient, BackendAPIError
 
 SAST = ZoneInfo("Africa/Johannesburg")
 UTC = ZoneInfo("UTC")
-WORK_START = dt_time(9, 0)  # SAST – label only; lateness policy if backend has no status
+WORK_START = dt_time(9, 0)
 
 
 def _today_sast() -> date:
@@ -23,12 +24,10 @@ def _today_sast() -> date:
 
 
 def _parse_datetime(value: Any) -> Optional[datetime]:
-    """Parse to timezone-aware datetime in SAST. Never invent values."""
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            # Treat naive as UTC (common for Mongo/API) then convert to SAST
             return value.replace(tzinfo=UTC).astimezone(SAST)
         return value.astimezone(SAST)
     text = str(value).strip()
@@ -96,29 +95,6 @@ def _status_is_pending(raw: Any) -> bool:
     )
 
 
-def _record_id(row: dict) -> str:
-    for k in ("_id", "id", "attendance_id", "record_id"):
-        v = row.get(k)
-        if v is not None and str(v).strip():
-            return str(v).strip()
-    return ""
-
-
-def _employee_key(row: dict) -> str:
-    for k in ("employee_id", "user_id", "emp_id"):
-        v = row.get(k)
-        if v is not None and str(v).strip():
-            return str(v).strip().lower()
-    name = (
-        row.get("employee_name")
-        or row.get("full_name")
-        or row.get("name")
-        or row.get("employee")
-        or ""
-    )
-    return str(name).strip().lower()
-
-
 def _clock_in_from_row(row: dict) -> Optional[datetime]:
     for k in (
         "clock_in_at", "started_at", "start_time", "check_in_at",
@@ -136,14 +112,19 @@ def _clock_in_from_row(row: dict) -> Optional[datetime]:
     return None
 
 
-def _work_date_from_row(row: dict, cin: Optional[datetime]) -> Optional[date]:
-    for k in ("work_date", "date", "attendance_date"):
-        d = _parse_date(row.get(k))
-        if d is not None:
-            return d
-    if cin is not None:
-        return cin.date()
-    return _parse_date(row.get("created_at"))
+def _employee_key(row: dict) -> str:
+    for k in ("employee_id", "user_id", "emp_id"):
+        v = row.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip().lower()
+    name = (
+        row.get("employee_name")
+        or row.get("full_name")
+        or row.get("name")
+        or row.get("employee")
+        or ""
+    )
+    return str(name).strip().lower()
 
 
 class DashboardService:
@@ -156,9 +137,16 @@ class DashboardService:
     # ==================================================================
 
     def get_summary(self) -> Dict[str, Any]:
+        """
+        Fast dashboard path:
+        1. One call to /api/dashboard/summary (backend already aggregates KPIs + activity).
+        2. Light parallel enrichment only for fields still missing.
+        3. Never run the old sequential fallback storm / per-employee probe.
+        """
         summary: Dict[str, Any] = {}
         errors: List[str] = []
 
+        # ---- Primary: single summary call (cached on client + server) ----
         try:
             primary = self._backend.get_dashboard_summary()
             if isinstance(primary, dict):
@@ -166,39 +154,48 @@ class DashboardService:
         except BackendAPIError as exc:
             errors.append(str(exc))
 
+        # ---- Ensure core people totals if missing ----
         try:
             self._ensure_total_people(summary)
         except Exception as exc:
             errors.append(f"people: {exc}")
 
+        # ---- Attendance aggregates from summary (or minimal fill) ----
         try:
             self._ensure_attendance(summary)
         except Exception as exc:
             errors.append(f"attendance: {exc}")
 
-        # Recent Operational Activity = real clock-ins only
-        activity_result = self.get_today_clock_in_activity()
-        if activity_result.get("error"):
-            summary["activity_error"] = activity_result["error"]
-            # Do not wipe a successful empty list with silence — view can show error
-            if "recent_activity" not in summary:
-                summary["recent_activity"] = []
-                summary["latest_activity"] = []
-        else:
+        # ---- Activity: use summary list first; only one extra call if empty ----
+        activity = self._activity_from_summary(summary)
+        if not activity:
+            activity_result = self.get_today_clock_in_activity()
+            if activity_result.get("error"):
+                summary["activity_error"] = activity_result["error"]
+                self._last_activity_error = activity_result["error"]
             activity = activity_result.get("items") or []
-            summary["recent_activity"] = activity
-            summary["latest_activity"] = activity
-            summary["activity"] = activity
 
-        try:
-            self._ensure_tasks(summary)
-        except Exception as exc:
-            errors.append(f"tasks: {exc}")
+        summary["recent_activity"] = activity
+        summary["latest_activity"] = activity
+        summary["activity"] = activity
 
-        try:
-            self._ensure_approvals(summary)
-        except Exception as exc:
-            errors.append(f"approvals: {exc}")
+        # ---- Tasks + approvals only if still missing (parallel) ----
+        need_tasks = summary.get("tasks_due_today") is None
+        need_approvals = summary.get("pending_approvals") is None or summary.get("approvals_queue") is None
+
+        if need_tasks or need_approvals:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = {}
+                if need_tasks:
+                    futures[pool.submit(self._ensure_tasks, summary)] = "tasks"
+                if need_approvals:
+                    futures[pool.submit(self._ensure_approvals, summary)] = "approvals"
+                for fut in as_completed(futures):
+                    label = futures[fut]
+                    try:
+                        fut.result()
+                    except Exception as exc:
+                        errors.append(f"{label}: {exc}")
 
         if errors and not summary:
             summary["error"] = "; ".join(errors)
@@ -209,48 +206,24 @@ class DashboardService:
 
     def get_today_clock_in_activity(self) -> Dict[str, Any]:
         """
-        Canonical method: every employee with a real clock_in_at today (SAST).
-
-        Returns:
-            {
-              "items": [ activity dicts ],
-              "error": optional str if backend failed (not the same as zero rows)
-            }
+        Lightweight activity fetch – at most one or two endpoints.
+        Prefer /api/attendance/today. Optional single history fallback.
+        Does NOT probe every employee. Does NOT hit admin/team path fan-out.
         """
         self._last_activity_error = None
         today = _today_sast()
         raw_rows: List[dict] = []
-        fetch_errors: List[str] = []
         any_success = False
+        last_err: Optional[str] = None
 
-        # ---- 1) Canonical today endpoint (exists on live API) ----
-        # GET /api/attendance/today — when role is admin/manager should return ALL
-        # of today's attendance documents from MongoDB, not only the caller.
-        try:
-            self._backend.clear_cache()  # never serve stale activity
-        except Exception:
-            pass
+        # 1) Canonical today endpoint
         try:
             data = self._backend.attendance_today(today.isoformat())
             any_success = True
-            batch: List[dict] = []
-            if isinstance(data, list):
-                batch = [r for r in data if isinstance(r, dict)]
-            elif isinstance(data, dict):
-                for key in (
-                    "records", "items", "history", "employees", "data",
-                    "results", "rows", "attendance",
-                ):
-                    val = data.get(key)
-                    if isinstance(val, list):
-                        batch.extend([r for r in val if isinstance(r, dict)])
-                if not batch and (data.get("clock_in_at") or data.get("record")):
-                    batch.append(data)
-            raw_rows.extend(batch)
+            raw_rows.extend(self._extract_records(data))
         except BackendAPIError as exc:
-            fetch_errors.append(str(exc))
+            last_err = str(exc)
         except AttributeError:
-            # Older client without attendance_today helper
             ok, batch, err = self._fetch_record_list(
                 f"/api/attendance/today?date={today.isoformat()}"
             )
@@ -258,100 +231,24 @@ class DashboardService:
                 any_success = True
                 raw_rows.extend(batch)
             elif err:
-                fetch_errors.append(err)
+                last_err = err
 
-        # ---- 1b) Other team / admin paths as fallback ----
-        team_paths = (
-            "/api/admin/attendance/today",
-            "/api/attendance/team",
-            "/api/admin/attendance/team",
-            f"/api/admin/attendance?date={today.isoformat()}",
-            f"/api/attendance/records?date={today.isoformat()}",
-        )
-        for path in team_paths:
-            ok, batch, err = self._fetch_record_list(path)
-            if ok:
-                any_success = True
-                raw_rows.extend(batch)
-            elif err:
-                fetch_errors.append(err)
-
-        # ---- 2) History (may be team-scoped for admin) ----
-        history_paths = (
-            "/api/admin/attendance/history?days=1",
-            "/api/attendance/history?days=1",
-            "/api/admin/attendance/history?days=2",
-            "/api/attendance/history?days=2",
-            "/api/attendance/history?days=1&scope=all",
-            "/api/attendance/history?days=1&all=1",
-        )
-        for path in history_paths:
-            ok, batch, err = self._fetch_record_list(path)
-            if ok:
-                any_success = True
-                raw_rows.extend(batch)
-            elif err:
-                fetch_errors.append(err)
-
-        # ---- 3) Lists embedded on dashboard summary ----
-        try:
-            primary = self._backend.get_dashboard_summary()
-            if isinstance(primary, dict):
-                for key in (
-                    "working_employees",
-                    "clocked_in",
-                    "clocked_in_employees",
-                    "attendance_records",
-                    "today_attendance",
-                    "team_attendance",
-                ):
-                    val = primary.get(key)
-                    if isinstance(val, list):
-                        any_success = True
-                        raw_rows.extend([r for r in val if isinstance(r, dict)])
-                att = primary.get("attendance")
-                if isinstance(att, dict):
-                    for key in ("records", "items", "employees", "details"):
-                        val = att.get(key)
-                        if isinstance(val, list):
-                            any_success = True
-                            raw_rows.extend([r for r in val if isinstance(r, dict)])
-        except BackendAPIError as exc:
-            fetch_errors.append(str(exc))
-
-        # ---- 4) Director/manager path: if we have fewer clock-in ROWS than
-        # people_working (or almost none), probe EVERY active employee.
-        # people_working is only a COUNT — it does not contain names — so we
-        # must ask attendance for each person to learn who the count refers to.
+        # 2) Single history fallback only if today returned nothing usable
         items = self._dedupe_and_filter(raw_rows, today)
-        target_working = None
-        try:
-            primary = self._backend.get_dashboard_summary()
-            if isinstance(primary, dict):
-                target_working = _as_int(primary.get("people_working"))
-                if target_working is None:
-                    target_working = _as_int(primary.get("people_on_site"))
-        except BackendAPIError:
-            pass
-
-        need_full_probe = len(items) < 2 or (
-            target_working is not None and len(items) < int(target_working)
-        )
-        if need_full_probe:
-            probed, probe_ok, probe_err = self._probe_employees_today()
-            if probe_ok:
+        if not items:
+            ok, batch, err = self._fetch_record_list("/api/attendance/history?days=1")
+            if ok:
                 any_success = True
-                raw_rows.extend(probed)
+                raw_rows.extend(batch)
                 items = self._dedupe_and_filter(raw_rows, today)
-            elif probe_err:
-                fetch_errors.append(probe_err)
+            elif err and not last_err:
+                last_err = err
 
         items.sort(key=lambda a: a.get("created_at") or "", reverse=True)
 
-        if not any_success and fetch_errors and not items:
-            msg = fetch_errors[0]
-            self._last_activity_error = msg
-            return {"items": [], "error": msg}
+        if not any_success and last_err and not items:
+            self._last_activity_error = last_err
+            return {"items": [], "error": last_err}
 
         return {"items": items, "error": None}
 
@@ -374,136 +271,53 @@ class DashboardService:
         return self.get_summary()
 
     # ==================================================================
-    # Attendance activity helpers
+    # Helpers
     # ==================================================================
+
+    @staticmethod
+    def _activity_from_summary(summary: Dict[str, Any]) -> List[dict]:
+        for key in ("latest_activity", "recent_activity", "activity"):
+            val = summary.get(key)
+            if isinstance(val, list) and val:
+                return [r for r in val if isinstance(r, dict)]
+        return []
 
     def _fetch_record_list(self, path: str) -> Tuple[bool, List[dict], Optional[str]]:
         try:
             data = self._backend.request("GET", path)
         except BackendAPIError as exc:
             return False, [], str(exc)
+        return True, self._extract_records(data), None
 
+    @staticmethod
+    def _extract_records(data: Any) -> List[dict]:
         batch: List[dict] = []
         if isinstance(data, list):
-            batch = [r for r in data if isinstance(r, dict)]
-        elif isinstance(data, dict):
-            for key in (
-                "records", "items", "history", "employees", "data",
-                "results", "rows", "clockins", "clock_ins", "attendance",
-            ):
-                val = data.get(key)
-                if isinstance(val, list):
-                    batch.extend([r for r in val if isinstance(r, dict)])
-                elif isinstance(val, dict):
-                    for k2 in ("records", "items", "employees", "data"):
-                        inner = val.get(k2)
-                        if isinstance(inner, list):
-                            batch.extend([r for r in inner if isinstance(r, dict)])
-            # Single record payload
-            if not batch and (data.get("clock_in_at") or data.get("record")):
-                batch.append(data)
-        return True, batch, None
-
-    def _probe_employees_today(self) -> Tuple[List[dict], bool, Optional[str]]:
-        """
-        Ask attendance for each active employee (director/manager path).
-
-        people_working is only a number. To show WHO clocked in, we resolve
-        each employee via attendance status/history. Only rows with a real
-        clock_in_at are kept — we never invent a row for "working" alone.
-        """
-        try:
-            employees = self._backend.get_employees(force=True)
-        except BackendAPIError as exc:
-            return [], False, str(exc)
-        if not isinstance(employees, list):
-            return [], True, None
-
-        out: List[dict] = []
-        any_ok = False
-        last_err: Optional[str] = None
-        today = _today_sast().isoformat()
-
-        for emp in employees:
-            if not isinstance(emp, dict) or not _is_active_employee(emp):
-                continue
-            eid = emp.get("id") or emp.get("employee_id") or emp.get("_id")
-            name = (emp.get("full_name") or emp.get("name") or emp.get("display_name") or "").strip()
-            dept = emp.get("department") or ""
-            if eid is None:
-                continue
-
-            data = None
-            paths = (
-                f"/api/admin/attendance/status?employee_id={eid}",
-                f"/api/admin/attendance/today?employee_id={eid}",
-                f"/api/admin/attendance/{eid}/today",
-                f"/api/admin/employees/{eid}/attendance",
-                f"/api/attendance/status?employee_id={eid}",
-                f"/api/attendance/today?employee_id={eid}",
-                f"/api/attendance/status/{eid}",
-                f"/api/attendance/history?days=1&employee_id={eid}",
-                f"/api/employees/{eid}/attendance?date={today}",
-            )
-            for path in paths:
-                try:
-                    data = self._backend.request("GET", path)
-                    any_ok = True
-                    break
-                except BackendAPIError as exc:
-                    last_err = str(exc)
-                    continue
-
-            if not isinstance(data, dict):
-                continue
-
-            # Normalise various payload shapes into one record dict
-            candidates = []
-            if isinstance(data.get("record"), dict):
-                candidates.append(data["record"])
-            for key in ("records", "items", "history", "data"):
-                val = data.get(key)
-                if isinstance(val, list):
-                    candidates.extend([r for r in val if isinstance(r, dict)])
-            candidates.append(data)
-
-            best = None
-            best_cin = None
-            for cand in candidates:
-                cin = _clock_in_from_row(cand)
-                if cin is None:
-                    continue
-                if best_cin is None or cin < best_cin:
-                    best = cand
-                    best_cin = cin
-            if best is None:
-                continue
-
-            merged = dict(best)
-            for key in ("clock_in_at", "started_at", "start_time", "check_in_at", "status", "state", "work_date"):
-                if data.get(key) is not None and merged.get(key) is None:
-                    merged[key] = data[key]
-            merged["employee_id"] = eid
-            merged["employee_name"] = name or merged.get("employee_name") or merged.get("name") or str(eid)
-            merged["full_name"] = merged["employee_name"]
-            merged["name"] = merged["employee_name"]
-            if dept:
-                merged.setdefault("department", dept)
-            out.append(merged)
-
-        return out, any_ok, (None if any_ok else last_err)
+            return [r for r in data if isinstance(r, dict)]
+        if not isinstance(data, dict):
+            return batch
+        for key in (
+            "records", "items", "history", "employees", "data",
+            "results", "rows", "clockins", "clock_ins", "attendance",
+        ):
+            val = data.get(key)
+            if isinstance(val, list):
+                batch.extend([r for r in val if isinstance(r, dict)])
+            elif isinstance(val, dict):
+                for k2 in ("records", "items", "employees", "data"):
+                    inner = val.get(k2)
+                    if isinstance(inner, list):
+                        batch.extend([r for r in inner if isinstance(r, dict)])
+        if not batch and (data.get("clock_in_at") or data.get("record")):
+            batch.append(data)
+        return batch
 
     def _dedupe_and_filter(self, raw_rows: List[dict], today: date) -> List[dict]:
-        """
-        Keep only today's records with valid clock_in_at.
-        One row per employee/day. Prefer attendance _id, else employee_id + work_date.
-        """
         by_key: Dict[str, dict] = {}
 
         for row in raw_rows:
             if not isinstance(row, dict):
                 continue
-            # Unwrap nested record if needed
             if isinstance(row.get("record"), dict) and not _clock_in_from_row(row):
                 base = dict(row)
                 base.update({k: v for k, v in row["record"].items() if v is not None})
@@ -511,16 +325,43 @@ class DashboardService:
 
             cin = _clock_in_from_row(row)
             if cin is None:
-                continue
-            work_date = _work_date_from_row(row, cin)
-            if work_date is not None and work_date != today:
-                continue
-            if work_date is None and cin.date() != today:
+                # Allow pre-formatted activity rows from /dashboard/summary
+                if row.get("description") or row.get("action") or row.get("activity"):
+                    emp_key = _employee_key(row)
+                    if not emp_key:
+                        continue
+                    dedupe_key = emp_key
+                    if dedupe_key not in by_key:
+                        by_key[dedupe_key] = {
+                            "employee_id": row.get("employee_id") or emp_key,
+                            "employee": row.get("employee") or row.get("employee_name") or row.get("name") or "Team member",
+                            "employee_name": row.get("employee_name") or row.get("name") or row.get("employee") or "Team member",
+                            "name": row.get("name") or row.get("employee") or "Team member",
+                            "department": row.get("department") or "—",
+                            "description": row.get("description") or row.get("action") or row.get("activity") or "Activity",
+                            "action": row.get("action") or row.get("description") or row.get("activity") or "Activity",
+                            "activity": row.get("activity") or row.get("description") or "Activity",
+                            "created_at": row.get("created_at") or row.get("timestamp") or "",
+                            "timestamp": row.get("timestamp") or row.get("created_at") or "",
+                            "status": row.get("status") or "",
+                            "work_date": today.isoformat(),
+                            "clock_in_at": row.get("clock_in_at"),
+                            "clock_out_at": row.get("clock_out_at"),
+                        }
                 continue
 
-            rid = _record_id(row)
+            work_date = None
+            for k in ("work_date", "date", "attendance_date"):
+                work_date = _parse_date(row.get(k))
+                if work_date is not None:
+                    break
+            if work_date is None:
+                work_date = cin.date()
+            if work_date != today:
+                continue
+
             emp_key = _employee_key(row)
-            dedupe_key = rid if rid else f"{emp_key}|{today.isoformat()}"
+            dedupe_key = emp_key or cin.isoformat()
 
             name = (
                 row.get("employee_name")
@@ -533,7 +374,6 @@ class DashboardService:
             dept = row.get("department") or "—"
             status = str(row.get("status") or row.get("state") or "").lower()
 
-            # Description: Clocked In; optional Late only from backend status or clock time
             if "late" in status or cin.timetz().replace(tzinfo=None) > WORK_START:
                 activity = f"Clocked In · Late · {cin.strftime('%H:%M')}"
                 punctuality = "late"
@@ -543,6 +383,12 @@ class DashboardService:
             else:
                 activity = f"Clocked In · {cin.strftime('%H:%M')}"
                 punctuality = "on_time"
+
+            cout = _parse_datetime(
+                row.get("clock_out_at") or row.get("ended_at") or row.get("end_time")
+            )
+            if cout:
+                activity = f"Clocked Out · {cout.strftime('%H:%M')} · In {cin.strftime('%H:%M')}"
 
             entry = {
                 "employee_id": row.get("employee_id") or row.get("user_id") or emp_key,
@@ -558,32 +404,18 @@ class DashboardService:
                 "timestamp_display": cin.strftime("%H:%M"),
                 "status": punctuality,
                 "work_date": today.isoformat(),
-                "_record_id": rid or dedupe_key,
+                "clock_in_at": cin.isoformat(),
+                "clock_out_at": cout.isoformat() if cout else None,
             }
 
             prev = by_key.get(dedupe_key)
-            if prev is None:
+            if prev is None or (entry.get("created_at") or "") < (prev.get("created_at") or ""):
                 by_key[dedupe_key] = entry
-            else:
-                # Same employee/day: keep earliest clock-in as the daily clock-in event
-                if (entry.get("created_at") or "") < (prev.get("created_at") or ""):
-                    by_key[dedupe_key] = entry
 
-        # Also collapse by employee_id if both id-based and name-based keys slipped in
-        by_emp: Dict[str, dict] = {}
-        for entry in by_key.values():
-            ek = str(entry.get("employee_id") or entry.get("name") or "").strip().lower()
-            prev = by_emp.get(ek)
-            if prev is None:
-                by_emp[ek] = entry
-            else:
-                if (entry.get("created_at") or "") < (prev.get("created_at") or ""):
-                    by_emp[ek] = entry
-
-        return list(by_emp.values())
+        return list(by_key.values())
 
     # ==================================================================
-    # People / attendance KPIs (unchanged product rules)
+    # KPI enrichment (only when summary is sparse)
     # ==================================================================
 
     def _ensure_total_people(self, summary: Dict[str, Any]) -> None:
@@ -599,11 +431,6 @@ class DashboardService:
         summary["total_people"] = len(active)
 
     def _ensure_attendance(self, summary: Dict[str, Any]) -> None:
-        """
-        present defaults to people_working (product rule).
-        late only if backend supplies it.
-        absent = total_people - people_working.
-        """
         nested = summary.get("attendance") if isinstance(summary.get("attendance"), dict) else {}
 
         total = _as_int(summary.get("total_people"))
@@ -622,7 +449,9 @@ class DashboardService:
         if working is not None:
             if late is None:
                 late = 0
-            present = max(0, working - late)
+            # Prefer backend present; else align with people currently working
+            if present is None:
+                present = max(0, working - late)
 
         if total is not None and working is not None:
             absent = max(0, total - working)

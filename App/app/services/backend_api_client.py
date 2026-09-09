@@ -328,11 +328,11 @@ class BackendAPIClient:
 
     def break_start(self, employee_id: Optional[int] = None) -> dict[str, Any]:
         payload = {"employee_id": employee_id} if employee_id is not None else {}
-        return self.request("POST", "/api/attendance/break/start", payload)
+        return self.request("POST", "/api/attendance/break-start", payload)
 
     def break_end(self, employee_id: Optional[int] = None) -> dict[str, Any]:
         payload = {"employee_id": employee_id} if employee_id is not None else {}
-        return self.request("POST", "/api/attendance/break/end", payload)
+        return self.request("POST", "/api/attendance/break-end", payload)
 
     # ------------------------------------------------------------------
     # People / Employees
