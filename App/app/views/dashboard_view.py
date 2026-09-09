@@ -1011,12 +1011,22 @@ class DashboardView(ctk.CTkFrame):
     def _apply_summary(self, summary) -> None:
         if self._is_destroyed:
             return
-        self._summary = summary
+        # Keep previous good data on empty/error payloads so KPIs do not flash "—"
+        if summary is None and self._summary is not None:
+            return
+        if isinstance(summary, dict) and summary.get("error") and self._summary is not None:
+            # Still show the error banner, but do not wipe KPIs
+            pass
+        elif summary is not None:
+            self._summary = summary
         try:
+            data = self._summary if summary is None else summary
+            if isinstance(summary, dict) and summary.get("error") and self._summary is not None:
+                data = self._summary
             if self._executive:
-                self._apply_executive(summary)
+                self._apply_executive(data)
             else:
-                self._apply_employee(summary)
+                self._apply_employee(data)
         except Exception as exc:
             print(f"⚠️ Dashboard render error: {exc}")
 

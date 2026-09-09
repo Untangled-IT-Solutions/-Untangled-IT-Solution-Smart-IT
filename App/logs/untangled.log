@@ -905,3 +905,12 @@ Traceback (most recent call last):
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
 2026-09-09 12:13:28,440 | INFO    | untangled.app | User logged out
+2026-09-09 12:30:20,483 | INFO    | untangled | ============================================================
+2026-09-09 12:30:20,522 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-09 12:30:20,523 | INFO    | untangled | ============================================================
+2026-09-09 12:30:20,524 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 12:30:20,525 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-09 12:30:20,526 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-09 12:30:21,972 | INFO    | untangled | Application composition complete
+2026-09-09 12:31:00,303 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-09 12:31:05,020 | INFO    | untangled.app | Main window shown – entering mainloop
