@@ -201,7 +201,8 @@ class TimerWidget(ctk.CTkFrame):
         elif current_state == "completed" or current_status == "clocked_out":
             label, color = "🔴 Clocked Out", Theme.DANGER
             elapsed = int(float(record.get("hours_worked") or 0) * 3600) if record else 0
-            self.clock_button.configure(text="Clock In", fg_color=Theme.SUCCESS, hover_color="#2E7D32", state="disabled")
+            # Allow re-clock-in after a completed shift (backend supports it)
+            self.clock_button.configure(text="Clock In", fg_color=Theme.SUCCESS, hover_color="#2E7D32", state="normal")
             self.break_button.configure(text="Break", fg_color=Theme.PANEL_ALT, state="disabled")
         else:
             label, color, elapsed = "🔴 Not Clocked In", Theme.DANGER, 0
@@ -227,13 +228,22 @@ class TimerWidget(ctk.CTkFrame):
             return
         current_state = self._state.get("state", "not_started")
         current_status = self._state.get("status", "clocked_out")
-        if current_state == "not_started" or (current_status == "clocked_out" and not self._state.get("record")):
+        record = self._state.get("record") if isinstance(self._state.get("record"), dict) else None
+        has_in = bool(record and (record.get("clock_in_at") or record.get("started_at")))
+        has_out = bool(record and record.get("clock_out_at"))
+
+        # Allow clock-in when: never started today, OR previously clocked out
+        # (backend clears clock_out_at and starts a new session).
+        if (
+            current_state in ("not_started",)
+            or current_status in ("not_started",)
+            or (not has_in)
+            or (has_in and has_out)
+            or (current_status == "clocked_out" and not has_in)
+        ):
             op = lambda: self._mongo_attendance.clock_in(self._employee_id)
             name = "Clock in"
-        elif current_state == "completed" or current_status == "clocked_out":
-            print("⚠️ Today's attendance has already been completed.")
-            return
-        elif current_state == "on_break":
+        elif current_state == "on_break" or current_status == "on_break":
             print("⚠️ End the active break before clocking out.")
             return
         else:

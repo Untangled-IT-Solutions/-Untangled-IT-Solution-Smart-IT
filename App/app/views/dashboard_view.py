@@ -271,6 +271,90 @@ class DashboardView(ctk.CTkFrame):
         self.after(150, self._safe_refresh)
         self._refresh_job = self.after(self.REFRESH_INTERVAL_MS, self._scheduled_refresh)
 
+
+    # ==================================================================
+    # Loading overlay
+    # ==================================================================
+
+    def _ensure_loading_overlay(self) -> None:
+        if getattr(self, "_loading_overlay", None) is not None:
+            return
+        self._loading_overlay = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
+        card = ctk.CTkFrame(
+            self._loading_overlay,
+            fg_color=CARD,
+            corner_radius=16,
+            border_width=1,
+            border_color=BORDER,
+            width=300,
+            height=120,
+        )
+        card.place(relx=0.5, rely=0.38, anchor="center")
+        card.pack_propagate(False)
+        self._loading_spinner = ctk.CTkLabel(
+            card, text="⏳", font=ctk.CTkFont(size=28), text_color=GREEN
+        )
+        self._loading_spinner.pack(pady=(22, 4))
+        self._loading_label = ctk.CTkLabel(
+            card,
+            text="Loading dashboard…",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT,
+        )
+        self._loading_label.pack(pady=(0, 4))
+        ctk.CTkLabel(
+            card,
+            text="Waiting for server response",
+            font=ctk.CTkFont(size=11),
+            text_color=MUTED,
+        ).pack(pady=(0, 16))
+        self._loading_visible = False
+        self._spin_job = None
+        self._spin_frames = ["⏳", "↻", "⏳", "↺"]
+        self._spin_idx = 0
+
+    def _show_loading(self, message: str = "Loading dashboard…") -> None:
+        if self._is_destroyed:
+            return
+        try:
+            self._ensure_loading_overlay()
+            self._loading_label.configure(text=message or "Loading dashboard…")
+            self._loading_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._loading_overlay.lift()
+            self._loading_visible = True
+            self._animate_spinner()
+        except Exception as exc:
+            print(f"⚠️ dashboard show loading failed: {exc}")
+
+    def _hide_loading(self) -> None:
+        if self._is_destroyed:
+            return
+        self._loading_visible = False
+        job = getattr(self, "_spin_job", None)
+        if job is not None:
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+            self._spin_job = None
+        ov = getattr(self, "_loading_overlay", None)
+        if ov is not None:
+            try:
+                ov.place_forget()
+            except Exception:
+                pass
+
+    def _animate_spinner(self) -> None:
+        if self._is_destroyed or not getattr(self, "_loading_visible", False):
+            return
+        try:
+            frames = getattr(self, "_spin_frames", ["⏳", "↻"])
+            self._spin_idx = (getattr(self, "_spin_idx", 0) + 1) % len(frames)
+            self._loading_spinner.configure(text=frames[self._spin_idx])
+            self._spin_job = self.after(400, self._animate_spinner)
+        except Exception:
+            self._spin_job = None
+
     # ==================================================================
     # Discovery
     # ==================================================================
@@ -567,17 +651,65 @@ class DashboardView(ctk.CTkFrame):
         self.dept_frame.pack_propagate(False)
         self._render_departments(None)
 
-        # Activity table
-        act = self._card(left, "📋  Recent Operational Activity", link="View all", dest="Notifications")
+        # Recent Operations — compact modern feed
+        act = ctk.CTkFrame(
+            left, fg_color=CARD, corner_radius=14, border_width=1, border_color=BORDER
+        )
         act.grid(row=1, column=0, sticky="ew")
-        hdr = ctk.CTkFrame(act, fg_color=GRAY_SOFT, corner_radius=8)
-        hdr.pack(fill="x", padx=12, pady=(0, 2))
-        for col, w in [("#", 28), ("Employee", 110), ("Department", 90), ("Activity", 260), ("Time", 70)]:
+
+        # Slim header
+        act_hdr = ctk.CTkFrame(act, fg_color="transparent")
+        act_hdr.pack(fill="x", padx=14, pady=(12, 6))
+        act_hdr.grid_columnconfigure(1, weight=1)
+
+        icon_wrap = ctk.CTkFrame(act_hdr, width=28, height=28, corner_radius=14, fg_color=GREEN_SOFT)
+        icon_wrap.grid(row=0, column=0, padx=(0, 8))
+        icon_wrap.grid_propagate(False)
+        ctk.CTkLabel(icon_wrap, text="⏱", font=ctk.CTkFont(size=12), text_color=GREEN).place(
+            relx=0.5, rely=0.5, anchor="center"
+        )
+
+        title_col = ctk.CTkFrame(act_hdr, fg_color="transparent")
+        title_col.grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(
+            title_col, text="Recent Operations",
+            font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT, anchor="w",
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_col, text="Latest team activity",
+            font=ctk.CTkFont(size=10), text_color=MUTED, anchor="w",
+        ).pack(anchor="w")
+
+        live = ctk.CTkLabel(
+            act_hdr, text="● Live",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=GREEN, fg_color=GREEN_SOFT, corner_radius=8, padx=8, pady=2,
+        )
+        live.grid(row=0, column=2, padx=(6, 6))
+
+        ctk.CTkButton(
+            act_hdr, text="View all ›", width=72, height=24, corner_radius=6,
+            fg_color="transparent", hover_color=GRAY_SOFT, text_color=GREEN,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self._navigate("Attendance"),
+        ).grid(row=0, column=3, sticky="e")
+
+        # Compact column headers (grid-aligned with rows)
+        hdr = ctk.CTkFrame(act, fg_color="#F8FAFC", corner_radius=8, height=28)
+        hdr.pack(fill="x", padx=12, pady=(2, 0))
+        hdr.pack_propagate(False)
+        for i, weight in enumerate((0, 2, 2, 3, 1, 1)):
+            hdr.grid_columnconfigure(i, weight=weight)
+        headers = [("#", "w"), ("Employee", "w"), ("Department", "w"),
+                   ("Activity", "w"), ("Time", "e"), ("Status", "e")]
+        for i, (label, anc) in enumerate(headers):
             ctk.CTkLabel(
-                hdr, text=col, font=ctk.CTkFont(size=11, weight="bold"), text_color=MUTED, width=w, anchor="w"
-            ).pack(side="left", padx=4, pady=6)
+                hdr, text=label, font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=MUTED, anchor=anc,
+            ).grid(row=0, column=i, sticky="ew", padx=6, pady=4)
+
         self.exec_activity = ctk.CTkFrame(act, fg_color="transparent")
-        self.exec_activity.pack(fill="x", padx=12, pady=(2, 12))
+        self.exec_activity.pack(fill="x", padx=8, pady=(2, 10))
         self._render_activity_rows(None)
 
         # RIGHT column
@@ -823,73 +955,164 @@ class DashboardView(ctk.CTkFrame):
                 text_color=ORANGE, fg_color=ORANGE_SOFT, corner_radius=8, padx=8, pady=2,
             ).grid(row=0, column=2, rowspan=2, padx=8)
 
+    def _activity_status_style(self, activity) -> tuple:
+        """(label, text_color, bg_color) — short labels so pills fit."""
+        status = str(_v(activity, "status") or _v(activity, "state") or "").strip().lower()
+        status = status.replace(" ", "_").replace("-", "_")
+        action = str(
+            _v(activity, "description") or _v(activity, "action") or _v(activity, "activity") or ""
+        ).lower()
+        has_out = bool(
+            _v(activity, "clock_out_at")
+            or (isinstance(_v(activity, "record"), dict) and (_v(activity, "record") or {}).get("clock_out_at"))
+        )
+        if has_out or status in ("clocked_out", "completed", "out", "done"):
+            return "Done", GREEN, GREEN_SOFT
+        if "break" in status or "break" in action:
+            return "Break", ORANGE, ORANGE_SOFT
+        if status == "late" or "late" in action:
+            return "Late", ORANGE, ORANGE_SOFT
+        if status in ("on_time", "clocked_in", "working", "in", "active") or "still in" in action:
+            return "In", BLUE, BLUE_SOFT
+        return "Active", BLUE, BLUE_SOFT
+
+    def _activity_line(self, activity) -> str:
+        """Single compact activity line (SAST times)."""
+        return self._format_activity_action(activity)
+
     def _render_activity_rows(self, activities) -> None:
         for w in self.exec_activity.winfo_children():
             try:
                 w.destroy()
             except Exception:
                 pass
+
         if activities is None:
             ctk.CTkLabel(
                 self.exec_activity, text="No activity data available.",
-                font=ctk.CTkFont(size=12), text_color=MUTED
-            ).pack(anchor="w", pady=8)
+                font=ctk.CTkFont(size=11), text_color=MUTED,
+            ).pack(anchor="w", pady=8, padx=6)
             return
         if not activities:
             ctk.CTkLabel(
                 self.exec_activity, text="No recent operational activity.",
-                font=ctk.CTkFont(size=12), text_color=MUTED
-            ).pack(anchor="w", pady=8)
+                font=ctk.CTkFont(size=11), text_color=MUTED,
+            ).pack(anchor="w", pady=8, padx=6)
             return
-        for idx, activity in enumerate(list(activities)[:10], start=1):
+
+        palette_bg = [BLUE_SOFT, GREEN_SOFT, ORANGE_SOFT, PURPLE_SOFT, CYAN_SOFT]
+        palette_fg = [BLUE, GREEN, ORANGE, PURPLE, CYAN]
+
+        for idx, activity in enumerate(list(activities)[:8], start=1):
             who = str(
-                _v(activity, "employee")
-                or _v(activity, "user")
-                or _v(activity, "name")
-                or "Team member"
+                _v(activity, "employee") or _v(activity, "user") or _v(activity, "name") or "Team"
             )
             dept = str(_v(activity, "department") or "—")
-            action = self._format_activity_action(activity)
-            # Relative time: prefer clock-out moment, else clock-in
+            line = self._activity_line(activity)
+            status_label, status_fg, status_bg = self._activity_status_style(activity)
             when_raw = (
                 _v(activity, "clock_out_at")
                 or _v(activity, "created_at")
                 or _v(activity, "clock_in_at")
             )
-            when = self._format_activity_time(when_raw)
-            row = ctk.CTkFrame(self.exec_activity, fg_color="transparent")
-            row.pack(fill="x", pady=2)
+            relative = self._format_activity_time(when_raw)
+            absolute = self._format_activity_clock(when_raw) or ""
+
+            # One compact row ~36–40px
+            row = ctk.CTkFrame(self.exec_activity, fg_color="transparent", height=40)
+            row.pack(fill="x", pady=1)
+            row.pack_propagate(False)
+            for i, weight in enumerate((0, 2, 2, 3, 1, 1)):
+                row.grid_columnconfigure(i, weight=weight)
+
+            # #
             ctk.CTkLabel(
-                row, text=str(idx), font=ctk.CTkFont(size=11), text_color=MUTED, width=28, anchor="w"
-            ).pack(side="left", padx=4)
-            av = ctk.CTkFrame(row, width=24, height=24, corner_radius=12, fg_color=BLUE_SOFT)
+                row, text=str(idx), font=ctk.CTkFont(size=11), text_color=MUTED, width=18, anchor="w",
+            ).grid(row=0, column=0, sticky="w", padx=(6, 2), pady=6)
+
+            # Avatar + name (single line)
+            emp = ctk.CTkFrame(row, fg_color="transparent")
+            emp.grid(row=0, column=1, sticky="w", padx=2, pady=4)
+            pi = (idx - 1) % len(palette_bg)
+            av = ctk.CTkFrame(emp, width=26, height=26, corner_radius=13, fg_color=palette_bg[pi])
             av.pack(side="left", padx=(0, 6))
             av.pack_propagate(False)
             ctk.CTkLabel(
-                av, text=_initials(who), font=ctk.CTkFont(size=9, weight="bold"), text_color=BLUE
+                av, text=_initials(who), font=ctk.CTkFont(size=9, weight="bold"),
+                text_color=palette_fg[pi],
             ).place(relx=0.5, rely=0.5, anchor="center")
             ctk.CTkLabel(
-                row, text=who[:16], font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=TEXT, width=100, anchor="w"
-            ).pack(side="left", padx=2)
+                emp, text=who[:16], font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=TEXT, anchor="w",
+            ).pack(side="left")
+
+            # Department (single line)
             ctk.CTkLabel(
-                row, text=dept[:12], font=ctk.CTkFont(size=11), text_color=MUTED, width=80, anchor="w"
-            ).pack(side="left", padx=2)
-            # Wider so "Clocked Out · 17:05 · In 09:29" is not cut off
+                row, text=dept[:14], font=ctk.CTkFont(size=11), text_color=MUTED, anchor="w",
+            ).grid(row=0, column=2, sticky="w", padx=4, pady=6)
+
+            # Activity (single line, truncated)
+            act_f = ctk.CTkFrame(row, fg_color="transparent")
+            act_f.grid(row=0, column=3, sticky="ew", padx=4, pady=4)
             ctk.CTkLabel(
-                row, text=f"●  {action}", font=ctk.CTkFont(size=11),
-                text_color=TEXT, width=250, anchor="w"
-            ).pack(side="left", padx=2)
+                act_f, text="●", font=ctk.CTkFont(size=9), text_color=status_fg, width=12,
+            ).pack(side="left")
             ctk.CTkLabel(
-                row, text=when, font=ctk.CTkFont(size=11), text_color=MUTED, width=70, anchor="e"
-            ).pack(side="right", padx=4)
+                act_f, text=line[:36], font=ctk.CTkFont(size=11), text_color=TEXT, anchor="w",
+            ).pack(side="left")
+
+            # Time: relative on top feel → one line "09:40 · 18m"
+            time_txt = absolute if absolute else relative
+            if absolute and relative and relative not in ("—", UNAVAILABLE):
+                # keep absolute primary; relative is secondary in tooltip-style short form
+                short_rel = relative.replace(" min ago", "m").replace("h ago", "h")
+                time_txt = f"{absolute}"
+            ctk.CTkLabel(
+                row, text=time_txt, font=ctk.CTkFont(size=11, weight="bold"),
+                text_color=TEXT, anchor="e",
+            ).grid(row=0, column=4, sticky="e", padx=4, pady=6)
+
+            # Status pill (short)
+            ctk.CTkLabel(
+                row, text=status_label,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=status_fg, fg_color=status_bg,
+                corner_radius=8, padx=8, pady=2,
+            ).grid(row=0, column=5, sticky="e", padx=(4, 8), pady=6)
+
+            # subtle separator
+            sep = ctk.CTkFrame(self.exec_activity, fg_color="#F1F5F9", height=1)
+            sep.pack(fill="x", padx=8)
+
+    def _format_activity_clock(self, value) -> Optional[str]:
+        """Absolute wall-clock time in SAST, e.g. 9:40 AM."""
+        hm = self._hm_sast(value)
+        if not hm:
+            return None
+        try:
+            h, m = hm.split(":")
+            h_i = int(h)
+            suffix = "AM" if h_i < 12 else "PM"
+            h12 = h_i % 12 or 12
+            return f"{h12}:{m} {suffix}"
+        except Exception:
+            return hm
 
     @staticmethod
     def _hm_sast(value) -> Optional[str]:
-        """Format a datetime/ISO value as HH:MM in local display (SAST data)."""
+        """Format a datetime/ISO value as HH:MM in Africa/Johannesburg (SAST).
+
+        Backend stores clock times in UTC. Naive ISO strings (no Z / offset) are
+        treated as UTC — same rule as Attendance format_local_time — so 07:40 UTC
+        displays as 09:40, not 07:40.
+        """
         if not value:
             return None
         try:
+            from zoneinfo import ZoneInfo
+            from datetime import timezone as _tz
+
+            sa = ZoneInfo("Africa/Johannesburg")
             if isinstance(value, datetime):
                 dt = value
             else:
@@ -897,14 +1120,9 @@ class DashboardView(ctk.CTkFrame):
                 if text.endswith("Z"):
                     text = text[:-1] + "+00:00"
                 dt = datetime.fromisoformat(text)
-            # Prefer explicit timezone conversion when aware
-            if dt.tzinfo is not None:
-                try:
-                    from zoneinfo import ZoneInfo
-                    dt = dt.astimezone(ZoneInfo("Africa/Johannesburg"))
-                except Exception:
-                    pass
-            return dt.strftime("%H:%M")
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            return dt.astimezone(sa).strftime("%H:%M")
         except Exception:
             return None
 
@@ -932,21 +1150,24 @@ class DashboardView(ctk.CTkFrame):
         if cout is None and status in ("clocked_out", "completed", "out", "done"):
             cout = self._hm_sast(_v(activity, "updated_at") or nested.get("updated_at"))
 
-        desc = str(_v(activity, "description") or _v(activity, "action") or "")
+        desc = str(
+            _v(activity, "description")
+            or _v(activity, "action")
+            or _v(activity, "activity")
+            or ""
+        )
 
         if cin and cout:
             return f"Out {cout} · In {cin}"
         if cout:
-            return f"Out {cout}"
-        if "clocked out" in desc.lower() or desc.lower().startswith("out "):
-            return desc[:48]
+            return f"Clocked out {cout}"
         if cin:
             if "break" in status:
-                return f"On Break · In {cin}"
+                return f"On break · In {cin}"
             if status == "late" or "late" in desc.lower():
-                return f"In {cin} · Late · Still in"
-            return f"In {cin} · Still in"
-        return (desc or "Activity")[:48]
+                return f"Clocked in {cin} · Late"
+            return f"Clocked in {cin}"
+        return (desc or "Activity")[:40]
 
     # ==================================================================
     # Data refresh
@@ -970,6 +1191,10 @@ class DashboardView(ctk.CTkFrame):
         self._refresh_running = True
         self._last_refresh_started = now
 
+        # First load or empty summary → full-page loader (Render can take 2–4s)
+        if self._summary is None:
+            self._show_loading("Loading dashboard…")
+
         def worker() -> None:
             try:
                 summary = self._controller.get_summary()
@@ -987,6 +1212,7 @@ class DashboardView(ctk.CTkFrame):
                 success, summary, error = self._backend_queue.get_nowait()
                 self._refresh_running = False
                 if success:
+                    self._hide_loading()
                     if isinstance(summary, dict) and summary.get("error"):
                         self._show_error(str(summary.get("error")))
                         # Do not invent zeros on partial/error payloads
@@ -995,6 +1221,7 @@ class DashboardView(ctk.CTkFrame):
                         self._clear_error()
                         self._apply_summary(summary)
                 else:
+                    self._hide_loading()
                     print(f"⚠️ Dashboard refresh error: {error}")
                     self._show_error(str(error) if error else "Unknown error")
         except queue.Empty:
@@ -1204,6 +1431,7 @@ class DashboardView(ctk.CTkFrame):
         if not value:
             return UNAVAILABLE
         try:
+            from datetime import timezone as _tz
             if isinstance(value, datetime):
                 dt = value
             else:
@@ -1211,8 +1439,10 @@ class DashboardView(ctk.CTkFrame):
                 if text.endswith("Z"):
                     text = text[:-1] + "+00:00"
                 dt = datetime.fromisoformat(text)
-            now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-            seconds = int((now - dt).total_seconds())
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            now = datetime.now(_tz.utc)
+            seconds = int((now - dt.astimezone(_tz.utc)).total_seconds())
             if seconds < 60:
                 return "Just now"
             minutes = seconds // 60
@@ -1251,6 +1481,13 @@ class DashboardView(ctk.CTkFrame):
         if self._is_destroyed:
             return
         self._is_destroyed = True
+        self._loading_visible = False
+        if getattr(self, "_spin_job", None) is not None:
+            try:
+                self.after_cancel(self._spin_job)
+            except Exception:
+                pass
+            self._spin_job = None
         for job in (self._refresh_job, self._queue_job):
             if job:
                 try:

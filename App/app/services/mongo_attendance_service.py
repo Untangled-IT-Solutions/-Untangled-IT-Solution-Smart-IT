@@ -91,19 +91,23 @@ class MongoAttendanceService:
         has_out = bool(record.get("clock_out_at") or record.get("ended_at"))
         on_break = bool(record.get("break_started_at")) and not has_out
 
-        # Prefer explicit clocked_in flag from API when present
-        if data.get("clocked_in") is True and not has_out:
+        # Prefer record facts over a misleading status string.
+        # Empty day (no record / no clock_in) must be not_started — never clocked_out.
+        if not record or (not has_in and not has_out):
+            status = "not_started"
+        elif data.get("clocked_in") is True and not has_out:
             status = "on_break" if data.get("on_break") or on_break else "clocked_in"
+        elif has_in and not has_out:
+            status = "on_break" if on_break or status in ("on_break", "break", "paused") else "clocked_in"
+        elif has_in and has_out:
+            status = "clocked_out"
         elif status in ("clocked_in", "working", "in", "active", "checked_in"):
             status = "clocked_in"
         elif status in ("on_break", "break", "paused"):
             status = "on_break"
         elif status in ("clocked_out", "completed", "out", "checked_out", "done"):
-            status = "clocked_out"
-        elif has_in and not has_out:
-            status = "on_break" if on_break else "clocked_in"
-        elif has_in and has_out:
-            status = "clocked_out"
+            # Only trust clocked_out if we actually saw a closed record above
+            status = "not_started"
         else:
             status = "not_started"
 

@@ -123,11 +123,110 @@ class AttendanceView(ctk.CTkFrame):
 
         # All backend I/O starts in a worker thread.
         self._queue_job = self.after(50, self._drain_backend_queue)
+
+        # Show loader until the first status response arrives (~1–2s on Render).
+        self.after(10, lambda: self._show_loading("Loading attendance…"))
         self._sync_from_backend()
 
     # ------------------------------------------------------------------
     # Layout  (content area only — no duplicate Operations Workspace header)
     # ------------------------------------------------------------------
+
+
+    # ------------------------------------------------------------------
+    # Loading overlay (shown while attendance endpoints are in flight)
+    # ------------------------------------------------------------------
+
+    def _ensure_loading_overlay(self):
+        """Create a semi-transparent overlay with spinner text (once)."""
+        if getattr(self, "_loading_overlay", None) is not None:
+            return
+        # Place over the whole attendance content frame
+        self._loading_overlay = ctk.CTkFrame(
+            self,
+            fg_color=("#F5F7FA", "#F5F7FA"),
+            corner_radius=0,
+        )
+        inner = ctk.CTkFrame(
+            self._loading_overlay,
+            fg_color=CARD,
+            corner_radius=16,
+            border_width=1,
+            border_color=BORDER,
+            width=280,
+            height=120,
+        )
+        inner.place(relx=0.5, rely=0.4, anchor="center")
+        inner.pack_propagate(False)
+
+        self._loading_spinner = ctk.CTkLabel(
+            inner,
+            text="⏳",
+            font=ctk.CTkFont(size=28),
+            text_color=PRIMARY,
+        )
+        self._loading_spinner.pack(pady=(22, 4))
+
+        self._loading_label = ctk.CTkLabel(
+            inner,
+            text="Loading attendance…",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT,
+        )
+        self._loading_label.pack(pady=(0, 4))
+
+        ctk.CTkLabel(
+            inner,
+            text="Waiting for server response",
+            font=ctk.CTkFont(size=11),
+            text_color=MUTED,
+        ).pack(pady=(0, 16))
+
+        self._loading_visible = False
+        self._spin_job = None
+        self._spin_frames = ["⏳", "↻", "⏳", "↺"]
+        self._spin_idx = 0
+
+    def _show_loading(self, message: str = "Loading attendance…"):
+        if self._is_destroyed:
+            return
+        try:
+            self._ensure_loading_overlay()
+            self._loading_label.configure(text=message or "Loading attendance…")
+            self._loading_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._loading_overlay.lift()
+            self._loading_visible = True
+            self._animate_spinner()
+        except Exception as exc:
+            print(f"⚠️ show loading failed: {exc}")
+
+    def _hide_loading(self):
+        if self._is_destroyed:
+            return
+        self._loading_visible = False
+        if getattr(self, "_spin_job", None) is not None:
+            try:
+                self.after_cancel(self._spin_job)
+            except Exception:
+                pass
+            self._spin_job = None
+        ov = getattr(self, "_loading_overlay", None)
+        if ov is not None:
+            try:
+                ov.place_forget()
+            except Exception:
+                pass
+
+    def _animate_spinner(self):
+        if self._is_destroyed or not getattr(self, "_loading_visible", False):
+            return
+        try:
+            frames = getattr(self, "_spin_frames", ["⏳", "↻"])
+            self._spin_idx = (getattr(self, "_spin_idx", 0) + 1) % len(frames)
+            self._loading_spinner.configure(text=frames[self._spin_idx])
+            self._spin_job = self.after(400, self._animate_spinner)
+        except Exception:
+            self._spin_job = None
 
     def _build_layout(self):
         self.grid_columnconfigure(0, weight=1)
@@ -668,6 +767,7 @@ class AttendanceView(ctk.CTkFrame):
         if self._is_destroyed:
             return
 
+        self._hide_loading()
         self._sync_inflight = False
         self._timer_state = dict(state or {})
         # Prefer the record from this payload; never wipe an active session with None
@@ -693,6 +793,7 @@ class AttendanceView(ctk.CTkFrame):
             pass
 
     def _backend_error(self, exc, action_name="attendance"):
+        self._hide_loading()
         self._sync_inflight = False
         self._action_inflight = False
         self._retry_count += 1
@@ -730,6 +831,8 @@ class AttendanceView(ctk.CTkFrame):
         """Compatibility entry point: request an asynchronous state refresh."""
         if self._is_destroyed:
             return
+        if force:
+            self._show_loading("Refreshing attendance…")
         self._sync_from_backend(delay=0 if force else None)
 
     def _local_timer_tick(self):
@@ -834,7 +937,19 @@ class AttendanceView(ctk.CTkFrame):
         rec_probe = self._timer_record if isinstance(self._timer_record, dict) else {}
         has_in = bool(rec_probe.get("clock_in_at") or rec_probe.get("started_at"))
         has_out = bool(rec_probe.get("clock_out_at"))
-        on_break_flag = bool(rec_probe.get("break_started_at")) and has_in and not has_out
+        # Active break: started_at set and either no end, or start is after last end
+        _bs = rec_probe.get("break_started_at")
+        _be = rec_probe.get("break_ended_at")
+        if _bs and has_in and not has_out:
+            if not _be:
+                on_break_flag = True
+            else:
+                try:
+                    on_break_flag = str(_bs) > str(_be)
+                except Exception:
+                    on_break_flag = current_status in ("on_break", "break")
+        else:
+            on_break_flag = False
 
         # Normalize into the same buckets TimerWidget uses; also trust the record
         if (
@@ -850,12 +965,17 @@ class AttendanceView(ctk.CTkFrame):
         ):
             phase = "on_break"
         elif (
-            current_state in ("completed", "clocked_out")
-            or current_status in ("clocked_out", "completed", "out")
-            or (has_in and has_out)
+            (has_in and has_out)
+            or (
+                (current_state in ("completed", "clocked_out")
+                 or current_status in ("clocked_out", "completed", "out"))
+                and has_in
+            )
         ):
             phase = "clocked_out"
         else:
+            # No real open/closed session for today → treat as not started
+            # (fixes API fallback that used to report clocked_out with no record)
             phase = "not_started"
 
         phase_display = {
@@ -926,10 +1046,13 @@ class AttendanceView(ctk.CTkFrame):
         except Exception:
             pass
 
-        # Button enablement matches phase (same rules as before, driven by normalized phase)
+        # Button enablement:
+        # - Clock In: allowed when not_started OR already clocked_out (re-open day)
+        # - Clock Out: only while actively clocked in
+        # - Start Break / End Break: only in matching active phase
         self._set_actions(
-            "disabled" if phase in ("clocked_in", "on_break", "clocked_out") else "normal",
-            "disabled" if phase in ("not_started", "on_break", "clocked_out") else "normal",
+            "normal" if phase in ("not_started", "clocked_out") else "disabled",
+            "normal" if phase == "clocked_in" else "disabled",
             "normal" if phase == "clocked_in" else "disabled",
             "normal" if phase == "on_break" else "disabled",
         )
@@ -1193,6 +1316,7 @@ class AttendanceView(ctk.CTkFrame):
 
         self._action_inflight = True
         self._set_actions("disabled", "disabled", "disabled", "disabled")
+        self._show_loading(f"{action_name}…")
 
         self._run_backend(
             operation,
@@ -1204,6 +1328,7 @@ class AttendanceView(ctk.CTkFrame):
         if self._is_destroyed:
             return
 
+        self._hide_loading()
         self._action_inflight = False
         self._timer_state = dict(result or {})
         incoming = self._timer_state.get("record")
@@ -1248,6 +1373,13 @@ class AttendanceView(ctk.CTkFrame):
 
     def destroy(self):
         self._is_destroyed = True
+        self._loading_visible = False
+        if getattr(self, "_spin_job", None) is not None:
+            try:
+                self.after_cancel(self._spin_job)
+            except Exception:
+                pass
+            self._spin_job = None
 
         for attr in ("_refresh_job", "_timer_job", "_queue_job"):
             job = getattr(self, attr, None)

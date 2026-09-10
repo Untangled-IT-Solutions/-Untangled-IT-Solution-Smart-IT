@@ -1044,3 +1044,21 @@ AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
 2026-09-09 16:10:03,301 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-09 16:10:09,067 | INFO    | untangled.app | Main window shown – entering mainloop
 2026-09-09 16:10:55,848 | INFO    | untangled.app | User logged out
+2026-09-10 15:00:39,228 | INFO    | untangled | ============================================================
+2026-09-10 15:00:39,251 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-10 15:00:39,293 | INFO    | untangled | ============================================================
+2026-09-10 15:00:39,326 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:00:39,327 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:00:39,365 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-10 15:00:41,052 | INFO    | untangled | Application composition complete
+2026-09-10 15:01:16,657 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-10 15:01:20,574 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-10 15:08:34,530 | INFO    | untangled | ============================================================
+2026-09-10 15:08:34,560 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-10 15:08:34,563 | INFO    | untangled | ============================================================
+2026-09-10 15:08:34,570 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:08:34,571 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:08:34,577 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-10 15:08:35,863 | INFO    | untangled | Application composition complete
+2026-09-10 15:08:50,469 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-10 15:08:54,880 | INFO    | untangled.app | Main window shown – entering mainloop
