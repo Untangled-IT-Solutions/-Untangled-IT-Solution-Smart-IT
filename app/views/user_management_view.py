@@ -1,813 +1,2120 @@
-# app/views/user_management_view.py
-"""User management view for creating and managing users."""
+"""
+Responsive MongoDB User Management view.
+
+This view manages real employee login accounts through the controller.
+
+MongoDB relationship:
+
+    employees
+        employee_id
+        first_name
+        surname
+        full_name
+        email
+        department
+        position
+
+    users
+        employee_id
+        username
+        password_hash
+        role
+        status
+        last_login_at
+
+This file contains UI only.
+MongoDB operations are delegated to the controller/service layer.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
 
 import customtkinter as ctk
-from typing import Optional, List, Dict, Any
-from datetime import datetime
 
 from app.utils.theme import Theme
 
 
 class UserManagementView(ctk.CTkFrame):
-    """View for managing users with password generation."""
+    """Responsive MongoDB employee account and credential management screen."""
 
-    def __init__(self, master, controller):
-        super().__init__(master, fg_color=Theme.BG, corner_radius=0)
+    ROLES = (
+        "Director",
+        "Super User",
+        "Administrator",
+        "Super Admin",
+        "Branch Manager",
+        "Business Lead",
+        "Operations Manager",
+        "Staff",
+        "Intern",
+    )
+
+    def __init__(self, master: object, controller: object) -> None:
+        super().__init__(
+            master,
+            fg_color=Theme.BG,
+            corner_radius=0,
+        )
+
         self._controller = controller
-        self._selected_user_id: Optional[str] = None
-        
+
+        # Keyed by the application's MongoDB employee_id.
+        #
+        # IMPORTANT:
+        # Do not use MongoDB's ObjectId (_id) as the application
+        # employee relationship.
+        self._employees: dict[str, dict[str, Any]] = {}
+
+        self._resize_job: str | None = None
+        self._compact: bool | None = None
+
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
-        
-        self._build_layout()
-        self._refresh_data()
+        self.grid_rowconfigure(0, weight=1)
 
-    def _build_layout(self) -> None:
-        """Build the user management layout."""
-        # Title
-        title_frame = ctk.CTkFrame(self, fg_color="transparent")
-        title_frame.grid(row=0, column=0, sticky="ew", padx=28, pady=(20, 0))
-        title_frame.grid_columnconfigure(1, weight=1)
-        
-        ctk.CTkLabel(
-            title_frame,
-            text="👤 User Management",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_TITLE,
-        ).grid(row=0, column=0, sticky="w")
-        
-        ctk.CTkLabel(
-            title_frame,
-            text="Create and manage user accounts",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_BODY,
-        ).grid(row=1, column=0, sticky="w")
-        
-        # Refresh button
-        ctk.CTkButton(
-            title_frame,
-            text="🔄 Refresh",
-            width=100,
-            height=32,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-            command=self._refresh_data,
-        ).grid(row=0, column=1, rowspan=2, padx=(0, 0), sticky="e")
-
-        # User Creation Panel
-        self._build_creation_panel()
-
-        # Statistics Panel
-        self._build_statistics_panel()
-
-        # User List
-        self._build_user_list()
-
-    def _build_creation_panel(self) -> None:
-        """Build the user creation panel."""
-        panel = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-        panel.grid(row=1, column=0, padx=28, pady=(16, 0), sticky="ew")
-        panel.grid_columnconfigure((0, 1, 2, 3), weight=1)
-
-        ctk.CTkLabel(
-            panel,
-            text="Create New User",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
-        ).grid(row=0, column=0, columnspan=4, padx=16, pady=(12, 8), sticky="w")
-
-        # Employee selection
-        ctk.CTkLabel(
-            panel,
-            text="Employee",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=1, column=0, padx=(16, 8), pady=4, sticky="w")
-        
-        self.employee_menu = ctk.CTkOptionMenu(
-            panel,
-            values=["Select Employee..."],
-            fg_color=Theme.PANEL_ALT,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-            dropdown_text_color=Theme.TEXT,
-            dropdown_fg_color=Theme.PANEL,
-            dropdown_hover_color=Theme.PANEL_ALT,
-        )
-        self.employee_menu.grid(row=2, column=0, padx=(16, 8), pady=(0, 12), sticky="ew")
-
-        # Username
-        ctk.CTkLabel(
-            panel,
-            text="Username",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=1, column=1, padx=8, pady=4, sticky="w")
-        
-        self.username_entry = ctk.CTkEntry(
-            panel,
-            height=38,
-            placeholder_text="Auto-generated",
-            fg_color=Theme.PANEL_ALT,
-            border_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        )
-        self.username_entry.grid(row=2, column=1, padx=8, pady=(0, 12), sticky="ew")
-
-        # Role selection
-        ctk.CTkLabel(
-            panel,
-            text="Role",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=1, column=2, padx=8, pady=4, sticky="w")
-        
-        self.role_menu = ctk.CTkOptionMenu(
-            panel,
-            values=["Director", "Branch Manager", "Business Lead", "Operations Manager", "Staff", "Intern"],
-            fg_color=Theme.PANEL_ALT,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-            dropdown_text_color=Theme.TEXT,
-            dropdown_fg_color=Theme.PANEL,
-            dropdown_hover_color=Theme.PANEL_ALT,
-        )
-        self.role_menu.set("Staff")
-        self.role_menu.grid(row=2, column=2, padx=8, pady=(0, 12), sticky="ew")
-
-        # Action buttons
-        button_frame = ctk.CTkFrame(panel, fg_color="transparent")
-        button_frame.grid(row=2, column=3, padx=(8, 16), pady=(0, 12), sticky="ew")
-        button_frame.grid_columnconfigure(0, weight=1)
-        button_frame.grid_columnconfigure(1, weight=1)
-
-        self.create_button = ctk.CTkButton(
-            button_frame,
-            text="Create with Password",
-            fg_color=Theme.ACCENT,
-            hover_color=Theme.ACCENT_HOVER,
-            command=self._create_user_with_password,
-        )
-        self.create_button.grid(row=0, column=0, padx=(0, 4), sticky="ew")
-
-        self.generate_button = ctk.CTkButton(
-            button_frame,
-            text="Generate Password",
-            fg_color=Theme.SUCCESS,
-            hover_color="#2E7D32",
-            command=self._create_user_generated,
-        )
-        self.generate_button.grid(row=0, column=1, padx=(4, 0), sticky="ew")
-
-        # Password input (for create with password)
-        ctk.CTkLabel(
-            panel,
-            text="Password",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=3, column=0, columnspan=2, padx=(16, 8), pady=(4, 4), sticky="w")
-        
-        self.password_entry = ctk.CTkEntry(
-            panel,
-            height=38,
-            placeholder_text="Enter password...",
-            show="*",
-            fg_color=Theme.PANEL_ALT,
-            border_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        )
-        self.password_entry.grid(row=4, column=0, columnspan=2, padx=(16, 8), pady=(0, 12), sticky="ew")
-        
-        # Active checkbox
-        self.active_checkbox = ctk.CTkCheckBox(
-            panel,
-            text="Active",
-            text_color=Theme.TEXT,
-        )
-        self.active_checkbox.select()
-        self.active_checkbox.grid(row=4, column=2, padx=8, pady=(0, 12), sticky="w")
-
-        # Status message
-        self.status_label = ctk.CTkLabel(
-            panel,
-            text="",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_SMALL,
-        )
-        self.status_label.grid(row=5, column=0, columnspan=4, padx=16, pady=(0, 12), sticky="w")
-
-    def _build_statistics_panel(self) -> None:
-        """Build the statistics panel."""
-        panel = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-        panel.grid(row=2, column=0, padx=28, pady=(16, 0), sticky="ew")
-        panel.grid_columnconfigure((0, 1, 2, 3), weight=1)
-
-        ctk.CTkLabel(
-            panel,
-            text="Statistics",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
-        ).grid(row=0, column=0, columnspan=4, padx=16, pady=(8, 4), sticky="w")
-
-        # Stats will be updated dynamically
-        self.stats_labels = {}
-        stat_fields = [
-            ("total_users", "Total Users"),
-            ("active_users", "Active Users"),
-            ("inactive_users", "Inactive Users"),
-            ("last_login", "Last Login"),
-        ]
-
-        for idx, (key, label) in enumerate(stat_fields):
-            container = ctk.CTkFrame(panel, fg_color="transparent")
-            container.grid(row=1, column=idx, padx=16, pady=8, sticky="ew")
-            
-            ctk.CTkLabel(
-                container,
-                text=label,
-                text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_SMALL,
-            ).pack(anchor="w")
-            
-            self.stats_labels[key] = ctk.CTkLabel(
-                container,
-                text="...",
-                text_color=Theme.TEXT,
-                font=("Segoe UI", 18, "bold"),
-            )
-            self.stats_labels[key].pack(anchor="w")
-
-    def _build_user_list(self) -> None:
-        """Build the user list with actions."""
-        list_frame = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-        list_frame.grid(row=3, column=0, padx=28, pady=(16, 28), sticky="nsew")
-        list_frame.grid_columnconfigure(0, weight=1)
-        list_frame.grid_rowconfigure(1, weight=1)
-
-        # Header
-        header_frame = ctk.CTkFrame(list_frame, fg_color="transparent")
-        header_frame.grid(row=0, column=0, padx=16, pady=(12, 8), sticky="ew")
-        header_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            header_frame,
-            text="User Accounts",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
-        ).grid(row=0, column=0, sticky="w")
-
-        # Filter
-        self.filter_menu = ctk.CTkOptionMenu(
-            header_frame,
-            values=["All Users", "Active Only", "Inactive Only"],
-            fg_color=Theme.PANEL_ALT,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-            dropdown_text_color=Theme.TEXT,
-            dropdown_fg_color=Theme.PANEL,
-            dropdown_hover_color=Theme.PANEL_ALT,
-            command=self._refresh_data,
-        )
-        self.filter_menu.set("Active Only")
-        self.filter_menu.grid(row=0, column=1, padx=8, sticky="e")
-
-        # Scrollable user list
-        self.user_list_frame = ctk.CTkScrollableFrame(
-            list_frame,
+        self.content = ctk.CTkScrollableFrame(
+            self,
             fg_color="transparent",
             scrollbar_button_color=Theme.PANEL_ALT,
             scrollbar_button_hover_color=Theme.BORDER,
         )
-        self.user_list_frame.grid(row=1, column=0, padx=8, pady=(0, 12), sticky="nsew")
+        self.content.grid(
+            row=0,
+            column=0,
+            sticky="nsew",
+        )
+        self.content.grid_columnconfigure(0, weight=1)
 
-    def _refresh_data(self, *args) -> None:
-        """Refresh all data in the view."""
-        if not self._controller:
+        self._build_layout()
+
+        self.bind(
+            "<Configure>",
+            self._schedule_resize,
+            add="+",
+        )
+
+        self.after_idle(self._apply_responsive_layout)
+
+        self._refresh_all()
+
+    # ------------------------------------------------------------------
+    # Layout
+    # ------------------------------------------------------------------
+
+    def _build_layout(self) -> None:
+        self._build_header()
+        self._build_form()
+        self._build_statistics()
+        self._build_accounts()
+
+    def _build_header(self) -> None:
+        self.header = ctk.CTkFrame(
+            self.content,
+            fg_color="transparent",
+        )
+        self.header.grid(
+            row=0,
+            column=0,
+            padx=28,
+            pady=(22, 0),
+            sticky="ew",
+        )
+        self.header.grid_columnconfigure(0, weight=1)
+
+        self.title_label = ctk.CTkLabel(
+            self.header,
+            text="User Management",
+            text_color=Theme.TEXT,
+            font=Theme.FONT_TITLE,
+        )
+        self.title_label.grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+
+        ctk.CTkLabel(
+            self.header,
+            text=(
+                "Manage real employee login credentials, passwords, "
+                "roles, and account status."
+            ),
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_BODY,
+        ).grid(
+            row=1,
+            column=0,
+            pady=(2, 0),
+            sticky="w",
+        )
+
+        ctk.CTkButton(
+            self.header,
+            text="Refresh",
+            width=100,
+            height=34,
+            fg_color=Theme.PANEL_ALT,
+            hover_color=Theme.BORDER,
+            text_color=Theme.TEXT,
+            command=self._refresh_all,
+        ).grid(
+            row=0,
+            column=1,
+            rowspan=2,
+            sticky="e",
+        )
+
+    def _build_form(self) -> None:
+        self.form = ctk.CTkFrame(
+            self.content,
+            fg_color=Theme.PANEL,
+            corner_radius=Theme.RADIUS,
+        )
+        self.form.grid(
+            row=1,
+            column=0,
+            padx=28,
+            pady=(18, 0),
+            sticky="ew",
+        )
+        self.form.grid_columnconfigure(
+            (0, 1),
+            weight=1,
+        )
+
+        ctk.CTkLabel(
+            self.form,
+            text="Employee login credentials",
+            text_color=Theme.TEXT,
+            font=Theme.FONT_HEADING,
+        ).grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(16, 4),
+            sticky="w",
+        )
+
+        ctk.CTkLabel(
+            self.form,
+            text=(
+                "Select a real employee from MongoDB. "
+                "Existing accounts can be updated."
+            ),
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_SMALL,
+        ).grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 14),
+            sticky="w",
+        )
+
+        self.employee_label = self._label("Employee")
+        self.username_label = self._label("Username")
+        self.password_label = self._label("New Password")
+        self.role_label = self._label("Role")
+
+        self.employee_menu = ctk.CTkOptionMenu(
+            self.form,
+            values=["Select Employee..."],
+            fg_color=Theme.PANEL_ALT,
+            button_color=Theme.ACCENT,
+            button_hover_color=Theme.ACCENT_HOVER,
+            dropdown_fg_color=Theme.PANEL,
+            dropdown_hover_color=Theme.PANEL_ALT,
+            command=self._employee_selected,
+        )
+
+        self.username_entry = ctk.CTkEntry(
+            self.form,
+            height=40,
+            placeholder_text="Auto-generated from employee name",
+            fg_color=Theme.PANEL_ALT,
+            border_color=Theme.BORDER,
+        )
+
+        self.password_entry = ctk.CTkEntry(
+            self.form,
+            height=40,
+            placeholder_text="Enter a new password",
+            show="*",
+            fg_color=Theme.PANEL_ALT,
+            border_color=Theme.BORDER,
+        )
+        self.password_entry.bind(
+            "<KeyRelease>",
+            self._update_password_strength,
+        )
+
+        self.role_menu = ctk.CTkOptionMenu(
+            self.form,
+            values=list(self.ROLES),
+            fg_color=Theme.PANEL_ALT,
+            button_color=Theme.ACCENT,
+            button_hover_color=Theme.ACCENT_HOVER,
+            dropdown_fg_color=Theme.PANEL,
+            dropdown_hover_color=Theme.PANEL_ALT,
+        )
+        self.role_menu.set("Staff")
+
+        self.password_hint = ctk.CTkLabel(
+            self.form,
+            text=(
+                "Use 8+ characters with upper, lower, "
+                "number, and symbol."
+            ),
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_SMALL,
+        )
+
+        self.show_password = ctk.CTkCheckBox(
+            self.form,
+            text="Show password",
+            text_color=Theme.TEXT,
+            command=self._toggle_password,
+        )
+
+        self.active_checkbox = ctk.CTkCheckBox(
+            self.form,
+            text="Activate account",
+            text_color=Theme.TEXT,
+        )
+        self.active_checkbox.select()
+
+        self.actions = ctk.CTkFrame(
+            self.form,
+            fg_color="transparent",
+        )
+        self.actions.grid_columnconfigure(
+            (0, 1),
+            weight=1,
+        )
+
+        self.save_button = ctk.CTkButton(
+            self.actions,
+            text="Save credentials",
+            fg_color=Theme.ACCENT,
+            hover_color=Theme.ACCENT_HOVER,
+            command=self._save_credentials,
+        )
+        self.save_button.grid(
+            row=0,
+            column=0,
+            padx=(0, 5),
+            sticky="ew",
+        )
+
+        self.generate_button = ctk.CTkButton(
+            self.actions,
+            text="Generate password",
+            fg_color=Theme.SUCCESS,
+            hover_color=Theme.SUCCESS_HOVER,
+            command=self._generate_credentials,
+        )
+        self.generate_button.grid(
+            row=0,
+            column=1,
+            padx=(5, 0),
+            sticky="ew",
+        )
+
+        self.status_label = ctk.CTkLabel(
+            self.form,
+            text="",
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_SMALL,
+            justify="left",
+            wraplength=720,
+        )
+
+    def _build_statistics(self) -> None:
+        self.stats = ctk.CTkFrame(
+            self.content,
+            fg_color=Theme.PANEL,
+            corner_radius=Theme.RADIUS,
+        )
+        self.stats.grid(
+            row=2,
+            column=0,
+            padx=28,
+            pady=(16, 0),
+            sticky="ew",
+        )
+
+        ctk.CTkLabel(
+            self.stats,
+            text="Account overview",
+            text_color=Theme.TEXT,
+            font=Theme.FONT_HEADING,
+        ).grid(
+            row=0,
+            column=0,
+            columnspan=4,
+            padx=18,
+            pady=(14, 6),
+            sticky="w",
+        )
+
+        self.stat_labels: dict[str, ctk.CTkLabel] = {}
+
+        statistics = (
+            ("total_users", "Total accounts"),
+            ("active_users", "Active"),
+            ("inactive_users", "Inactive"),
+            ("last_login", "Last login"),
+        )
+
+        for column, (key, title) in enumerate(statistics):
+            self.stats.grid_columnconfigure(
+                column,
+                weight=1,
+            )
+
+            item = ctk.CTkFrame(
+                self.stats,
+                fg_color="transparent",
+            )
+            item.grid(
+                row=1,
+                column=column,
+                padx=18,
+                pady=(2, 14),
+                sticky="ew",
+            )
+
             ctk.CTkLabel(
-                self,
-                text="⚠️ User Management not available. MongoDB may not be connected.",
-                text_color=Theme.DANGER,
-                font=Theme.FONT_BODY,
-            ).grid(row=4, column=0, padx=28, pady=20)
-            return
-            
-        # Refresh employees dropdown
-        self._refresh_employee_options()
-        
-        # Refresh user list
-        self._refresh_user_list()
-        
-        # Refresh statistics
-        self._refresh_statistics()
+                item,
+                text=title,
+                text_color=Theme.MUTED_TEXT,
+                font=Theme.FONT_SMALL,
+            ).pack(anchor="w")
 
-    def _refresh_employee_options(self) -> None:
-        """Refresh the employee dropdown."""
-        if not self._controller:
-            return
-            
+            value = ctk.CTkLabel(
+                item,
+                text="-",
+                text_color=Theme.TEXT,
+                font=("Segoe UI", 18, "bold"),
+            )
+            value.pack(anchor="w")
+
+            self.stat_labels[key] = value
+
+    def _build_accounts(self) -> None:
+        self.accounts = ctk.CTkFrame(
+            self.content,
+            fg_color=Theme.PANEL,
+            corner_radius=Theme.RADIUS,
+        )
+        self.accounts.grid(
+            row=3,
+            column=0,
+            padx=28,
+            pady=(16, 28),
+            sticky="ew",
+        )
+        self.accounts.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+        header = ctk.CTkFrame(
+            self.accounts,
+            fg_color="transparent",
+        )
+        header.grid(
+            row=0,
+            column=0,
+            padx=18,
+            pady=(14, 8),
+            sticky="ew",
+        )
+        header.grid_columnconfigure(
+            1,
+            weight=1,
+        )
+
+        ctk.CTkLabel(
+            header,
+            text="User accounts",
+            text_color=Theme.TEXT,
+            font=Theme.FONT_HEADING,
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+
+        self.search_entry = ctk.CTkEntry(
+            header,
+            height=34,
+            placeholder_text="Search users...",
+            fg_color=Theme.PANEL_ALT,
+            border_color=Theme.BORDER,
+        )
+        self.search_entry.grid(
+            row=0,
+            column=1,
+            padx=(16, 8),
+            sticky="ew",
+        )
+        self.search_entry.bind(
+            "<KeyRelease>",
+            lambda _event: self._refresh_users(),
+        )
+
+        self.filter_menu = ctk.CTkOptionMenu(
+            header,
+            values=[
+                "All Users",
+                "Active Only",
+                "Inactive Only",
+            ],
+            width=130,
+            fg_color=Theme.PANEL_ALT,
+            button_color=Theme.ACCENT,
+            button_hover_color=Theme.ACCENT_HOVER,
+            command=lambda _value: self._refresh_users(),
+        )
+        self.filter_menu.set("All Users")
+        self.filter_menu.grid(
+            row=0,
+            column=2,
+            sticky="e",
+        )
+
+        self.user_list = ctk.CTkScrollableFrame(
+            self.accounts,
+            height=280,
+            fg_color="transparent",
+            scrollbar_button_color=Theme.PANEL_ALT,
+            scrollbar_button_hover_color=Theme.BORDER,
+        )
+        self.user_list.grid(
+            row=1,
+            column=0,
+            padx=10,
+            pady=(0, 12),
+            sticky="ew",
+        )
+        self.user_list.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
+    # ------------------------------------------------------------------
+    # Refresh
+    # ------------------------------------------------------------------
+
+    def _refresh_all(self) -> None:
+        self._refresh_employees()
+        self._refresh_statistics()
+        self._refresh_users()
+
+    def _refresh_employees(self) -> None:
+        """
+        Load real employees from MongoDB through the controller.
+
+        The controller should return employee dictionaries containing
+        at minimum:
+
+            employee_id
+            full_name
+
+        Optional:
+
+            first_name
+            surname
+            department
+            position
+            email
+            has_account
+            username
+            role
+            status
+        """
         try:
             employees = self._controller.get_employees_without_accounts()
-            options = ["Select Employee..."] + [
-                f"{str(emp['_id'])}: {emp['full_name']} ({emp['position']})"
-                for emp in employees
-            ]
-            self.employee_menu.configure(values=options)
-            if options:
-                self.employee_menu.set(options[0])
-        except Exception as e:
-            print(f"Error refreshing employees: {e}")
 
-    def _refresh_user_list(self) -> None:
-        """Refresh the user list."""
-        if not self._controller:
-            return
-            
-        # Clear existing list
-        for widget in self.user_list_frame.winfo_children():
+            self._employees.clear()
+
+            values = ["Select Employee..."]
+
+            for employee in employees:
+                employee_id = self._get_employee_id(employee)
+
+                if employee_id is None:
+                    continue
+
+                employee_id = str(employee_id)
+
+                self._employees[employee_id] = employee
+
+                full_name = self._employee_name(employee)
+                position = str(
+                    employee.get("position")
+                    or employee.get("job_title")
+                    or "Employee"
+                )
+
+                has_account = bool(
+                    employee.get("has_account")
+                    or employee.get("user_id")
+                    or employee.get("username")
+                )
+
+                state = (
+                    "Configured"
+                    if has_account
+                    else "Needs setup"
+                )
+
+                values.append(
+                    f"{employee_id}: "
+                    f"{full_name} "
+                    f"({position}) - {state}"
+                )
+
+            self.employee_menu.configure(
+                values=values,
+            )
+
+            self.employee_menu.set(
+                values[0],
+            )
+
+        except Exception as error:
+            self._message(
+                f"Could not load employees: {error}",
+                Theme.DANGER,
+            )
+
+    def _refresh_statistics(self) -> None:
+        try:
+            stats = self._controller.get_user_statistics()
+
+            self.stat_labels["total_users"].configure(
+                text=str(
+                    stats.get(
+                        "total_users",
+                        0,
+                    )
+                )
+            )
+
+            self.stat_labels["active_users"].configure(
+                text=str(
+                    stats.get(
+                        "active_users",
+                        0,
+                    )
+                )
+            )
+
+            self.stat_labels["inactive_users"].configure(
+                text=str(
+                    stats.get(
+                        "inactive_users",
+                        0,
+                    )
+                )
+            )
+
+            self.stat_labels["last_login"].configure(
+                text=self._display_date(
+                    stats.get("last_login")
+                )
+            )
+
+        except Exception as error:
+            self._message(
+                f"Could not load statistics: {error}",
+                Theme.DANGER,
+            )
+
+    def _refresh_users(self) -> None:
+        for widget in self.user_list.winfo_children():
             widget.destroy()
 
         try:
-            # Get users
-            filter_mode = self.filter_menu.get()
-            include_inactive = filter_mode in ["All Users", "Inactive Only"]
-            users = self._controller.get_all_users(include_inactive)
-            
-            # Apply filter
-            if filter_mode == "Active Only":
-                users = [u for u in users if u.get("status") == "active"]
-            elif filter_mode == "Inactive Only":
-                users = [u for u in users if u.get("status") != "active"]
+            mode = self.filter_menu.get()
+
+            users = self._controller.get_all_users(
+                include_inactive=mode != "Active Only",
+            )
+
+            if mode == "Inactive Only":
+                users = [
+                    user
+                    for user in users
+                    if str(
+                        user.get("status", "")
+                    ).lower()
+                    != "active"
+                ]
+
+            search = (
+                self.search_entry
+                .get()
+                .lower()
+                .strip()
+            )
+
+            if search:
+                users = [
+                    user
+                    for user in users
+                    if (
+                        search
+                        in str(
+                            user.get(
+                                "username",
+                                "",
+                            )
+                        ).lower()
+                    )
+                    or (
+                        search
+                        in str(
+                            user.get(
+                                "full_name",
+                                "",
+                            )
+                        ).lower()
+                    )
+                    or (
+                        search
+                        in str(
+                            user.get(
+                                "surname",
+                                "",
+                            )
+                        ).lower()
+                    )
+                    or (
+                        search
+                        in str(
+                            user.get(
+                                "department",
+                                "",
+                            )
+                        ).lower()
+                    )
+                    or (
+                        search
+                        in str(
+                            user.get(
+                                "role",
+                                "",
+                            )
+                        ).lower()
+                    )
+                ]
 
             if not users:
+                empty = ctk.CTkFrame(
+                    self.user_list,
+                    fg_color=Theme.PANEL_ALT,
+                    corner_radius=Theme.RADIUS,
+                )
+                empty.pack(
+                    fill="x",
+                    padx=4,
+                    pady=10,
+                )
+
                 ctk.CTkLabel(
-                    self.user_list_frame,
-                    text="No users found",
+                    empty,
+                    text="No accounts found",
+                    text_color=Theme.TEXT,
+                    font=Theme.FONT_HEADING,
+                ).pack(
+                    pady=(18, 3)
+                )
+
+                ctk.CTkLabel(
+                    empty,
+                    text=(
+                        "No user accounts match the "
+                        "current search or filter."
+                    ),
                     text_color=Theme.MUTED_TEXT,
-                    font=Theme.FONT_BODY,
-                ).pack(pady=20)
+                    font=Theme.FONT_SMALL,
+                ).pack(
+                    pady=(0, 18)
+                )
+
                 return
 
-            # Create user cards
             for user in users:
-                self._create_user_card(user)
-        except Exception as e:
-            print(f"Error refreshing user list: {e}")
+                self._user_card(user)
 
-    def _create_user_card(self, user: Dict[str, Any]) -> None:
-        """Create a user card in the list."""
+        except Exception as error:
+            self._message(
+                f"Could not load user accounts: {error}",
+                Theme.DANGER,
+            )
+
+    # ------------------------------------------------------------------
+    # User cards
+    # ------------------------------------------------------------------
+
+    def _user_card(
+        self,
+        user: dict[str, Any],
+    ) -> None:
+        status = str(
+            user.get(
+                "status",
+                "active",
+            )
+        ).lower()
+
+        active = status == "active"
+
+        user_id = self._mongo_user_id(user)
+
+        username = str(
+            user.get(
+                "username",
+                "Unknown",
+            )
+            or "Unknown"
+        )
+
+        full_name = self._user_name(user)
+
+        role = str(
+            user.get(
+                "role",
+                "Staff",
+            )
+            or "Staff"
+        )
+
+        department = str(
+            user.get(
+                "department",
+                "No department",
+            )
+            or "No department"
+        )
+
+        employee_id = user.get(
+            "employee_id"
+        )
+
         card = ctk.CTkFrame(
-            self.user_list_frame,
+            self.user_list,
             fg_color=Theme.PANEL_ALT,
             corner_radius=Theme.RADIUS,
-            border_color=Theme.BORDER if user.get("_id") == self._selected_user_id else "transparent",
-            border_width=2,
         )
-        card.pack(fill="x", pady=4, padx=4)
-        card.grid_columnconfigure(0, weight=1)
+        card.pack(
+            fill="x",
+            padx=4,
+            pady=5,
+        )
 
-        # User info
-        info_frame = ctk.CTkFrame(card, fg_color="transparent")
-        info_frame.grid(row=0, column=0, padx=16, pady=8, sticky="ew")
-        info_frame.grid_columnconfigure(1, weight=1)
+        card.grid_columnconfigure(
+            0,
+            weight=1,
+        )
 
-        # Status indicator
-        status_color = Theme.SUCCESS if user.get("status") == "active" else Theme.DANGER
+        heading = ctk.CTkFrame(
+            card,
+            fg_color="transparent",
+        )
+        heading.grid(
+            row=0,
+            column=0,
+            padx=14,
+            pady=(12, 4),
+            sticky="ew",
+        )
+        heading.grid_columnconfigure(
+            0,
+            weight=1,
+        )
+
         ctk.CTkLabel(
-            info_frame,
-            text="●" if user.get("status") == "active" else "○",
-            text_color=status_color,
-            font=("Segoe UI", 14),
-        ).grid(row=0, column=0, padx=(0, 8), sticky="w")
-
-        # Username and name
-        name_text = f"{user.get('username', 'Unknown')} - {user.get('full_name', '')}"
-        if user.get('employee_full_name'):
-            name_text = f"{user.get('username', 'Unknown')} - {user.get('employee_full_name')}"
-        
-        ctk.CTkLabel(
-            info_frame,
-            text=name_text,
+            heading,
+            text=f"{username}  —  {full_name}",
             text_color=Theme.TEXT,
             font=("Segoe UI", 14, "bold"),
-        ).grid(row=0, column=1, sticky="w")
-
-        # Role
-        role_badge = ctk.CTkFrame(
-            info_frame,
-            fg_color=Theme.ACCENT,
-            corner_radius=Theme.RADIUS,
+        ).grid(
+            row=0,
+            column=0,
+            sticky="w",
         )
-        role_badge.grid(row=0, column=2, padx=8, sticky="e")
-        ctk.CTkLabel(
-            role_badge,
-            text=user.get("role", "Staff"),
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 11),
-            padx=8,
-            pady=2,
-        ).pack()
-
-        # Action buttons
-        action_frame = ctk.CTkFrame(card, fg_color="transparent")
-        action_frame.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="ew")
-        action_frame.grid_columnconfigure(0, weight=1)
-
-        # Show more info in expandable section
-        detail_text = f"Department: {user.get('department', 'N/A')} | Last Login: {user.get('last_login_at', 'Never')}"
-        if user.get('last_login_at'):
-            try:
-                dt = datetime.fromisoformat(user['last_login_at'].replace('Z', '+00:00'))
-                detail_text = f"Department: {user.get('department', 'N/A')} | Last Login: {dt.strftime('%Y-%m-%d %H:%M')}"
-            except:
-                pass
 
         ctk.CTkLabel(
-            action_frame,
-            text=detail_text,
+            heading,
+            text="ACTIVE" if active else "INACTIVE",
+            fg_color=(
+                Theme.SUCCESS
+                if active
+                else Theme.DANGER
+            ),
+            text_color="#FFFFFF",
+            corner_radius=10,
+            padx=9,
+            pady=3,
+            font=Theme.FONT_SMALL,
+        ).grid(
+            row=0,
+            column=1,
+            sticky="e",
+        )
+
+        details = (
+            f"{role}  |  "
+            f"{department}  |  "
+            f"Employee ID: {employee_id or '—'}  |  "
+            f"Last login: "
+            f"{self._display_date(user.get('last_login_at'))}"
+        )
+
+        ctk.CTkLabel(
+            card,
+            text=details,
             text_color=Theme.MUTED_TEXT,
             font=Theme.FONT_SMALL,
-        ).grid(row=0, column=0, sticky="w")
+            justify="left",
+            wraplength=800,
+        ).grid(
+            row=1,
+            column=0,
+            padx=14,
+            pady=(0, 8),
+            sticky="w",
+        )
 
-        # Action buttons
-        button_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
-        button_frame.grid(row=0, column=1, sticky="e")
+        actions = ctk.CTkFrame(
+            card,
+            fg_color="transparent",
+        )
+        actions.grid(
+            row=2,
+            column=0,
+            padx=14,
+            pady=(0, 12),
+            sticky="ew",
+        )
 
-        # Reset password button
-        reset_btn = ctk.CTkButton(
-            button_frame,
-            text="Reset Password",
-            width=100,
-            height=28,
+        ctk.CTkButton(
+            actions,
+            text="Reset password",
+            width=125,
+            height=30,
             fg_color=Theme.WARNING,
-            hover_color="#F57C00",
-            font=Theme.FONT_SMALL,
-            command=lambda uid=str(user["_id"]): self._reset_password(uid),
+            hover_color=Theme.WARNING,
+            command=lambda: self._reset_password(
+                user_id,
+                username,
+            ),
+        ).pack(
+            side="left",
+            padx=(0, 6),
         )
-        reset_btn.pack(side="left", padx=4)
 
-        # Toggle status button
-        status_text = "Deactivate" if user.get("status") == "active" else "Activate"
-        status_color = Theme.DANGER if user.get("status") == "active" else Theme.SUCCESS
-        status_btn = ctk.CTkButton(
-            button_frame,
-            text=status_text,
-            width=90,
-            height=28,
-            fg_color=status_color,
-            hover_color="#C62828" if user.get("status") == "active" else "#2E7D32",
-            font=Theme.FONT_SMALL,
-            command=lambda uid=str(user["_id"]), status=user.get("status"): 
-                self._toggle_user_status(uid, status != "active"),
+        ctk.CTkButton(
+            actions,
+            text=(
+                "Deactivate"
+                if active
+                else "Activate"
+            ),
+            width=105,
+            height=30,
+            fg_color=(
+                Theme.DANGER
+                if active
+                else Theme.SUCCESS
+            ),
+            hover_color=(
+                Theme.DANGER_HOVER
+                if active
+                else Theme.SUCCESS_HOVER
+            ),
+            command=lambda: self._change_status(
+                user_id,
+                not active,
+            ),
+        ).pack(
+            side="left",
+            padx=6,
         )
-        status_btn.pack(side="left", padx=4)
 
-        # Delete button (only for admins)
-        del_btn = ctk.CTkButton(
-            button_frame,
-            text="🗑️",
-            width=32,
-            height=28,
-            fg_color=Theme.DANGER,
-            hover_color="#C62828",
-            font=Theme.FONT_SMALL,
-            command=lambda uid=str(user["_id"]): self._delete_user(uid),
+        ctk.CTkButton(
+            actions,
+            text="Delete",
+            width=70,
+            height=30,
+            fg_color=Theme.PANEL,
+            hover_color=Theme.DANGER,
+            text_color=Theme.DANGER,
+            command=lambda: self._delete_user(
+                user_id,
+                username,
+            ),
+        ).pack(
+            side="right",
         )
-        del_btn.pack(side="left", padx=4)
 
-    def _refresh_statistics(self) -> None:
-        """Refresh the statistics panel."""
-        if not self._controller:
+    # ------------------------------------------------------------------
+    # Employee selection
+    # ------------------------------------------------------------------
+
+    def _employee_selected(
+        self,
+        selection: str,
+    ) -> None:
+        if selection.startswith(
+            "Select Employee"
+        ):
             return
-            
-        try:
-            stats = self._controller.get_user_statistics()
-            
-            self.stats_labels["total_users"].configure(text=str(stats.get("total_users", 0)))
-            self.stats_labels["active_users"].configure(text=str(stats.get("active_users", 0)))
-            self.stats_labels["inactive_users"].configure(text=str(stats.get("inactive_users", 0)))
-            
-            last_login = stats.get("last_login")
-            if last_login:
-                try:
-                    dt = datetime.fromisoformat(last_login.replace('Z', '+00:00'))
-                    self.stats_labels["last_login"].configure(text=dt.strftime("%Y-%m-%d %H:%M"))
-                except:
-                    self.stats_labels["last_login"].configure(text=str(last_login)[:16])
-            else:
-                self.stats_labels["last_login"].configure(text="Never")
-        except Exception as e:
-            print(f"Error refreshing statistics: {e}")
 
-    def _create_user_with_password(self) -> None:
-        """Create a user with a specific password."""
-        if not self._controller:
-            self.status_label.configure(
-                text="❌ User Management not available",
-                text_color=Theme.DANGER,
+        employee_id = (
+            selection
+            .split(":", 1)[0]
+            .strip()
+        )
+
+        employee = self._employees.get(
+            employee_id
+        )
+
+        if not employee:
+            return
+
+        # Clear previous form state.
+        self.username_entry.delete(
+            0,
+            "end",
+        )
+
+        self.password_entry.delete(
+            0,
+            "end",
+        )
+
+        self._update_password_strength()
+
+        # Fill the employee's existing username if
+        # the controller supplied one.
+        existing_username = str(
+            employee.get(
+                "username",
+                "",
             )
-            return
-            
+            or ""
+        ).strip()
+
+        if existing_username:
+            self.username_entry.insert(
+                0,
+                existing_username,
+            )
+        else:
+            self.username_entry.insert(
+                0,
+                self._generate_username(
+                    employee
+                ),
+            )
+
+        existing_role = str(
+            employee.get(
+                "role",
+                "",
+            )
+            or ""
+        )
+
+        if existing_role in self.ROLES:
+            self.role_menu.set(
+                existing_role
+            )
+        else:
+            self.role_menu.set(
+                "Staff"
+            )
+
+        existing_status = str(
+            employee.get(
+                "status",
+                "active",
+            )
+            or "active"
+        ).lower()
+
+        if existing_status == "active":
+            self.active_checkbox.select()
+        else:
+            self.active_checkbox.deselect()
+
+        if employee.get("has_account"):
+            self.save_button.configure(
+                text="Update credentials"
+            )
+        else:
+            self.save_button.configure(
+                text="Save credentials"
+            )
+
+    # ------------------------------------------------------------------
+    # Save / generate / reset
+    # ------------------------------------------------------------------
+
+    def _save_credentials(self) -> None:
+        """
+        Create or update the MongoDB user account.
+
+        The controller/service is responsible for:
+            - locating users by employee_id
+            - hashing the password
+            - storing password_hash
+            - storing role/status
+            - enforcing unique usernames
+        """
         try:
-            # Get selected employee
-            employee_selection = self.employee_menu.get()
-            if employee_selection.startswith("Select Employee"):
-                raise ValueError("Please select an employee.")
-            
-            employee_id = employee_selection.split(":")[0]
-            username = self.username_entry.get().strip()
-            if not username:
-                # Auto-generate username
-                employee = self._controller.get_employee_by_id(employee_id)
-                if employee:
-                    username = self._controller._generate_username(employee["full_name"])
-            
-            password = self.password_entry.get()
+            employee_id = (
+                self._selected_employee_id()
+            )
+
+            username = self._username()
+
+            password = (
+                self.password_entry
+                .get()
+            )
+
             if not password:
-                raise ValueError("Please enter a password.")
-            
+                raise ValueError(
+                    "Enter a new password or "
+                    "use Generate password."
+                )
+
             role = self.role_menu.get()
-            active = bool(self.active_checkbox.get())
-            
-            user = self._controller.create_user_with_password(
-                employee_id=employee_id,
-                username=username,
-                password=password,
-                role=role,
-                active=active,
-            )
-            
-            self.status_label.configure(
-                text=f"✅ User {username} created successfully!",
-                text_color=Theme.SUCCESS,
-            )
-            self.password_entry.delete(0, "end")
-            self._refresh_data()
-            
-        except Exception as e:
-            self.status_label.configure(
-                text=f"❌ Error: {str(e)}",
-                text_color=Theme.DANGER,
+
+            active = bool(
+                self.active_checkbox.get()
             )
 
-    def _create_user_generated(self) -> None:
-        """Create a user with an auto-generated password."""
-        if not self._controller:
-            self.status_label.configure(
-                text="❌ User Management not available",
-                text_color=Theme.DANGER,
-            )
-            return
-            
-        try:
-            # Get selected employee
-            employee_selection = self.employee_menu.get()
-            if employee_selection.startswith("Select Employee"):
-                raise ValueError("Please select an employee.")
-            
-            employee_id = employee_selection.split(":")[0]
-            username = self.username_entry.get().strip()
-            role = self.role_menu.get()
-            active = bool(self.active_checkbox.get())
-            
-            if username:
-                # Create with provided username
-                user, password = self._controller.create_user_with_generated_password(
+            user = (
+                self._controller
+                .create_user_with_password(
                     employee_id=employee_id,
                     username=username,
+                    password=password,
                     role=role,
                     active=active,
                 )
-            else:
-                # Create from employee
-                user, password = self._controller.create_user_from_employee(
-                    employee_id=employee_id,
-                    role=role,
-                    active=active,
-                )
-            
-            self.status_label.configure(
-                text=f"✅ User created! Password: {password}",
-                text_color=Theme.SUCCESS,
-            )
-            self.password_entry.delete(0, "end")
-            
-            # Show password in a popup
-            self._show_password_popup(user.get("username", "Unknown"), password)
-            
-            self._refresh_data()
-            
-        except Exception as e:
-            self.status_label.configure(
-                text=f"❌ Error: {str(e)}",
-                text_color=Theme.DANGER,
             )
 
-    def _show_password_popup(self, username: str, password: str) -> None:
-        """Show a popup with the generated password."""
-        popup = ctk.CTkToplevel(self)
-        popup.title("Generated Password")
-        popup.geometry("400x200")
-        popup.resizable(False, False)
-        popup.configure(fg_color=Theme.BG)
-        
-        # Make it modal
+            self.password_entry.delete(
+                0,
+                "end",
+            )
+
+            self._update_password_strength()
+
+            self._message(
+                (
+                    f"Credentials saved for "
+                    f"{user.get('username', username)}."
+                ),
+                Theme.SUCCESS,
+            )
+
+            self._refresh_all()
+
+        except Exception as error:
+            self._message(
+                str(error),
+                Theme.DANGER,
+            )
+
+    def _generate_credentials(self) -> None:
+        try:
+            employee_id = (
+                self._selected_employee_id()
+            )
+
+            username = (
+                self.username_entry
+                .get()
+                .strip()
+            )
+
+            role = self.role_menu.get()
+
+            active = bool(
+                self.active_checkbox.get()
+            )
+
+            if username:
+                (
+                    user,
+                    password,
+                ) = (
+                    self._controller
+                    .create_user_with_generated_password(
+                        employee_id=employee_id,
+                        username=username,
+                        role=role,
+                        active=active,
+                    )
+                )
+            else:
+                (
+                    user,
+                    password,
+                ) = (
+                    self._controller
+                    .create_user_from_employee(
+                        employee_id=employee_id,
+                        role=role,
+                        active=active,
+                    )
+                )
+
+            self._password_popup(
+                user.get(
+                    "username",
+                    username,
+                ),
+                password,
+            )
+
+            self._message(
+                "Account credentials saved successfully.",
+                Theme.SUCCESS,
+            )
+
+            self._refresh_all()
+
+        except Exception as error:
+            self._message(
+                str(error),
+                Theme.DANGER,
+            )
+
+    def _reset_password(
+        self,
+        user_id: str,
+        username: str,
+    ) -> None:
+        try:
+            password = (
+                self._controller
+                .reset_user_password_generated(
+                    user_id
+                )
+            )
+
+            self._password_popup(
+                username,
+                password,
+            )
+
+            self._message(
+                f"Password reset for {username}.",
+                Theme.SUCCESS,
+            )
+
+        except Exception as error:
+            self._message(
+                str(error),
+                Theme.DANGER,
+            )
+
+    # ------------------------------------------------------------------
+    # Account status
+    # ------------------------------------------------------------------
+
+    def _change_status(
+        self,
+        user_id: str,
+        active: bool,
+    ) -> None:
+        try:
+            self._controller.set_user_status(
+                user_id,
+                active,
+            )
+
+            self._message(
+                (
+                    "Account activated."
+                    if active
+                    else "Account deactivated."
+                ),
+                Theme.SUCCESS,
+            )
+
+            self._refresh_all()
+
+        except Exception as error:
+            self._message(
+                str(error),
+                Theme.DANGER,
+            )
+
+    # ------------------------------------------------------------------
+    # Delete
+    # ------------------------------------------------------------------
+
+    def _delete_user(
+        self,
+        user_id: str,
+        username: str,
+    ) -> None:
+        dialog = ctk.CTkToplevel(
+            self
+        )
+
+        dialog.title(
+            "Delete account"
+        )
+
+        dialog.geometry(
+            "400x180"
+        )
+
+        dialog.resizable(
+            False,
+            False,
+        )
+
+        dialog.configure(
+            fg_color=Theme.BG
+        )
+
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ctk.CTkLabel(
+            dialog,
+            text="Delete this account?",
+            text_color=Theme.TEXT,
+            font=Theme.FONT_HEADING,
+        ).pack(
+            pady=(22, 8)
+        )
+
+        ctk.CTkLabel(
+            dialog,
+            text=(
+                f"'{username}' will be permanently removed."
+            ),
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_BODY,
+        ).pack(
+            pady=(0, 16)
+        )
+
+        buttons = ctk.CTkFrame(
+            dialog,
+            fg_color="transparent",
+        )
+        buttons.pack()
+
+        ctk.CTkButton(
+            buttons,
+            text="Cancel",
+            command=dialog.destroy,
+        ).pack(
+            side="left",
+            padx=6,
+        )
+
+        def confirm() -> None:
+            dialog.destroy()
+
+            try:
+                self._controller.delete_user(
+                    user_id
+                )
+
+                self._message(
+                    f"Deleted {username}.",
+                    Theme.SUCCESS,
+                )
+
+                self._refresh_all()
+
+            except Exception as error:
+                self._message(
+                    str(error),
+                    Theme.DANGER,
+                )
+
+        ctk.CTkButton(
+            buttons,
+            text="Delete",
+            fg_color=Theme.DANGER,
+            hover_color=Theme.DANGER_HOVER,
+            command=confirm,
+        ).pack(
+            side="left",
+            padx=6,
+        )
+
+    # ------------------------------------------------------------------
+    # Generated password popup
+    # ------------------------------------------------------------------
+
+    def _password_popup(
+        self,
+        username: str,
+        password: str,
+    ) -> None:
+        popup = ctk.CTkToplevel(
+            self
+        )
+
+        popup.title(
+            "Generated password"
+        )
+
+        popup.geometry(
+            "440x250"
+        )
+
+        popup.resizable(
+            False,
+            False,
+        )
+
+        popup.configure(
+            fg_color=Theme.BG
+        )
+
         popup.transient(self)
         popup.grab_set()
-        
+
         ctk.CTkLabel(
             popup,
-            text="🔑 User Created Successfully",
-            text_color=Theme.SUCCESS,
+            text="Save this password now",
+            text_color=Theme.TEXT,
             font=Theme.FONT_HEADING,
-        ).pack(pady=(20, 10))
-        
+        ).pack(
+            pady=(24, 6)
+        )
+
         ctk.CTkLabel(
             popup,
             text=f"Username: {username}",
-            text_color=Theme.TEXT,
+            text_color=Theme.MUTED_TEXT,
             font=Theme.FONT_BODY,
-        ).pack(pady=5)
-        
+        ).pack(
+            pady=4
+        )
+
+        value = ctk.CTkEntry(
+            popup,
+            width=330,
+            height=42,
+            justify="center",
+            font=("Consolas", 14, "bold"),
+        )
+
+        value.insert(
+            0,
+            password,
+        )
+
+        value.configure(
+            state="readonly"
+        )
+
+        value.pack(
+            pady=10
+        )
+
         ctk.CTkLabel(
             popup,
-            text=f"Password: {password}",
-            text_color=Theme.TEXT,
-            font=("Segoe UI", 14, "bold"),
-        ).pack(pady=5)
-        
-        ctk.CTkLabel(
-            popup,
-            text="Please save this password securely.\nThe user will be prompted to change it on first login.",
+            text=(
+                "Share it securely. "
+                "The password is not stored in plain text."
+            ),
             text_color=Theme.MUTED_TEXT,
             font=Theme.FONT_SMALL,
-            justify="center",
-        ).pack(pady=10)
-        
+        ).pack(
+            pady=(0, 12)
+        )
+
         ctk.CTkButton(
             popup,
-            text="OK",
-            width=100,
+            text="Close",
             fg_color=Theme.ACCENT,
             hover_color=Theme.ACCENT_HOVER,
             command=popup.destroy,
-        ).pack(pady=10)
+        ).pack()
 
-    def _reset_password(self, user_id: str) -> None:
-        """Reset a user's password."""
-        if not self._controller:
-            return
-            
-        try:
-            # Confirm with dialog
-            confirm = ctk.CTkToplevel(self)
-            confirm.title("Confirm Password Reset")
-            confirm.geometry("350x150")
-            confirm.resizable(False, False)
-            confirm.configure(fg_color=Theme.BG)
-            confirm.transient(self)
-            confirm.grab_set()
-            
-            ctk.CTkLabel(
-                confirm,
-                text="Reset user password?",
-                text_color=Theme.TEXT,
-                font=Theme.FONT_HEADING,
-            ).pack(pady=(20, 10))
-            
-            ctk.CTkLabel(
-                confirm,
-                text="A new password will be generated.",
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _selected_employee_id(self) -> str:
+        selected = (
+            self.employee_menu
+            .get()
+        )
+
+        if selected.startswith(
+            "Select Employee"
+        ):
+            raise ValueError(
+                "Select an employee first."
+            )
+
+        employee_id = (
+            selected
+            .split(":", 1)[0]
+            .strip()
+        )
+
+        if not employee_id:
+            raise ValueError(
+                "The selected employee does not have "
+                "a valid employee_id."
+            )
+
+        return employee_id
+
+    def _username(self) -> str:
+        username = (
+            self.username_entry
+            .get()
+            .strip()
+            .lower()
+        )
+
+        if username:
+            return username
+
+        employee = self._employees.get(
+            self._selected_employee_id()
+        )
+
+        if not employee:
+            raise ValueError(
+                "Could not identify the selected employee."
+            )
+
+        return self._generate_username(
+            employee
+        )
+
+    @staticmethod
+    def _generate_username(
+        employee: dict[str, Any],
+    ) -> str:
+        """
+        Generate a username from the real MongoDB employee
+        identity.
+
+        Examples:
+
+            Siyanda Nkosi
+            -> siyanda.nkosi
+
+            John Smith
+            -> john.smith
+        """
+        first_name = str(
+            employee.get(
+                "first_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        surname = str(
+            employee.get(
+                "surname",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if first_name and surname:
+            first = (
+                first_name
+                .lower()
+                .replace("&", "and")
+                .replace(" ", "")
+            )
+
+            last = (
+                surname
+                .lower()
+                .replace("&", "and")
+                .replace(" ", "")
+            )
+
+            return f"{first}.{last}"
+
+        full_name = str(
+            employee.get(
+                "full_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        parts = [
+            part
+            for part in (
+                full_name
+                .lower()
+                .replace("&", "and")
+                .split()
+            )
+            if part
+        ]
+
+        if len(parts) >= 2:
+            return f"{parts[0]}.{parts[-1]}"
+
+        if parts:
+            return parts[0]
+
+        raise ValueError(
+            "The employee does not have a usable name "
+            "for username generation."
+        )
+
+    @staticmethod
+    def _get_employee_id(
+        employee: dict[str, Any],
+    ) -> Any:
+        """
+        Return the application's employee_id.
+
+        MongoDB's ObjectId (_id) is intentionally NOT used
+        as the employee relationship.
+        """
+        value = employee.get(
+            "employee_id"
+        )
+
+        if value is not None:
+            return value
+
+        # Support an existing application field called "id"
+        # if the employee collection uses it as the business ID.
+        value = employee.get(
+            "id"
+        )
+
+        if value is not None:
+            return value
+
+        return None
+
+    @staticmethod
+    def _employee_name(
+        employee: dict[str, Any],
+    ) -> str:
+        full_name = str(
+            employee.get(
+                "full_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if full_name:
+            return full_name
+
+        first_name = str(
+            employee.get(
+                "first_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        surname = str(
+            employee.get(
+                "surname",
+                "",
+            )
+            or ""
+        ).strip()
+
+        name = (
+            f"{first_name} {surname}"
+        ).strip()
+
+        return name or "Unnamed employee"
+
+    @staticmethod
+    def _user_name(
+        user: dict[str, Any],
+    ) -> str:
+        full_name = str(
+            user.get(
+                "full_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if full_name:
+            return full_name
+
+        first_name = str(
+            user.get(
+                "first_name",
+                "",
+            )
+            or ""
+        ).strip()
+
+        surname = str(
+            user.get(
+                "surname",
+                "",
+            )
+            or ""
+        ).strip()
+
+        name = (
+            f"{first_name} {surname}"
+        ).strip()
+
+        return name or "Untangled employee"
+
+    @staticmethod
+    def _mongo_user_id(
+        user: dict[str, Any],
+    ) -> str:
+        """
+        Return the MongoDB user identifier used by the
+        controller's account-management methods.
+
+        The user document's _id is used here because this
+        identifies the USER document, not the employee.
+        """
+        value = user.get("_id")
+
+        if value is None:
+            value = user.get("id")
+
+        if value is None:
+            raise ValueError(
+                "User account does not contain a valid MongoDB user ID."
+            )
+
+        return str(value)
+
+    def _toggle_password(self) -> None:
+        self.password_entry.configure(
+            show=(
+                ""
+                if self.show_password.get()
+                else "*"
+            )
+        )
+
+    def _update_password_strength(
+        self,
+        _event: object = None,
+    ) -> None:
+        password = (
+            self.password_entry
+            .get()
+        )
+
+        if not password:
+            self.password_hint.configure(
+                text=(
+                    "Use 8+ characters with upper, "
+                    "lower, number, and symbol."
+                ),
                 text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_BODY,
-            ).pack(pady=5)
-            
-            button_frame = ctk.CTkFrame(confirm, fg_color="transparent")
-            button_frame.pack(pady=10)
-            
-            def do_reset():
-                confirm.destroy()
-                try:
-                    new_password = self._controller.reset_user_password_generated(user_id)
-                    self._show_password_popup("User", new_password)
-                    self._refresh_data()
-                except Exception as e:
-                    self.status_label.configure(
-                        text=f"❌ Error: {str(e)}",
-                        text_color=Theme.DANGER,
-                    )
-            
-            ctk.CTkButton(
-                button_frame,
-                text="Reset Password",
-                fg_color=Theme.WARNING,
-                hover_color="#F57C00",
-                command=do_reset,
-            ).pack(side="left", padx=5)
-            
-            ctk.CTkButton(
-                button_frame,
-                text="Cancel",
-                fg_color=Theme.PANEL_ALT,
-                hover_color=Theme.BORDER,
-                text_color=Theme.TEXT,
-                command=confirm.destroy,
-            ).pack(side="left", padx=5)
-            
-        except Exception as e:
-            self.status_label.configure(
-                text=f"❌ Error: {str(e)}",
-                text_color=Theme.DANGER,
+            )
+            return
+
+        checks = (
+            len(password) >= 8,
+            any(
+                character.isupper()
+                for character in password
+            ),
+            any(
+                character.islower()
+                for character in password
+            ),
+            any(
+                character.isdigit()
+                for character in password
+            ),
+            any(
+                not character.isalnum()
+                for character in password
+            ),
+        )
+
+        score = sum(checks)
+
+        if score == 5:
+            message = "Strong password"
+            color = Theme.SUCCESS
+
+        elif score >= 3:
+            message = (
+                "Medium password — add more "
+                "character types"
+            )
+            color = Theme.WARNING
+
+        else:
+            message = (
+                "Weak password — add uppercase, "
+                "number, and symbol"
+            )
+            color = Theme.DANGER
+
+        self.password_hint.configure(
+            text=message,
+            text_color=color,
+        )
+
+    # ------------------------------------------------------------------
+    # Responsive layout
+    # ------------------------------------------------------------------
+
+    def _schedule_resize(
+        self,
+        _event: object = None,
+    ) -> None:
+        if self._resize_job is not None:
+            try:
+                self.after_cancel(
+                    self._resize_job
+                )
+            except Exception:
+                pass
+
+        self._resize_job = self.after(
+            80,
+            self._apply_responsive_layout,
+        )
+
+    def _apply_responsive_layout(
+        self,
+    ) -> None:
+        self._resize_job = None
+
+        compact = (
+            self.winfo_width() < 760
+        )
+
+        if compact == self._compact:
+            return
+
+        self._compact = compact
+
+        padding = (
+            14
+            if compact
+            else 28
+        )
+
+        for widget in (
+            self.header,
+            self.form,
+            self.stats,
+            self.accounts,
+        ):
+            widget.grid_configure(
+                padx=padding
             )
 
-    def _toggle_user_status(self, user_id: str, active: bool) -> None:
-        """Toggle user active status."""
-        if not self._controller:
-            return
-            
-        try:
-            self._controller.set_user_status(user_id, active)
-            status_text = "activated" if active else "deactivated"
-            self.status_label.configure(
-                text=f"✅ User {status_text} successfully.",
-                text_color=Theme.SUCCESS,
-            )
-            self._refresh_data()
-        except Exception as e:
-            self.status_label.configure(
-                text=f"❌ Error: {str(e)}",
-                text_color=Theme.DANGER,
+        if compact:
+            self._compact_form_layout()
+        else:
+            self._desktop_form_layout()
+
+    def _desktop_form_layout(self) -> None:
+        self.employee_label.grid(
+            row=2,
+            column=0,
+            padx=(18, 8),
+            sticky="w",
+        )
+
+        self.username_label.grid(
+            row=2,
+            column=1,
+            padx=(8, 18),
+            sticky="w",
+        )
+
+        self.employee_menu.grid(
+            row=3,
+            column=0,
+            padx=(18, 8),
+            pady=(4, 10),
+            sticky="ew",
+        )
+
+        self.username_entry.grid(
+            row=3,
+            column=1,
+            padx=(8, 18),
+            pady=(4, 10),
+            sticky="ew",
+        )
+
+        self.password_label.grid(
+            row=4,
+            column=0,
+            padx=(18, 8),
+            sticky="w",
+        )
+
+        self.role_label.grid(
+            row=4,
+            column=1,
+            padx=(8, 18),
+            sticky="w",
+        )
+
+        self.password_entry.grid(
+            row=5,
+            column=0,
+            padx=(18, 8),
+            pady=(4, 4),
+            sticky="ew",
+        )
+
+        self.role_menu.grid(
+            row=5,
+            column=1,
+            padx=(8, 18),
+            pady=(4, 4),
+            sticky="ew",
+        )
+
+        self.password_hint.grid(
+            row=6,
+            column=0,
+            padx=(18, 8),
+            pady=(0, 8),
+            sticky="w",
+        )
+
+        self.show_password.grid(
+            row=6,
+            column=1,
+            padx=(8, 18),
+            pady=(0, 8),
+            sticky="w",
+        )
+
+        self.active_checkbox.grid(
+            row=7,
+            column=0,
+            padx=18,
+            pady=(0, 14),
+            sticky="w",
+        )
+
+        self.actions.grid(
+            row=7,
+            column=1,
+            padx=(8, 18),
+            pady=(0, 14),
+            sticky="ew",
+        )
+
+        self.status_label.grid(
+            row=8,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 14),
+            sticky="w",
+        )
+
+    def _compact_form_layout(self) -> None:
+        self.employee_label.grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            padx=18,
+            sticky="w",
+        )
+
+        self.employee_menu.grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(4, 10),
+            sticky="ew",
+        )
+
+        self.username_label.grid(
+            row=4,
+            column=0,
+            columnspan=2,
+            padx=18,
+            sticky="w",
+        )
+
+        self.username_entry.grid(
+            row=5,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(4, 10),
+            sticky="ew",
+        )
+
+        self.password_label.grid(
+            row=6,
+            column=0,
+            columnspan=2,
+            padx=18,
+            sticky="w",
+        )
+
+        self.password_entry.grid(
+            row=7,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(4, 4),
+            sticky="ew",
+        )
+
+        self.password_hint.grid(
+            row=8,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 6),
+            sticky="w",
+        )
+
+        self.show_password.grid(
+            row=9,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 10),
+            sticky="w",
+        )
+
+        self.role_label.grid(
+            row=10,
+            column=0,
+            columnspan=2,
+            padx=18,
+            sticky="w",
+        )
+
+        self.role_menu.grid(
+            row=11,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(4, 10),
+            sticky="ew",
+        )
+
+        self.active_checkbox.grid(
+            row=12,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 10),
+            sticky="w",
+        )
+
+        self.actions.grid(
+            row=13,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 12),
+            sticky="ew",
+        )
+
+        self.status_label.grid(
+            row=14,
+            column=0,
+            columnspan=2,
+            padx=18,
+            pady=(0, 14),
+            sticky="w",
+        )
+
+    # ------------------------------------------------------------------
+    # Generic UI helpers
+    # ------------------------------------------------------------------
+
+    def _label(
+        self,
+        text: str,
+    ) -> ctk.CTkLabel:
+        return ctk.CTkLabel(
+            self.form,
+            text=text,
+            text_color=Theme.MUTED_TEXT,
+            font=Theme.FONT_SMALL,
+        )
+
+    def _message(
+        self,
+        text: str,
+        color: str,
+    ) -> None:
+        self.status_label.configure(
+            text=text,
+            text_color=color,
+        )
+
+    @staticmethod
+    def _display_date(
+        value: object,
+    ) -> str:
+        if not value:
+            return "Never"
+
+        if isinstance(
+            value,
+            datetime,
+        ):
+            return value.strftime(
+                "%Y-%m-%d %H:%M"
             )
 
-    def _delete_user(self, user_id: str) -> None:
-        """Delete a user account."""
-        if not self._controller:
-            return
-            
         try:
-            # Confirm deletion
-            confirm = ctk.CTkToplevel(self)
-            confirm.title("Confirm Deletion")
-            confirm.geometry("350x150")
-            confirm.resizable(False, False)
-            confirm.configure(fg_color=Theme.BG)
-            confirm.transient(self)
-            confirm.grab_set()
-            
-            ctk.CTkLabel(
-                confirm,
-                text="⚠️ Delete User Account?",
-                text_color=Theme.DANGER,
-                font=Theme.FONT_HEADING,
-            ).pack(pady=(20, 10))
-            
-            ctk.CTkLabel(
-                confirm,
-                text="This action cannot be undone.",
-                text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_BODY,
-            ).pack(pady=5)
-            
-            button_frame = ctk.CTkFrame(confirm, fg_color="transparent")
-            button_frame.pack(pady=10)
-            
-            def do_delete():
-                confirm.destroy()
-                try:
-                    self._controller.delete_user(user_id)
-                    self.status_label.configure(
-                        text="✅ User deleted successfully.",
-                        text_color=Theme.SUCCESS,
-                    )
-                    self._refresh_data()
-                except Exception as e:
-                    self.status_label.configure(
-                        text=f"❌ Error: {str(e)}",
-                        text_color=Theme.DANGER,
-                    )
-            
-            ctk.CTkButton(
-                button_frame,
-                text="Delete",
-                fg_color=Theme.DANGER,
-                hover_color="#C62828",
-                command=do_delete,
-            ).pack(side="left", padx=5)
-            
-            ctk.CTkButton(
-                button_frame,
-                text="Cancel",
-                fg_color=Theme.PANEL_ALT,
-                hover_color=Theme.BORDER,
-                text_color=Theme.TEXT,
-                command=confirm.destroy,
-            ).pack(side="left", padx=5)
-            
-        except Exception as e:
-            self.status_label.configure(
-                text=f"❌ Error: {str(e)}",
-                text_color=Theme.DANGER,
+            parsed = datetime.fromisoformat(
+                str(value).replace(
+                    "Z",
+                    "+00:00",
+                )
             )
+
+            return parsed.strftime(
+                "%Y-%m-%d %H:%M"
+            )
+
+        except (
+            ValueError,
+            TypeError,
+        ):
+            return str(value)[:16]

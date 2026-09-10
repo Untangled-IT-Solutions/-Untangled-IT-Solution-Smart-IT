@@ -1,15 +1,19 @@
-# app/controllers/login_controller.py
-"""Login controller."""
+"""Login controller - MongoDB only."""
+
+from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 
+from app.models.account import AuthSession, UserAccount
 from app.services.auth_service import AuthService
 from app.services.mongo_auth_service import MongoAuthService
+from app.services.backend_api_client import BackendAPIError
 
 
 class LoginController:
-    """Handles login actions requested by the login view with dual auth support."""
+    """Authenticate users using MongoDB only."""
 
     def __init__(
         self,
@@ -18,63 +22,113 @@ class LoginController:
         mongo_auth_service: Optional[MongoAuthService] = None,
     ) -> None:
         self._auth_service = auth_service
-        self._on_success = on_success
         self._mongo_auth = mongo_auth_service
-
-    @property
-    def mongo_auth(self) -> Optional[MongoAuthService]:
-        """Return the optional MongoDB authentication service."""
-        return self._mongo_auth
+        self._on_success = on_success
+        self._using_mongo_session = False
 
     def login(self, username: str, password: str) -> tuple[bool, str]:
-        """Authenticate credentials and trigger the next app state."""
-        # Try MongoDB authentication first if available
-        if self._mongo_auth:
-            try:
-                print(f"🔄 Attempting MongoDB login for: {username}")
-                user = self._mongo_auth.authenticate(username, password)
-                print(f"✅ MongoDB login successful for: {username}")
-                # Store the user in the auth service for session management
-                self._auth_service._current_session = self._create_session_from_mongo_user(user)
-                self._on_success()
-                return True, ""
-            except (ValueError, PermissionError) as error:
-                print(f"❌ MongoDB login failed: {error}")
-                # If MongoDB auth fails, try SQLite auth
-                pass
-        
-        # Fallback to SQLite authentication
+        """Authenticate credentials using MongoDB."""
+        username = username.strip()
+
+        # MUST use MongoDB - no SQLite fallback
+        if not self._mongo_auth:
+            return False, "MongoDB authentication is not available."
+
         try:
-            print(f"🔄 Attempting SQLite login for: {username}")
-            self._auth_service.authenticate(username, password)
-            print(f"✅ SQLite login successful for: {username}")
-        except ValueError as error:
-            print(f"❌ SQLite login failed: {error}")
-            return False, str(error)
-        else:
+            authentication = self._mongo_auth.authenticate(username, password)
+
+            self._auth_service._current_session = (
+                self._create_session_from_mongo_response(authentication)
+            )
+            self._using_mongo_session = True
             self._on_success()
             return True, ""
-    
-    def _create_session_from_mongo_user(self, user: dict):
-        """Create a session object from MongoDB user data."""
-        from app.models.account import UserAccount, AuthSession
-        
-        # Create a UserAccount from MongoDB user
+
+        except PermissionError as error:
+            return False, str(error)
+        except BackendAPIError as error:
+            return False, str(error)
+        except ValueError as error:
+            return False, str(error)
+        except Exception as error:
+            print(f"MongoDB login error: {error}")
+            return False, f"Login error: {error}"
+
+    def _create_session_from_mongo_response(
+        self,
+        authentication: dict[str, Any],
+    ) -> AuthSession:
+        """
+        MongoAuthService returns:
+        {"user": ..., "employee": ..., "session": ..., "token": ...}
+        """
+        user = authentication.get("user") or {}
+        employee = authentication.get("employee") or {}
+        mongo_session = authentication.get("session") or {}
+
+        employee_value = (
+            employee.get("employee_id")
+            or employee.get("id")
+            or employee.get("sqlite_id")
+            or user.get("employee_id")
+            or user.get("sqlite_employee_id")
+            or 0
+        )
+
+        if employee_value is None or employee_value == "":
+            employee_id = None
+        else:
+            try:
+                employee_id = int(employee_value)
+            except (TypeError, ValueError):
+                employee_id = str(employee_value)
+
+        login_time = self._format_datetime(
+            mongo_session.get("login_at") or user.get("last_login_at")
+        )
+
         account = UserAccount(
-            id=user.get('_id'),
-            employee_id=user.get('employee_id'),
-            username=user.get('username'),
-            full_name=user.get('full_name'),
-            role=user.get('role'),
-            status=user.get('status'),
-            last_login_at=user.get('last_login_at', ''),
+            id=None,
+            employee_id=employee_id,
+            username=str(user.get("username") or ""),
+            full_name=str(
+                user.get("full_name")
+                or employee.get("full_name")
+                or "Untangled User"
+            ),
+            role=str(user.get("role") or "Staff"),
+            status=str(user.get("status") or "active"),
+            last_login_at=login_time,
         )
-        
-        # Create an AuthSession
-        session = AuthSession(
-            id=1,  # Placeholder ID
+
+        return AuthSession(
+            id=0,
             account=account,
-            login_at=user.get('last_login_at', ''),
-            last_activity_at='',
+            login_at=login_time,
+            last_activity_at=login_time,
         )
-        return session
+
+    def logout(self) -> None:
+        """Close the active session."""
+        if self._using_mongo_session and self._mongo_auth:
+            try:
+                self._mongo_auth.logout()
+            except Exception as error:
+                print(f"MongoDB logout error: {error}")
+
+            self._auth_service._current_session = None
+            self._using_mongo_session = False
+            return
+
+        try:
+            self._auth_service.logout()
+        except Exception as error:
+            print(f"SQLite logout error: {error}")
+
+    @staticmethod
+    def _format_datetime(value: object) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)

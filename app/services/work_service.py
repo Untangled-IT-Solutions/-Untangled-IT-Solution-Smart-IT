@@ -6,6 +6,7 @@ from pathlib import Path
 from app.database.database import Database
 from app.models.task import Task
 from app.services.notification_service import NotificationService
+from app.services.email_notification_service import EmailNotificationService
 
 
 class WorkService:
@@ -28,9 +29,11 @@ class WorkService:
         self,
         database: Database,
         notification_service: NotificationService | None = None,
+        email_service: EmailNotificationService | None = None,
     ) -> None:
         self._database = database
         self._notifications = notification_service
+        self._email = email_service
 
     @property
     def db_path(self) -> Path:
@@ -44,9 +47,11 @@ class WorkService:
                 INSERT INTO tasks (
                     title, description, category, assigned_employee, assigned_by,
                     priority, status, department, created_date, start_date, due_date,
-                    estimated_hours, actual_hours, checklist, comments, attachments, updated_at
+                    estimated_hours, actual_hours, checklist, comments, attachments,
+                    hardware_serial, external_reference, sprint_bucket,
+                    story_points, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
                 """,
                 (
                     task.title,
@@ -64,6 +69,10 @@ class WorkService:
                     task.checklist,
                     task.comments,
                     task.attachments,
+                    task.hardware_serial,
+                    task.external_reference,
+                    task.sprint_bucket,
+                    task.story_points,
                 ),
             )
             task_id = int(cursor.lastrowid)
@@ -73,6 +82,7 @@ class WorkService:
             saved = self._get_by_id(task_id, connection)
 
         self._record_work_activity(saved, "Work created")
+        self._notify_assignee(saved)
         return saved
 
     def get_all_work(
@@ -89,9 +99,13 @@ class WorkService:
         parameters: list[object] = []
 
         if search:
-            query += " AND (title LIKE ? OR description LIKE ? OR comments LIKE ?)"
+            query += (
+                " AND (title LIKE ? OR description LIKE ? OR comments LIKE ? "
+                "OR hardware_serial LIKE ? OR external_reference LIKE ? "
+                "OR category LIKE ? OR assigned_employee LIKE ? OR department LIKE ? OR status LIKE ?)"
+            )
             search_pattern = f"%{search}%"
-            parameters.extend([search_pattern, search_pattern, search_pattern])
+            parameters.extend([search_pattern] * 9)
 
         filters = (
             ("assigned_employee", assigned_employee),
@@ -137,7 +151,9 @@ class WorkService:
                 SET title = ?, description = ?, category = ?, assigned_employee = ?,
                     assigned_by = ?, priority = ?, status = ?, department = ?,
                     start_date = ?, due_date = ?, estimated_hours = ?, actual_hours = ?,
-                    checklist = ?, comments = ?, attachments = ?, updated_at = CURRENT_TIMESTAMP
+                    checklist = ?, comments = ?, attachments = ?, hardware_serial = ?,
+                    external_reference = ?, sprint_bucket = ?, story_points = ?,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?;
                 """,
                 (
@@ -156,6 +172,10 @@ class WorkService:
                     task.checklist,
                     task.comments,
                     task.attachments,
+                    task.hardware_serial,
+                    task.external_reference,
+                    task.sprint_bucket,
+                    task.story_points,
                     task.id,
                 ),
             )
@@ -166,6 +186,8 @@ class WorkService:
             saved = self._get_by_id(task.id, connection)
 
         self._record_work_activity(saved, "Work updated")
+        if saved.assigned_employee and saved.assigned_employee != previous.assigned_employee:
+            self._notify_assignee(saved)
         return saved
 
     def update_status(self, task_id: int, status: str) -> None:
@@ -201,6 +223,7 @@ class WorkService:
             connection.commit()
 
         self._record_work_activity(task, f"Work assigned to {assigned_employee}")
+        self._notify_assignee(task)
 
     def delete_work(self, task_id: int) -> None:
         """Remove a Work record and refresh the former assignee's current task."""
@@ -254,14 +277,38 @@ class WorkService:
         if self._notifications is None:
             return
         self._notifications.record_activity("Work", f"{action}: {task.title}", "Task", task.id)
+        if task.status == "Inbox" and not task.assigned_employee:
+            notification_title = "New Sprint Planning task"
+            notification_message = (
+                f"{task.assigned_by or 'Management'} submitted '{task.title}' "
+                "for prioritisation and assignment."
+            )
+        else:
+            notification_title = "Work update"
+            notification_message = f"{action}: {task.title}"
         self._notifications.notify_operational(
             ("Operations Manager",),
-            "Work update",
-            f"{action}: {task.title}",
+            notification_title,
+            notification_message,
             "Work",
             "Task",
             task.id,
         )
+
+    def _notify_assignee(self, task: Task) -> None:
+        if not task.assigned_employee:
+            return
+        if self._notifications is not None:
+            self._notifications.notify_user(
+                task.assigned_employee,
+                f"You were assigned: {task.title}",
+                "Work",
+                "New task assignment",
+                "Task",
+                task.id,
+            )
+        if self._email is not None:
+            self._email.send_task_assignment(task)
 
     @staticmethod
     def _add_history(
@@ -289,7 +336,7 @@ class WorkService:
             """
             SELECT title FROM tasks
             WHERE assigned_employee = ?
-            AND status NOT IN ('Completed', 'Cancelled')
+            AND status NOT IN ('Inbox', 'Completed', 'Cancelled', 'Archived')
             ORDER BY CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END,
                      due_date ASC, id DESC
             LIMIT 1;
@@ -339,4 +386,16 @@ class WorkService:
             comments=row["comments"] or "",
             checklist=row["checklist"] or "[]",
             attachments=row["attachments"] or "[]",
+            hardware_serial=row["hardware_serial"] or "",
+            external_reference=row["external_reference"] or "",
+            sprint_bucket=(
+                row["sprint_bucket"] or "Backlog"
+                if "sprint_bucket" in row.keys()
+                else "Backlog"
+            ),
+            story_points=(
+                int(row["story_points"] or 3)
+                if "story_points" in row.keys()
+                else 3
+            ),
         )

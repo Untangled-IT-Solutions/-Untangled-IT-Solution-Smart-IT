@@ -107,6 +107,10 @@ class Database:
                 category TEXT NOT NULL DEFAULT 'Administration',
                 checklist TEXT NOT NULL DEFAULT '[]',
                 attachments TEXT NOT NULL DEFAULT '[]',
+                hardware_serial TEXT,
+                external_reference TEXT,
+                sprint_bucket TEXT NOT NULL DEFAULT 'Backlog',
+                story_points INTEGER NOT NULL DEFAULT 3,
                 updated_at TEXT,
                 legacy_work_item_id INTEGER UNIQUE,
                 FOREIGN KEY (assigned_to) REFERENCES users(id),
@@ -151,7 +155,37 @@ class Database:
                 timeline TEXT NOT NULL DEFAULT '',
                 budget_placeholder TEXT NOT NULL DEFAULT 'Budget pending',
                 documents TEXT NOT NULL DEFAULT '',
-                activity_feed TEXT NOT NULL DEFAULT ''
+                activity_feed TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT 'Internal Project',
+                client_name TEXT NOT NULL DEFAULT '',
+                owner TEXT NOT NULL DEFAULT '',
+                start_date TEXT NOT NULL DEFAULT '',
+                due_date TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS project_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                document_type TEXT NOT NULL DEFAULT 'General',
+                added_by TEXT NOT NULL DEFAULT '',
+                added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS project_updates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL,
+                update_text TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT '',
+                progress INTEGER NOT NULL DEFAULT 0,
+                added_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS work_items (
@@ -195,7 +229,30 @@ class Database:
                 source_type TEXT NOT NULL DEFAULT 'Manual',
                 source_id INTEGER,
                 recurrence TEXT NOT NULL DEFAULT 'None',
+                start_time TEXT,
+                end_time TEXT,
+                location TEXT,
+                attendees TEXT NOT NULL DEFAULT '',
+                agenda TEXT,
+                minutes TEXT,
+                summary TEXT,
+                decisions TEXT,
+                action_items TEXT,
+                reminder_minutes INTEGER NOT NULL DEFAULT -1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS email_delivery_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                category TEXT NOT NULL,
+                reference_type TEXT,
+                reference_id INTEGER,
+                status TEXT NOT NULL,
+                error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sent_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS approvals (
@@ -321,6 +378,10 @@ class Database:
                 "category": "TEXT NOT NULL DEFAULT 'Administration'",
                 "checklist": "TEXT NOT NULL DEFAULT '[]'",
                 "attachments": "TEXT NOT NULL DEFAULT '[]'",
+                "hardware_serial": "TEXT",
+                "external_reference": "TEXT",
+                "sprint_bucket": "TEXT NOT NULL DEFAULT 'Backlog'",
+                "story_points": "INTEGER NOT NULL DEFAULT 3",
                 "updated_at": "TEXT",
                 "legacy_work_item_id": "INTEGER",
             },
@@ -339,7 +400,19 @@ class Database:
         self._ensure_columns(
             connection,
             "calendar_events",
-            {"recurrence": "TEXT NOT NULL DEFAULT 'None'"},
+            {
+                "recurrence": "TEXT NOT NULL DEFAULT 'None'",
+                "start_time": "TEXT",
+                "end_time": "TEXT",
+                "location": "TEXT",
+                "attendees": "TEXT NOT NULL DEFAULT ''",
+                "agenda": "TEXT",
+                "minutes": "TEXT",
+                "summary": "TEXT",
+                "decisions": "TEXT",
+                "action_items": "TEXT",
+                "reminder_minutes": "INTEGER NOT NULL DEFAULT -1",
+            },
         )
         self._ensure_columns(
             connection,
@@ -352,8 +425,17 @@ class Database:
                 "budget_placeholder": "TEXT NOT NULL DEFAULT 'Budget pending'",
                 "documents": "TEXT NOT NULL DEFAULT ''",
                 "activity_feed": "TEXT NOT NULL DEFAULT ''",
+                "category": "TEXT NOT NULL DEFAULT 'Internal Project'",
+                "client_name": "TEXT NOT NULL DEFAULT ''",
+                "owner": "TEXT NOT NULL DEFAULT ''",
+                "start_date": "TEXT NOT NULL DEFAULT ''",
+                "due_date": "TEXT NOT NULL DEFAULT ''",
+                "created_by": "TEXT NOT NULL DEFAULT ''",
+                "created_at": "TEXT",
+                "updated_at": "TEXT",
             },
         )
+
     @staticmethod
     def _create_indexes(connection: sqlite3.Connection) -> None:
         """Create indexes after additive column migrations have completed."""
@@ -366,17 +448,39 @@ class Database:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_employee_unique
             ON users(employee_id)
             WHERE employee_id IS NOT NULL;
+
+            CREATE INDEX IF NOT EXISTS idx_projects_category
+            ON projects(category);
+
+            CREATE INDEX IF NOT EXISTS idx_project_documents_project
+            ON project_documents(project_id);
+
+            CREATE INDEX IF NOT EXISTS idx_project_updates_project
+            ON project_updates(project_id);
             """
         )
 
     @staticmethod
     def _normalise_work_categories(connection: sqlite3.Connection) -> None:
-        """Map pre-v0.3 category names into the shared Work category vocabulary."""
+        """Map older work categories and statuses into the current vocabulary."""
         connection.execute(
             "UPDATE tasks SET category = 'Technical' WHERE category = 'Technical Job';"
         )
         connection.execute(
+            """
+            UPDATE employees
+            SET permissions = 'Full Sprint Access, Executive Briefs, Company Health, Compliance'
+            WHERE employee_number = 'UTS-001';
+            """
+        )
+        connection.execute(
             "UPDATE tasks SET category = 'Software' WHERE category = 'Software Development';"
+        )
+        connection.execute(
+            "UPDATE tasks SET status = 'To Do' WHERE status IN ('New', 'Assigned');"
+        )
+        connection.execute(
+            "UPDATE tasks SET status = 'In Development' WHERE status = 'Waiting Review';"
         )
 
     def _ensure_columns(
@@ -414,6 +518,15 @@ class Database:
 
     def _seed_employees(self, connection: sqlite3.Connection) -> None:
         """Seed the initial Untangled IT Solutions team once."""
+        approved_emails = {
+            "UTS-003": "uhadebe@untangledits.co.za",
+            "UTS-004": "g.wesi@untangledits.co.za",
+            "UTS-005": "dtlotlwana@untangledits.co.za",
+            "UTS-006": "bngobese@untangledits.co.za",
+            "UTS-007": "snkosi@untangledits.co.za",
+            "UTS-008": "nhlatshwayo@untangled.co.za",
+            "UTS-009": "blehasa@untangleits.co.za",
+        }
         employees = (
             {
                 "employee_number": "UTS-001",
@@ -426,7 +539,7 @@ class Database:
                 "reports_to": "None",
                 "mentor": "None",
                 "skills": "Leadership, Strategy, Governance",
-                "permissions": "Executive Briefs, Company Health, Compliance",
+                "permissions": "Full Sprint Access, Executive Briefs, Company Health, Compliance",
                 "performance_score": 95,
                 "training_progress": 100,
             },
@@ -435,13 +548,13 @@ class Database:
                 "first_name": "Benny",
                 "last_name": "Moremi",
                 "full_name": "Benny Moremi",
-                "position": "Business Lead",
+                "position": "Director",
                 "department": "Management",
-                "role": "Business Lead",
+                "role": "Director",
                 "reports_to": "Director",
                 "mentor": "Director",
                 "skills": "Business Development, Approvals, Reporting",
-                "permissions": "Approvals, Reports, Operations",
+                "permissions": "Full Sprint Access, Approvals, Reports, Operations",
                 "performance_score": 88,
                 "training_progress": 82,
             },
@@ -535,10 +648,29 @@ class Database:
                 "performance_score": 72,
                 "training_progress": 45,
             },
+            {
+                "employee_number": "UTS-009",
+                "first_name": "Botshelo",
+                "last_name": "Lehasa",
+                "full_name": "Botshelo Lehasa",
+                "position": "Employee",
+                "department": "Operations",
+                "role": "Staff",
+                "reports_to": "Operations Manager",
+                "mentor": "Ubuntu Hadebe",
+                "skills": "Operations Support",
+                "permissions": "View Own Work, Update Own Work Status",
+                "performance_score": 0,
+                "training_progress": 0,
+            },
         )
 
         for employee in employees:
             email_name = employee["full_name"].lower().replace(" ", ".")
+            employee_email = approved_emails.get(
+                employee["employee_number"],
+                f"{email_name}@untangleditsolutions.co.za",
+            )
             connection.execute(
                 """
                 INSERT OR IGNORE INTO employees (
@@ -577,7 +709,7 @@ class Database:
                     employee["role"],
                     employee["reports_to"],
                     employee["mentor"],
-                    f"{email_name}@untangleditsolutions.co.za",
+                    employee_email,
                     "",
                     "Active",
                     "Full Time",
@@ -601,6 +733,28 @@ class Database:
                 """,
                 (employee["permissions"], employee["employee_number"]),
             )
+            if employee["employee_number"] in approved_emails:
+                connection.execute(
+                    "UPDATE employees SET email = ? WHERE employee_number = ?;",
+                    (employee_email, employee["employee_number"]),
+                )
+
+        # Keep the three sprint leaders current when an older database is opened.
+        connection.execute(
+            """
+            UPDATE employees
+            SET position = 'Director', role = 'Director',
+                permissions = 'Full Sprint Access, Approvals, Reports, Operations'
+            WHERE employee_number = 'UTS-002';
+            """
+        )
+        connection.execute(
+            """
+            UPDATE employees
+            SET permissions = 'Full Sprint Access, Manage Staff, Assign Work, Edit Work, View Reports'
+            WHERE employee_number = 'UTS-003';
+            """
+        )
 
     def _apply_timestamp_migrations(self, connection: sqlite3.Connection) -> None:
         """Normalize known app-managed timestamps to UTC and mark the migration complete."""

@@ -24,6 +24,10 @@ class Task:
     comments: str = ""
     checklist: str = "[]"
     attachments: str = "[]"
+    hardware_serial: str = ""
+    external_reference: str = ""
+    sprint_bucket: str = "Backlog"
+    story_points: int = 3
 
 
 @dataclass(frozen=True)

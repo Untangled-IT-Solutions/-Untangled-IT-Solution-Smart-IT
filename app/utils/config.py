@@ -1,3 +1,4 @@
+
 # app/utils/config.py
 """Application configuration with all constants."""
 
@@ -12,7 +13,7 @@ load_dotenv()
 # MongoDB Configuration
 # ============================================================
 # Use the database that has your quotes (test database)
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://siyandankosideveloper_db_user:EjWpFrL50jYq5Zdr@untangled-nexus.j0fmkag.mongodb.net/?retryWrites=true&w=majority")
+MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "test")  # Changed to "test" for quotes
 
 # ============================================================

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class Employee:
     """Represents an Untangled IT Solutions employee."""
 
-    id: int | None
+    id: int | str | None
     employee_number: str
     first_name: str
     last_name: str
@@ -30,3 +30,8 @@ class Employee:
     performance_score: float
     training_progress: float
     notes: str
+    username: str = ""
+    team: str = ""
+    slack_handle: str = ""
+    timezone: str = "Africa/Johannesburg (SAST)"
+    presence: str = "offline"

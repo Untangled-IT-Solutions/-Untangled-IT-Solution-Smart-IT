@@ -8,6 +8,7 @@ from pathlib import Path
 from app.database.database import Database
 from app.models.calendar_event import CalendarEvent
 from app.services.notification_service import NotificationService
+from app.services.email_notification_service import EmailNotificationService
 
 
 class CalendarService:
@@ -33,9 +34,11 @@ class CalendarService:
         self,
         database: Database,
         notification_service: NotificationService | None = None,
+        email_service: EmailNotificationService | None = None,
     ) -> None:
         self._database = database
         self._notifications = notification_service
+        self._email = email_service
 
     @property
     def db_path(self) -> Path:
@@ -100,6 +103,19 @@ class CalendarService:
         department: str,
         details: str,
         recurrence: str = "None",
+        *,
+        start_time: str = "",
+        end_time: str = "",
+        location: str = "",
+        attendees: str = "",
+        agenda: str = "",
+        minutes: str = "",
+        summary: str = "",
+        decisions: str = "",
+        action_items: str = "",
+        reminder_minutes: int = -1,
+        send_invites: bool = False,
+        send_summary: bool = False,
     ) -> CalendarEvent:
         """Create one manual event after rejecting an exact duplicate."""
         self._validate_date(start_date, "Start date")
@@ -126,10 +142,17 @@ class CalendarService:
             cursor = connection.execute(
                 """
                 INSERT INTO calendar_events (
-                    title, event_type, start_date, end_date, department, details, source_type, recurrence, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'Manual', ?, ?);
+                    title, event_type, start_date, end_date, department, details,
+                    source_type, recurrence, start_time, end_time, location,
+                    attendees, agenda, minutes, summary, decisions, action_items, reminder_minutes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'Manual', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
-                (title.strip(), event_type, start_date, end_date, department, details.strip(), recurrence, now_ts),
+                (
+                    title.strip(), event_type, start_date, end_date, department,
+                    details.strip(), recurrence, start_time, end_time, location.strip(),
+                    attendees.strip(), agenda.strip(), minutes.strip(), summary.strip(),
+                    decisions.strip(), action_items.strip(), self._reminder_minutes(reminder_minutes), now_ts,
+                ),
             )
             connection.commit()
             row = connection.execute(
@@ -152,6 +175,10 @@ class CalendarService:
                 "CalendarEvent",
                 event.id,
             )
+        if send_invites and event.event_type == "Meeting" and self._email is not None:
+            self._email.send_meeting_invite(event)
+        if send_summary and event.event_type == "Meeting" and self._email is not None:
+            self._email.send_meeting_summary(event)
         return event
 
     def update_event(
@@ -164,6 +191,19 @@ class CalendarService:
         department: str,
         details: str,
         recurrence: str = "None",
+        *,
+        start_time: str = "",
+        end_time: str = "",
+        location: str = "",
+        attendees: str = "",
+        agenda: str = "",
+        minutes: str = "",
+        summary: str = "",
+        decisions: str = "",
+        action_items: str = "",
+        reminder_minutes: int = -1,
+        send_invites: bool = False,
+        send_summary: bool = False,
     ) -> CalendarEvent:
         """Update one manual calendar event."""
         self._validate_manual_event(event_id)
@@ -180,7 +220,9 @@ class CalendarService:
                 """
                 UPDATE calendar_events
                 SET title = ?, event_type = ?, start_date = ?, end_date = ?,
-                    department = ?, details = ?, recurrence = ?
+                    department = ?, details = ?, recurrence = ?, start_time = ?,
+                    end_time = ?, location = ?, attendees = ?, agenda = ?, minutes = ?,
+                    summary = ?, decisions = ?, action_items = ?, reminder_minutes = ?
                 WHERE id = ? AND source_type = 'Manual';
                 """,
                 (
@@ -191,6 +233,16 @@ class CalendarService:
                     department,
                     details.strip(),
                     recurrence,
+                    start_time,
+                    end_time,
+                    location.strip(),
+                    attendees.strip(),
+                    agenda.strip(),
+                    minutes.strip(),
+                    summary.strip(),
+                    decisions.strip(),
+                    action_items.strip(),
+                    self._reminder_minutes(reminder_minutes),
                     event_id,
                 ),
             )
@@ -203,7 +255,53 @@ class CalendarService:
             self._notifications.record_activity(
                 "Calendar", f"Calendar event updated: {event.title}", "CalendarEvent", event.id
             )
+        if event.event_type == "Meeting" and self._email is not None:
+            if send_invites:
+                self._email.send_meeting_invite(event)
+            if send_summary:
+                self._email.send_meeting_summary(event)
         return event
+
+    def send_meeting_invites(self, event_id: int) -> bool:
+        """Send an invitation for an existing meeting and retain an audit entry."""
+        event = self.get_event(event_id)
+        if event.event_type != "Meeting":
+            raise ValueError("Invitations can only be sent for Meeting events.")
+        return bool(self._email and self._email.send_meeting_invite(event))
+
+    def send_meeting_summary(self, event_id: int) -> bool:
+        """Email recorded minutes and summary to all meeting attendees."""
+        event = self.get_event(event_id)
+        if event.event_type != "Meeting":
+            raise ValueError("Summaries can only be sent for Meeting events.")
+        if not event.summary and not event.minutes:
+            raise ValueError("Add a meeting summary or minutes before sending.")
+        return bool(self._email and self._email.send_meeting_summary(event))
+
+    def send_meeting_report(
+        self,
+        recipients: str,
+        meeting_title: str,
+        summary: str,
+        report_path: Path,
+        event_id: int | None = None,
+    ) -> bool:
+        """Email a generated written report without attaching meeting audio."""
+        return bool(
+            self._email
+            and self._email.send_meeting_report(
+                recipients, meeting_title, summary, report_path, event_id
+            )
+        )
+
+    def get_event(self, event_id: int) -> CalendarEvent:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM calendar_events WHERE id = ?;", (event_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError("Calendar event was not found.")
+        return self._row_to_event(row)
 
     def delete_event(self, event_id: int) -> None:
         """Delete one manual calendar event."""
@@ -248,6 +346,16 @@ class CalendarService:
             source_type="Task",
             source_id=row["id"],
             recurrence="None",
+            start_time="",
+            end_time="",
+            location="",
+            attendees="",
+            agenda="",
+            minutes="",
+            summary="",
+            decisions="",
+            action_items="",
+            reminder_minutes=-1,
             created_at=row["created_at"],
         )
 
@@ -264,6 +372,16 @@ class CalendarService:
             source_type=row["source_type"],
             source_id=row["source_id"],
             recurrence=row["recurrence"] if "recurrence" in row.keys() else "None",
+            start_time=row["start_time"] or "" if "start_time" in row.keys() else "",
+            end_time=row["end_time"] or "" if "end_time" in row.keys() else "",
+            location=row["location"] or "" if "location" in row.keys() else "",
+            attendees=row["attendees"] or "" if "attendees" in row.keys() else "",
+            agenda=row["agenda"] or "" if "agenda" in row.keys() else "",
+            minutes=row["minutes"] or "" if "minutes" in row.keys() else "",
+            summary=row["summary"] or "" if "summary" in row.keys() else "",
+            decisions=row["decisions"] or "" if "decisions" in row.keys() else "",
+            action_items=row["action_items"] or "" if "action_items" in row.keys() else "",
+            reminder_minutes=int(row["reminder_minutes"] or -1) if "reminder_minutes" in row.keys() else -1,
             created_at=row["created_at"],
         )
 
@@ -311,6 +429,16 @@ class CalendarService:
                         source_type=event.source_type,
                         source_id=event.source_id,
                         recurrence=event.recurrence,
+                        start_time=event.start_time,
+                        end_time=event.end_time,
+                        location=event.location,
+                        attendees=event.attendees,
+                        agenda=event.agenda,
+                        minutes=event.minutes,
+                        summary=event.summary,
+                        decisions=event.decisions,
+                        action_items=event.action_items,
+                        reminder_minutes=event.reminder_minutes,
                         created_at=event.created_at,
                     )
                 )
@@ -323,3 +451,12 @@ class CalendarService:
             datetime.strptime(value, "%Y-%m-%d")
         except ValueError as error:
             raise ValueError(f"{label} must use YYYY-MM-DD.") from error
+
+    @staticmethod
+    def _reminder_minutes(value: object) -> int:
+        """Normalise user-selected reminder lead time for safe local storage."""
+        try:
+            minutes = int(value)
+        except (TypeError, ValueError):
+            return -1
+        return minutes if minutes in {-1, 0, 5, 10, 15, 30, 60} else -1

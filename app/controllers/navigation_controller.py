@@ -1,261 +1,364 @@
 # app/controllers/navigation_controller.py
-"""Navigation controller for managing view switching."""
+"""Navigation controller - MongoDB only with role-based access."""
 
 import customtkinter as ctk
-from typing import Optional
+from typing import Optional, Callable, List, Dict, Any
 
-from app.controllers.dashboard_controller import DashboardController
-from app.controllers.people_controller import PeopleController
-from app.controllers.work_controller import WorkController
-from app.controllers.attendance_controller import AttendanceController
-from app.controllers.calendar_controller import CalendarController
-from app.controllers.approval_controller import ApprovalController
-from app.controllers.office_request_controller import OfficeRequestController
-from app.controllers.notification_controller import NotificationController
-from app.controllers.project_controller import ProjectController
-from app.controllers.task_controller import TaskController
-from app.controllers.report_controller import ReportController
-from app.controllers.settings_controller import SettingsController
-from app.controllers.quote_sync_controller import QuoteSyncController
-from app.controllers.user_management_controller import UserManagementController
-from app.services.auth_service import AuthService
-from app.services.mongo_auth_service import MongoAuthService
-from app.services.mongodb_service import MongoDBService
-from app.views.dashboard_view import DashboardView
-from app.views.people_view import PeopleView
-from app.views.work_view import WorkView
-from app.views.attendance_view import AttendanceView
-from app.views.calendar_view import CalendarView
-from app.views.approval_view import ApprovalView
-from app.views.office_request_view import OfficeRequestView
-from app.views.notification_view import NotificationView
-from app.views.project_view import ProjectView
-from app.views.task_view import TaskView
-from app.views.report_view import ReportView
-from app.views.settings_view import SettingsView
-from app.views.quote_sync_view import QuoteSyncView
-from app.views.quote_management_view import QuoteManagementView
-from app.views.user_management_view import UserManagementView
 from app.utils.theme import Theme
 
 
 class NavigationController:
-    """Manages navigation between different views in the main window."""
+    """Navigation controller for Untangled Workplace - MongoDB only."""
 
-    NAV_ITEMS = (
-        "Dashboard", "Work", "People", "Attendance", "Calendar", "Approvals",
-        "Office Requests", "Notifications", "Projects", "Tasks", "Reports",
-        "Quote Sync", "Quote Management", "User Management", "Settings",
-    )
+    # Role-based access control
+    MANAGER_ROLES = [
+        "Director", "Branch Manager", "Business Lead", "Operations Manager",
+        "Super User", "Superuser", "Administrator", "Admin", "Super Admin",
+    ]
+    STAFF_ROLES = ["Staff", "Intern"]
+    
+    # Who can see User Management
+    USER_MANAGEMENT_ROLES = [
+        "Director", "Branch Manager", "Operations Manager",
+        "Administrator", "Admin", "Super Admin",
+    ]
+    
+    # Who can see Quote Sync
+    QUOTE_SYNC_ROLES = [
+        "Director", "Branch Manager", "Business Lead", "Operations Manager",
+        "Super User", "Superuser", "Administrator", "Admin", "Super Admin",
+    ]
+    # Sprint Planning is deliberately person-restricted, rather than role-restricted.
+    # Usernames are included because installations may store either a short login name
+    # or the person's full name on the account.
+    SPRINT_PLANNING_USERS = {
+        "ubuntu", "ubuntu hadebe", "benny", "benny moremi",
+        "zandile", "zandil maredi", "zandile maredi", "zandile johanna maredi",
+    }
 
     def __init__(
         self,
-        dashboard_controller: DashboardController,
-        people_controller: PeopleController,
-        work_controller: WorkController,
-        attendance_controller: AttendanceController,
-        calendar_controller: CalendarController,
-        approval_controller: ApprovalController,
-        office_request_controller: OfficeRequestController,
-        notification_controller: NotificationController,
-        project_controller: ProjectController,
-        task_controller: TaskController,
-        report_controller: ReportController,
-        settings_controller: SettingsController,
-        auth_service: AuthService,
-        quote_sync_controller: Optional[QuoteSyncController] = None,
-        user_management_controller: Optional[UserManagementController] = None,
-        mongo_auth_service: Optional[MongoAuthService] = None,
-        mongodb_service: Optional[MongoDBService] = None,
-    ) -> None:
-        """Initialize navigation with all controllers."""
-        self._controllers = {
-            "Dashboard": dashboard_controller,
-            "People": people_controller,
-            "Work": work_controller,
-            "Attendance": attendance_controller,
-            "Calendar": calendar_controller,
-            "Approvals": approval_controller,
-            "Office Requests": office_request_controller,
-            "Notifications": notification_controller,
-            "Projects": project_controller,
-            "Tasks": task_controller,
-            "Reports": report_controller,
-            "Settings": settings_controller,
-            "Quote Sync": quote_sync_controller,
-            "Quote Management": quote_sync_controller,
-            "User Management": user_management_controller,
-        }
-        self._auth_service = auth_service
-        self._mongo_auth = mongo_auth_service
-        self._mongodb = mongodb_service
-        self._work_controller = work_controller
-        self._people_controller = people_controller
-        self._notification_controller = notification_controller
+        navigate_callback: Optional[Callable] = None,
+        get_current_account: Optional[Callable] = None,
+        **services,
+    ):
+        self._navigate_callback = navigate_callback
+        self._get_current_account = get_current_account
+
+        self._database = services.get("database")
+        self._mongodb = services.get("mongodb_service")
+        self._notification_service = services.get("notification_service")
+        self._people_service = services.get("people_service")
+        self._auth_service = services.get("auth_service")
+        self._work_service = services.get("work_service")
+        self._backend_api = services.get("backend_api")
+
         self._main_window = None
         self._current_view = "Dashboard"
-        self._views_cache = {}
+        self._current_role = "Staff"
+        self._current_username = ""
+        self._current_full_name = ""
 
-    def attach_view(self, main_window) -> None:
-        """Attach the main window reference."""
-        self._main_window = main_window
-        # Load initial view with a small delay to ensure UI is ready
-        self._main_window.after(100, lambda: self.navigate("Dashboard"))
-
-    def navigate(self, destination: str) -> None:
-        """Navigate to a specific view."""
-        if not self._main_window:
-            return
-
-        # Update sidebar active state
-        self._main_window.set_active_nav(destination)
-
-        # Get the controller
-        controller = self._controllers.get(destination)
+        # Get current user info
+        self._update_user_info()
         
-        # Create or get cached view
-        view = self._get_view(destination, controller)
-        if view:
-            self._main_window.show_workspace_view(view)
-            self._current_view = destination
+        print(f"🔐 NavigationController initialized with role: {self._current_role}")
+
+    # ----------------------------------------------------
+    # User Info
+    # ----------------------------------------------------
+
+    def _update_user_info(self):
+        """Update current user information."""
+        account = self.get_current_account()
+        if account:
+            self._current_role = getattr(account, "role", "Staff")
+            self._current_username = getattr(account, "username", "")
+            self._current_full_name = getattr(account, "full_name", "")
+            if not self._current_username:
+                self._current_username = getattr(account, "email", "")
         else:
-            # If view creation failed, show dashboard
-            print(f"Failed to create view {destination}, showing dashboard")
-            self._main_window.show_workspace_view(self._get_view("Dashboard", self._controllers.get("Dashboard")))
+            # Try from auth service
+            if self._auth_service:
+                session = getattr(self._auth_service, "current_session", None)
+                if session:
+                    self._current_role = getattr(session, "role", "Staff")
+                    self._current_username = getattr(session, "username", "")
+                    self._current_full_name = getattr(session, "full_name", "")
+                    if not self._current_username:
+                        self._current_username = getattr(session, "email", "")
+        
+        print(f"👤 User info - Role: {self._current_role}, Username: {self._current_username}, Full Name: {self._current_full_name}")
 
-    def _get_view(self, name: str, controller) -> Optional:
-        """Get or create a view instance."""
-        # Check if main window and workspace exist
-        if not self._main_window or not self._main_window.workspace:
-            return None
+    def is_manager(self) -> bool:
+        """Check if current user is a manager."""
+        return self._current_role in self.MANAGER_ROLES
 
-        # Check cache - but don't use cached if it's been destroyed
-        if name in self._views_cache:
-            try:
-                if self._views_cache[name].winfo_exists():
-                    return self._views_cache[name]
-                else:
-                    del self._views_cache[name]
-            except:
-                del self._views_cache[name]
+    def is_staff(self) -> bool:
+        """Check if current user is staff."""
+        return self._current_role in self.STAFF_ROLES
 
-        # Create view based on name with proper parameters
+    def can_manage_quotes(self) -> bool:
+        """Check if current user can manage quotes (full control)."""
+        return self._current_role in self.MANAGER_ROLES
+
+    def can_manage_users(self) -> bool:
+        """Check if current user can manage users."""
+        return self._current_role in self.USER_MANAGEMENT_ROLES
+
+    def can_manage_quote_sync(self) -> bool:
+        """Check if current user can manage quote sync."""
+        return self._current_role in self.QUOTE_SYNC_ROLES
+
+    def can_access_sprint_planning(self) -> bool:
+        """Allow the planning workspace only to Ubuntu, Benny and Zandile."""
+        identities = (self._current_username, self._current_full_name)
+        return any(str(value or "").strip().casefold() in self.SPRINT_PLANNING_USERS
+                   for value in identities)
+
+    # ----------------------------------------------------
+    # Callbacks
+    # ----------------------------------------------------
+
+    def set_callbacks(self, navigate_callback, get_current_account):
+        self._navigate_callback = navigate_callback
+        self._get_current_account = get_current_account
+        self._update_user_info()
+
+    def attach_view(self, main_window):
+        self._main_window = main_window
+
+    def navigate(self, destination: str):
+        self._current_view = destination
+
+        if self._navigate_callback:
+            self._navigate_callback(destination)
+
+    def get_current_account(self):
+        if self._get_current_account:
+            return self._get_current_account()
+        return None
+
+    # ----------------------------------------------------
+    # Quote visibility for Staff
+    # ----------------------------------------------------
+
+    def employee_has_quotes(self) -> bool:
+        """Check if the current employee has any assigned quotes."""
+        if self._mongodb is None:
+            return False
+
+        username = self._current_username
+        if not username:
+            return False
+
         try:
-            view = None
-            print(f"Creating view: {name}")
+            collection = self._mongodb.get_collection("quotes")
             
-            if name == "Dashboard":
-                view = DashboardView(self._main_window.workspace, controller)
-                
-            elif name == "People":
-                view = PeopleView(self._main_window.workspace, controller, {})
-                
-            elif name == "Work":
-                view = WorkView(self._main_window.workspace, controller, {})
-                
-            elif name == "Attendance":
-                view = AttendanceView(self._main_window.workspace, controller, {})
-                
-            elif name == "Calendar":
-                view = CalendarView(self._main_window.workspace, controller, {})
-                
-            elif name == "Approvals":
-                view = ApprovalView(self._main_window.workspace, controller, {})
-                
-            elif name == "Office Requests":
-                view = OfficeRequestView(self._main_window.workspace, controller)
-                
-            elif name == "Notifications":
-                view = NotificationView(self._main_window.workspace, controller, {})
-                
-            elif name == "Projects":
-                view = ProjectView(self._main_window.workspace, controller)
-                
-            elif name == "Tasks":
-                view = TaskView(self._main_window.workspace, controller, {})
-                
-            elif name == "Reports":
-                view = ReportView(self._main_window.workspace, controller, {})
-                
-            elif name == "Settings":
-                view = SettingsView(self._main_window.workspace, controller)
-                
-            elif name == "Quote Sync":
-                if controller:
-                    view = QuoteSyncView(self._main_window.workspace, controller)
-                    print("✅ Quote Sync View created")
-                else:
-                    print("❌ Quote Sync Controller is None")
-                    return self._create_placeholder_view(name, "Quote Sync Controller not available")
-                    
-            elif name == "Quote Management":
-                if self._mongodb and self._work_controller and self._people_controller:
-                    view = QuoteManagementView(
-                        self._main_window.workspace,
-                        self._mongodb,
-                        self._work_controller,
-                        self._people_controller,
-                        self._notification_controller
-                    )
-                    print("✅ Quote Management View created")
-                else:
-                    print(f"❌ Quote Management missing dependencies: mongodb={self._mongodb is not None}, work={self._work_controller is not None}, people={self._people_controller is not None}")
-                    return self._create_placeholder_view(name, "Quote Management not available - missing dependencies")
-                    
-            elif name == "User Management":
-                if controller:
-                    view = UserManagementView(self._main_window.workspace, controller)
-                    print("✅ User Management View created")
-                else:
-                    print("❌ User Management Controller is None")
-                    return self._create_placeholder_view(name, "User Management Controller not available")
-                    
-            else:
-                return self._create_placeholder_view(name, f"Unknown view: {name}")
+            # Match any identity field the assignment endpoint may store
+            uname = str(username).strip().lower()
+            query = {
+                "status": {"$in": ["assigned", "accepted", "in_progress"]},
+                "$or": [
+                    {"assigned_to.username": uname},
+                    {"assigned_to.email": uname},
+                    {"assigned_to.full_name": uname},
+                    {"assigned_to.display_name": uname},
+                    {"assigned_to.name": uname},
+                    {"assigned_to.employee_id": uname},
+                    {"assigned_to.id": uname},
+                ],
+            }
 
-            if view:
-                print(f"✅ View {name} created successfully")
-                self._views_cache[name] = view
-                return view
-            else:
-                print(f"❌ Failed to create view {name}")
-                return self._create_placeholder_view(name, f"Could not create {name} view")
+            count = collection.count_documents(query)
+            return count > 0
 
         except Exception as e:
-            print(f"❌ Error creating view {name}: {e}")
-            import traceback
-            traceback.print_exc()
-            return self._create_placeholder_view(name, str(e))
+            print(f"⚠️ Error checking employee quotes: {e}")
+            return False
 
-    def _create_placeholder_view(self, name: str, message: str = "Module coming soon...") -> ctk.CTkFrame:
-        """Create a placeholder view for missing modules."""
-        try:
-            print(f"Creating placeholder view for: {name} - {message}")
-            frame = ctk.CTkFrame(self._main_window.workspace, fg_color=Theme.BG, corner_radius=0)
+    # ----------------------------------------------------
+    # Get Navigation Items based on role
+    # ----------------------------------------------------
+
+    def get_navigation_items(self) -> List[str]:
+        """
+        Get navigation items based on user role.
+        
+        Quote Management is the single shared workspace for all users.
+        """
+        # Update user info first
+        self._update_user_info()
+        
+        print(f"🔐 Getting navigation items for role: {self._current_role}")
+        
+        # Start with base items for all users
+        base_items = [
+            "Dashboard",
+            "People",
+            "Attendance",
+            "Calendar",
+            "Approvals",
+            "Office Requests",
+            "Notifications",
+            "Projects",
+            "Tasks",
+        ]
+        if self.can_access_sprint_planning():
+            base_items.append("Sprint Planning")
+        base_items.append("Reports")
+        
+        # Quote Management - shown to ALL users
+        # This is the single shared workspace
+        base_items.append("Quote Management")
+        base_items.append("Order Management")
+        
+        # Directors and Managers get extra management items
+        if self.is_manager():
+            base_items.append("Quote Sync")
+            base_items.append("User Management")
+        
+        # Add Settings for everyone
+        base_items.append("Settings")
+        
+        print(f"🔐 Navigation items: {base_items}")
+        return base_items
+
+    # ----------------------------------------------------
+    # View Factory
+    # ----------------------------------------------------
+
+    def get_view(self, name, workspace, controller):
+        """Factory method for creating views with role-based access."""
+        
+        if name == "Dashboard":
+            from app.views.dashboard_view import DashboardView
+            return DashboardView(workspace, controller)
+
+        elif name == "People":
+            from app.views.people_view import PeopleView
+            return PeopleView(workspace, controller)
+
+        elif name == "Notifications":
+            from app.views.notification_view import NotificationView
+            return NotificationView(workspace, controller)
+
+        elif name == "Quote Management":
+            from app.views.quote_management_view import QuoteManagementView
+            
+            return QuoteManagementView(
+                master=workspace,
+                mongodb_service=self._mongodb,
+                people_controller=controller,
+                notification_controller=self._notification_service,
+                auth_service=self._auth_service,
+                navigation_controller=self,
+                backend_api=self._backend_api,
+            )
+
+        elif name == "Order Management":
+            from app.views.order_management_view import OrderManagementView
+
+            return OrderManagementView(
+                master=workspace,
+                mongodb_service=self._mongodb,
+                people_controller=controller,
+                notification_controller=self._notification_service,
+                auth_service=self._auth_service,
+                navigation_controller=self,
+                backend_api=self._backend_api,
+            )
+
+        elif name == "User Management":
+            if not self.can_manage_users():
+                return self._create_access_denied_view(
+                    workspace,
+                    "User Management",
+                    "Only Directors, Branch Managers, and Operations Managers can access User Management."
+                )
+            
+            from app.views.user_management_view import UserManagementView
+            return UserManagementView(workspace, controller)
+
+        elif name == "Quote Sync":
+            if not self.can_manage_quote_sync():
+                return self._create_access_denied_view(
+                    workspace,
+                    "Quote Sync",
+                    "Only Directors, Branch Managers, Business Leads, and Operations Managers can access Quote Sync."
+                )
+            
+            from app.views.quote_sync_view import QuoteSyncView
+            from app.controllers.quote_sync_controller import QuoteSyncController
+            
+            quote_sync_controller = QuoteSyncController(self._mongodb)
+            return QuoteSyncView(workspace, quote_sync_controller)
+
+        elif name == "Settings":
+            from app.views.settings_view import SettingsView
+            return SettingsView(workspace, controller)
+
+        else:
+            frame = ctk.CTkFrame(workspace, fg_color="transparent")
             frame.grid_columnconfigure(0, weight=1)
             frame.grid_rowconfigure(0, weight=1)
             
-            content = ctk.CTkFrame(frame, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-            content.grid(row=0, column=0, padx=28, pady=28, sticky="nsew")
-            content.grid_columnconfigure(0, weight=1)
-            content.grid_rowconfigure(0, weight=1)
+            inner = ctk.CTkFrame(frame, fg_color="transparent")
+            inner.grid(row=0, column=0)
             
             ctk.CTkLabel(
-                content,
-                text=f"📌 {name}\n\n{message}",
+                inner,
+                text=f"{name}",
+                font=ctk.CTkFont(size=24, weight="bold"),
+                text_color=Theme.TEXT,
+            ).pack(pady=(0, 8))
+            
+            ctk.CTkLabel(
+                inner,
+                text="Coming Soon",
+                font=ctk.CTkFont(size=14),
                 text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_BODY,
-                justify="center",
-            ).grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+            ).pack()
             
             return frame
-        except Exception as e:
-            print(f"Error creating placeholder view: {e}")
-            return None
 
-    def refresh_current_view(self) -> None:
-        """Refresh the currently displayed view."""
-        if self._current_view:
-            if self._current_view in self._views_cache:
-                del self._views_cache[self._current_view]
-            self.navigate(self._current_view)
+    def _create_access_denied_view(self, workspace, title: str, message: str):
+        """Create an access denied view."""
+        frame = ctk.CTkFrame(workspace, fg_color="transparent")
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+        
+        inner = ctk.CTkFrame(frame, fg_color="transparent")
+        inner.grid(row=0, column=0)
+        
+        ctk.CTkLabel(
+            inner,
+            text="⛔ Access Denied",
+            font=ctk.CTkFont(size=28, weight="bold"),
+            text_color=Theme.DANGER,
+        ).pack(pady=(0, 12))
+        
+        ctk.CTkLabel(
+            inner,
+            text=f"{title}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=Theme.TEXT,
+        ).pack(pady=(0, 8))
+        
+        ctk.CTkLabel(
+            inner,
+            text=message,
+            font=ctk.CTkFont(size=13),
+            text_color=Theme.MUTED_TEXT,
+            justify="center",
+            wraplength=500,
+        ).pack()
+        
+        ctk.CTkLabel(
+            inner,
+            text=f"\nYour role: {self._current_role}",
+            font=ctk.CTkFont(size=12),
+            text_color=Theme.MUTED_TEXT,
+        ).pack()
+        
+        return frame
