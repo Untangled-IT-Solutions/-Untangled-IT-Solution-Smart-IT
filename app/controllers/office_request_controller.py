@@ -24,17 +24,23 @@ class OfficeRequestController:
         """Get list of available items."""
         return self._service.get_items()
 
+    def get_request_types(self) -> list[str]:
+        """Return the available short electronic request forms."""
+        return list(self._service.REQUEST_TYPES)
+
     def get_people_names(self) -> list:
         """Get list of people names."""
-        return self._service.get_people_names()
+        return self._people_service.get_employee_names()
 
     def get_departments(self) -> list:
         """Get list of departments."""
         return self._people_service.get_departments()
 
     def create_request(self, item: str, quantity: str, requested_by: str,
-                       department: str, notes: str, requires_director: bool) -> dict:
+                       department: str, notes: str, requires_director: bool,
+                       request_type: str = "Stationery & Office Supplies") -> dict:
         """Create a new office request."""
         return self._service.create_request(
-            item, quantity, requested_by, department, notes, requires_director
+            item, quantity, requested_by, department, notes, requires_director,
+            request_type,
         )

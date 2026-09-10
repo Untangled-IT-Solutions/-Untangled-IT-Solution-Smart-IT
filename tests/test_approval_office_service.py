@@ -40,3 +40,16 @@ def test_approval_chain_and_office_request_link(tmp_path) -> None:
 
     assert office_request.approval_status == "Pending"
     assert office_service.get_requests()[0].approval_id == office_request.approval_id
+
+    leave_request = office_service.create_request(
+        "Leave Request - Annual / Vacation",
+        "3",
+        people[2].full_name,
+        "Operations",
+        "Start date: 2026-09-14\nEnd date: 2026-09-16",
+        False,
+        "Leave Request",
+    )
+
+    assert leave_request.quantity == 3
+    assert leave_request.approval_status == "Pending"

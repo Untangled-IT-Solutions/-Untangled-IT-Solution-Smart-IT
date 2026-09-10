@@ -488,6 +488,7 @@ class AppController:
             return OfficeRequestView(
                 workspace,
                 self._office_request_controller,
+                current_account=self._current_account,
             )
 
         elif destination == "Notifications":

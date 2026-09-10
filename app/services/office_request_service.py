@@ -17,6 +17,9 @@ class OfficeRequestService:
         "Printer Paper", "Pens", "Staples", "Printer Toner", "RFQ Dividers",
         "Stationery", "Ethernet Cable", "Mouse", "Keyboard", "Laptop", "Monitor",
     )
+    REQUEST_TYPES = (
+        "Leave Request", "Stationery & Office Supplies", "Equipment", "Other",
+    )
 
     def __init__(
         self,
@@ -32,6 +35,10 @@ class OfficeRequestService:
     def db_path(self) -> Path:
         return self._database.db_path
 
+    def get_items(self) -> list[str]:
+        """Return the standard office supply and equipment suggestions."""
+        return list(self.ITEMS)
+
     def create_request(
         self,
         item_name: str,
@@ -40,17 +47,36 @@ class OfficeRequestService:
         department: str,
         notes: str,
         requires_director: bool,
+        request_type: str = "Stationery & Office Supplies",
     ) -> OfficeRequest:
         """Create an office request and submit it through the central approval engine."""
-        if item_name not in self.ITEMS:
-            raise ValueError("Select a valid office item.")
+        item_name = str(item_name or "").strip()
+        request_type = str(request_type or "Stationery & Office Supplies").strip()
+        try:
+            quantity = int(quantity)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Enter a valid quantity.") from error
+        if not item_name:
+            raise ValueError("Enter or select what you are requesting.")
+        if request_type not in self.REQUEST_TYPES:
+            raise ValueError("Select a valid request type.")
         if quantity < 1:
             raise ValueError("Quantity must be at least one.")
+        if request_type == "Leave Request":
+            approval_title = f"{item_name} ({quantity} day{'s' if quantity != 1 else ''})"
+            approval_type = "Leave"
+        else:
+            approval_title = f"{request_type}: {quantity} x {item_name}"
+            approval_type = {
+                "Stationery & Office Supplies": "Office Supplies",
+                "Equipment": "Equipment",
+                "Other": "Purchases",
+            }[request_type]
         approval = self._approval_service.create_request(
             ApprovalRequest(
                 id=None,
-                title=f"Office request: {quantity} x {item_name}",
-                request_type="Office Supplies",
+                title=approval_title,
+                request_type=approval_type,
                 description=notes.strip() or f"Request for {quantity} x {item_name}",
                 requested_by=requested_by.strip(),
                 department=department.strip(),
@@ -84,7 +110,8 @@ class OfficeRequestService:
         request = self._row_to_request(row)
         if self._notifications is not None:
             self._notifications.record_activity(
-                "Inventory", f"Office request submitted: {request.quantity} x {request.item_name}",
+                "Leave" if request_type == "Leave Request" else "Inventory",
+                f"{request_type} submitted: {request.quantity} x {request.item_name}",
                 "OfficeRequest", request.id
             )
         return request

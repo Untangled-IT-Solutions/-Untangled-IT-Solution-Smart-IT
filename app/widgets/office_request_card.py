@@ -19,8 +19,15 @@ class OfficeRequestCard(ctk.CTkFrame):
 
     def _build_layout(self) -> None:
         self.grid_columnconfigure(0, weight=1)
+        is_leave = self._request.item_name.startswith("Leave Request")
+        title = (
+            f"{self._request.item_name} | {self._request.quantity} "
+            f"day{'s' if self._request.quantity != 1 else ''}"
+            if is_leave
+            else f"{self._request.quantity} x {self._request.item_name}"
+        )
         ctk.CTkLabel(
-            self, text=f"{self._request.quantity} x {self._request.item_name}", text_color=Theme.TEXT,
+            self, text=title, text_color=Theme.TEXT,
             font=("Segoe UI", 16, "bold"), anchor="w"
         ).grid(row=0, column=0, padx=18, pady=(15, 3), sticky="ew")
         ctk.CTkLabel(
