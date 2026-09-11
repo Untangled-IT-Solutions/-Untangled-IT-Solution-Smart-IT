@@ -4,3 +4,7 @@ Backend/node_modules/
 # Environment files
 .env
 **/.env
+
+App.zip
+.github.zip
+*.zip
