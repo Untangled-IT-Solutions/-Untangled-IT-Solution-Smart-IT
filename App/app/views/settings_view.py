@@ -33,9 +33,22 @@ class SettingsView(ctk.CTkFrame):
         )
         self.theme_menu.grid(row=0, column=1, padx=16, pady=(16, 6), sticky="ew")
         self.theme_menu.set(self._controller.get_theme_mode())
+        last_row = 0
         for row, (label, value) in enumerate(self._controller.get_settings().items(), start=1):
             ctk.CTkLabel(panel, text=label, text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL).grid(row=row, column=0, padx=16, pady=6, sticky="w")
             ctk.CTkLabel(panel, text=value, text_color=Theme.TEXT, font=Theme.FONT_SMALL, wraplength=820, justify="left").grid(row=row, column=1, padx=16, pady=6, sticky="w")
+            last_row = row
+        ctk.CTkButton(
+            panel,
+            text="Check for Updates",
+            font=Theme.FONT_BUTTON,
+            fg_color=Theme.ACCENT,
+            hover_color=Theme.ACCENT_HOVER,
+            text_color="#FFFFFF",
+            height=36,
+            width=180,
+            command=self._check_for_updates,
+        ).grid(row=last_row + 1, column=0, columnspan=2, padx=16, pady=(12, 16), sticky="w")
         if self._controller.can_administer_accounts():
             self._build_account_admin()
 
@@ -45,6 +58,10 @@ class SettingsView(ctk.CTkFrame):
             root.apply_theme(mode)
         else:
             self._controller.set_theme_mode(mode)
+
+    def _check_for_updates(self) -> None:
+        if hasattr(self._controller, "check_for_updates"):
+            self._controller.check_for_updates()
 
     def _build_account_admin(self) -> None:
         section = ctk.CTkScrollableFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)

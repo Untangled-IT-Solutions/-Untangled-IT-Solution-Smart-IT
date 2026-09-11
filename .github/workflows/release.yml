@@ -145,6 +145,25 @@ jobs:
           Write-Host "EXE successfully created:"
           Get-Item $exe
 
+      - name: Build updater.exe
+        shell: pwsh
+        run: |
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name updater `
+            app/services/updater.py
+
+          if (-not (Test-Path "dist\updater.exe")) {
+            throw "updater.exe was not created"
+          }
+
+          Copy-Item -Force "dist\updater.exe" "dist\UntangledNexus\updater.exe"
+          Write-Host "updater.exe bundled into dist\UntangledNexus\"
+          Get-Item "dist\UntangledNexus\updater.exe"
+
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -186,6 +205,19 @@ jobs:
           Write-Host "Installer successfully created:"
           Get-Item $installer
 
+      - name: Generate SHA256 checksum
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $installer = "dist\installer\Untangled-Nexus-Setup-$version.exe"
+          $checksumFile = "$installer.sha256"
+
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $installer).Hash.ToLower()
+          $line = "$hash  Untangled-Nexus-Setup-$version.exe"
+          Set-Content -Path $checksumFile -Value $line -Encoding ascii
+          Write-Host "Checksum written:"
+          Get-Content $checksumFile
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -194,6 +226,7 @@ jobs:
           generate_release_notes: true
           files: |
             App/dist/installer/Untangled-Nexus-Setup-${{ steps.version.outputs.version }}.exe
+            App/dist/installer/Untangled-Nexus-Setup-${{ steps.version.outputs.version }}.exe.sha256
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

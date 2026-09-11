@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Optional
 
 import customtkinter as ctk
@@ -21,6 +22,7 @@ from app.services.office_request_service import OfficeRequestService
 from app.services.project_service import ProjectService
 from app.services.report_service import ReportService
 from app.services.notification_service import NotificationService
+from app.services.update_service import UpdateService
 
 from app.controllers.login_controller import LoginController
 from app.controllers.task_controller import TaskController
@@ -41,6 +43,7 @@ from app.controllers.settings_controller import SettingsController
 from app.views.login_view import LoginView
 from app.views.main_window import MainWindow
 from app.models.account import UserAccount
+from app.__version__ import __version__
 
 logger = logging.getLogger("untangled.app")
 
@@ -115,10 +118,15 @@ class AppController:
             auth_service=auth_service,
             people_service=people_service,
             backend=backend,
+            on_check_for_updates=lambda show=True: self.check_for_updates(
+                show_up_to_date=bool(show)
+            ),
         )
 
         self._search_controller = SearchController()
         self._navigation_controller: Optional[NavigationController] = None
+        self._update_service = UpdateService()
+        self._update_check_in_progress = False
 
     def start(self) -> None:
         self._show_login()
@@ -207,6 +215,12 @@ class AppController:
         except Exception as exc:
             logger.warning("Could not raise main window: %s", exc)
 
+        # Background update check after UI is ready (non-blocking, fail-silent)
+        try:
+            self._main_window.after(5000, lambda: self.check_for_updates(show_up_to_date=False))
+        except Exception as exc:
+            logger.debug("Could not schedule update check: %s", exc)
+
         logger.info("Main window shown – entering mainloop")
         self._hidden_root.mainloop()
 
@@ -266,6 +280,105 @@ class AppController:
             logger.exception("Failed to show view %s", destination)
             print(f"❌ Failed to show view {destination}: {exc}")
             return False
+
+
+    def check_for_updates(self, show_up_to_date: bool = False) -> None:
+        """Public entry for automatic and manual update checks.
+
+        Runs the network request on a background thread. UI dialogs are
+        shown on the main thread only. Failures never block the app.
+        """
+        if self._update_check_in_progress or self._update_service.is_downloading:
+            return
+        if self._main_window is None:
+            return
+
+        self._update_check_in_progress = True
+
+        def worker() -> None:
+            update = None
+            error: Optional[Exception] = None
+            try:
+                update = self._update_service.check_for_update()
+            except Exception as exc:  # pragma: no cover - defensive
+                error = exc
+                logger.warning("Update check raised: %s", exc)
+
+            def on_ui() -> None:
+                self._update_check_in_progress = False
+                if error is not None and show_up_to_date:
+                    try:
+                        from tkinter import messagebox
+
+                        messagebox.showwarning(
+                            "Check for Updates",
+                            "Could not check for updates.\nPlease try again later.",
+                            parent=self._main_window,
+                        )
+                    except Exception:
+                        pass
+                    return
+                if update is not None:
+                    self._show_update_dialog(update)
+                elif show_up_to_date:
+                    self._show_up_to_date_dialog()
+
+            window = self._main_window
+            if window is None:
+                self._update_check_in_progress = False
+                return
+            try:
+                window.after(0, on_ui)
+            except Exception:
+                self._update_check_in_progress = False
+
+        threading.Thread(
+            target=worker, name="nexus-update-check", daemon=True
+        ).start()
+
+    def _show_update_dialog(self, update) -> None:
+        if self._main_window is None:
+            return
+        try:
+            from app.views.update_dialog import UpdateDialog
+
+            def on_install_started() -> None:
+                def shutdown() -> None:
+                    try:
+                        if self._main_window is not None:
+                            self._main_window.destroy()
+                    except Exception:
+                        pass
+                    try:
+                        if self._hidden_root is not None:
+                            self._hidden_root.quit()
+                    except Exception:
+                        pass
+
+                try:
+                    self._main_window.after(300, shutdown)
+                except Exception:
+                    shutdown()
+
+            UpdateDialog(
+                master=self._main_window,
+                update=update,
+                current_version=__version__,
+                update_service=self._update_service,
+                on_install_started=on_install_started,
+            )
+        except Exception:
+            logger.exception("Could not open update dialog")
+
+    def _show_up_to_date_dialog(self) -> None:
+        if self._main_window is None:
+            return
+        try:
+            from app.views.update_dialog import UpToDateDialog
+
+            UpToDateDialog(master=self._main_window, current_version=__version__)
+        except Exception:
+            logger.exception("Could not open up-to-date dialog")
 
     def _logout(self) -> None:
         logger.info("User logged out")

@@ -1062,3 +1062,22 @@ AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
 2026-09-10 15:08:35,863 | INFO    | untangled | Application composition complete
 2026-09-10 15:08:50,469 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-10 15:08:54,880 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-10 15:21:51,913 | INFO    | untangled | ============================================================
+2026-09-10 15:21:51,945 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-10 15:21:51,946 | INFO    | untangled | ============================================================
+2026-09-10 15:21:51,949 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:21:51,952 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-10 15:21:51,969 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-10 15:21:53,808 | INFO    | untangled | Application composition complete
+2026-09-10 15:22:13,447 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-10 15:22:18,663 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-11 09:54:29,999 | INFO    | untangled | ============================================================
+2026-09-11 09:54:30,012 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-11 09:54:30,014 | INFO    | untangled | ============================================================
+2026-09-11 09:54:30,017 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-11 09:54:30,020 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-11 09:54:30,021 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-11 09:54:32,944 | INFO    | untangled | Application composition complete
+2026-09-11 09:54:58,241 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-11 09:55:03,085 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-11 09:55:10,686 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus

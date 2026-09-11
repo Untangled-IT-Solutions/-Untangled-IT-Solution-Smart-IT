@@ -20,11 +20,19 @@ class SettingsController:
         auth_service: AuthService,
         people_service: PeopleService,
         backend: Any = None,
+        on_check_for_updates: Any = None,
         **_kwargs: Any,
     ) -> None:
         self._auth_service = auth_service
         self._people_service = people_service
         self._backend = backend
+        self._on_check_for_updates = on_check_for_updates
+
+    def check_for_updates(self) -> None:
+        """Trigger a manual update check (shows up-to-date dialog if current)."""
+        callback = self._on_check_for_updates
+        if callable(callback):
+            callback(True)
 
     def get_theme_mode(self) -> str:
         return getattr(Theme, "CURRENT_MODE", "dark")
