@@ -7,13 +7,13 @@ from dataclasses import dataclass
 class Notification:
     """A role-targeted operational notification or executive brief."""
 
-    id: int | None
+    id: str | int | None
     recipient_role: str
     title: str
     message: str
     category: str
     reference_type: str
-    reference_id: int | None
+    reference_id: str | int | None
     is_executive: bool
     is_read: bool
     created_at: str | None = None
@@ -23,9 +23,9 @@ class Notification:
 class Activity:
     """A concise audit-friendly operational activity item."""
 
-    id: int | None
+    id: str | int | None
     category: str
     description: str
     reference_type: str
-    reference_id: int | None
+    reference_id: str | int | None
     created_at: str | None = None

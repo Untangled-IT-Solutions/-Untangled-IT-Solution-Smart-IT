@@ -1081,3 +1081,219 @@ AttributeError: 'PeopleController' object has no attribute 'get_current_tasks'
 2026-09-11 09:54:58,241 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
 2026-09-11 09:55:03,085 | INFO    | untangled.app | Main window shown – entering mainloop
 2026-09-11 09:55:10,686 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 10:09:11,386 | INFO    | untangled | ============================================================
+2026-09-14 10:09:11,387 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 10:09:11,388 | INFO    | untangled | ============================================================
+2026-09-14 10:09:11,389 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:09:11,390 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:09:11,391 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 10:09:11,400 | INFO    | untangled | Application composition complete
+2026-09-14 10:09:32,145 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 10:09:37,975 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 10:09:43,998 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 10:23:37,441 | INFO    | untangled | ============================================================
+2026-09-14 10:23:37,446 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 10:23:37,449 | INFO    | untangled | ============================================================
+2026-09-14 10:23:37,452 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:23:37,453 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:23:37,458 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 10:23:37,460 | INFO    | untangled | Application composition complete
+2026-09-14 10:23:54,250 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 10:23:58,112 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 10:24:04,555 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 10:50:30,686 | INFO    | untangled.app | User logged out
+2026-09-14 10:52:49,713 | INFO    | untangled | ============================================================
+2026-09-14 10:52:49,733 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 10:52:49,734 | INFO    | untangled | ============================================================
+2026-09-14 10:52:49,735 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:52:49,736 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 10:52:49,737 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 10:52:49,738 | INFO    | untangled | Application composition complete
+2026-09-14 10:53:12,119 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 10:53:16,090 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 10:53:22,679 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:05:55,000 | INFO    | untangled | ============================================================
+2026-09-14 11:05:55,002 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 11:05:55,002 | INFO    | untangled | ============================================================
+2026-09-14 11:05:55,003 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:05:55,003 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:05:55,004 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 11:05:55,005 | INFO    | untangled | Application composition complete
+2026-09-14 11:06:21,876 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:06:27,442 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:06:33,526 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:09:50,258 | INFO    | untangled | ============================================================
+2026-09-14 11:09:50,321 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 11:09:50,321 | INFO    | untangled | ============================================================
+2026-09-14 11:09:50,322 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:09:50,322 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:09:50,323 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 11:09:50,397 | INFO    | untangled | Application composition complete
+2026-09-14 11:10:08,832 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:10:14,399 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:10:21,331 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:28:24,592 | INFO    | untangled | ============================================================
+2026-09-14 11:28:24,608 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 11:28:24,609 | INFO    | untangled | ============================================================
+2026-09-14 11:28:24,612 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:28:24,613 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:28:24,613 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 11:28:24,615 | INFO    | untangled | Application composition complete
+2026-09-14 11:28:54,621 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:28:59,476 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:29:05,838 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:48:57,354 | INFO    | untangled | ============================================================
+2026-09-14 11:48:57,385 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 11:48:57,385 | INFO    | untangled | ============================================================
+2026-09-14 11:48:57,386 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:48:57,386 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 11:48:57,387 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 11:48:57,388 | INFO    | untangled | Application composition complete
+2026-09-14 11:49:20,501 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:49:26,074 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:49:32,716 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:51:13,979 | INFO    | untangled.app | User logged out
+2026-09-14 11:51:31,879 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:51:34,723 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:51:40,962 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:51:49,421 | INFO    | untangled.app | User logged out
+2026-09-14 11:52:35,301 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-14 11:52:37,911 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:52:43,833 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 11:57:29,226 | INFO    | untangled.app | User logged out
+2026-09-14 11:57:44,642 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 11:57:47,251 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 11:57:53,793 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 12:08:36,492 | INFO    | untangled | ============================================================
+2026-09-14 12:08:36,589 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 12:08:36,634 | INFO    | untangled | ============================================================
+2026-09-14 12:08:36,670 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 12:08:36,751 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 12:08:36,809 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 12:08:37,409 | INFO    | untangled | Application composition complete
+2026-09-14 12:09:53,741 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 12:09:58,500 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 12:10:04,459 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 12:14:58,444 | INFO    | untangled.app | User logged out
+2026-09-14 12:27:00,439 | INFO    | untangled | ============================================================
+2026-09-14 12:27:00,456 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 12:27:00,457 | INFO    | untangled | ============================================================
+2026-09-14 12:27:00,457 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 12:27:00,458 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 12:27:00,458 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 12:27:00,460 | INFO    | untangled | Application composition complete
+2026-09-14 12:27:42,203 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 12:27:47,294 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 12:27:53,440 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 13:57:31,206 | INFO    | untangled | ============================================================
+2026-09-14 13:57:31,213 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 13:57:31,214 | INFO    | untangled | ============================================================
+2026-09-14 13:57:31,215 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 13:57:31,216 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 13:57:31,217 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 13:57:31,218 | INFO    | untangled | Application composition complete
+2026-09-14 13:57:53,401 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 13:57:56,958 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 13:58:02,866 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 14:12:12,488 | INFO    | untangled | ============================================================
+2026-09-14 14:12:12,522 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 14:12:12,523 | INFO    | untangled | ============================================================
+2026-09-14 14:12:12,531 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:12:12,533 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:12:12,535 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 14:12:12,537 | INFO    | untangled | Application composition complete
+2026-09-14 14:12:29,116 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 14:12:34,475 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 14:12:40,640 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 14:24:02,526 | INFO    | untangled | ============================================================
+2026-09-14 14:24:02,564 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 14:24:02,579 | INFO    | untangled | ============================================================
+2026-09-14 14:24:02,585 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:24:02,591 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:24:02,595 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 14:24:02,619 | INFO    | untangled | Application composition complete
+2026-09-14 14:24:23,071 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 14:24:28,822 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 14:24:34,977 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 14:26:27,976 | INFO    | untangled.app | User logged out
+2026-09-14 14:27:06,776 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 14:27:09,115 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 14:27:15,353 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 14:37:17,947 | INFO    | untangled | ============================================================
+2026-09-14 14:37:17,958 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 14:37:17,965 | INFO    | untangled | ============================================================
+2026-09-14 14:37:17,991 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:37:17,995 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:37:18,008 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 14:37:18,010 | INFO    | untangled | Application composition complete
+2026-09-14 14:37:43,555 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 14:37:47,300 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 14:37:53,179 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 14:52:12,143 | INFO    | untangled | ============================================================
+2026-09-14 14:52:12,170 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 14:52:12,173 | INFO    | untangled | ============================================================
+2026-09-14 14:52:12,187 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:52:12,191 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 14:52:12,194 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 14:52:12,197 | INFO    | untangled | Application composition complete
+2026-09-14 14:52:56,970 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 14:53:01,961 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 14:53:07,872 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 15:03:45,086 | INFO    | untangled | ============================================================
+2026-09-14 15:03:45,111 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 15:03:45,126 | INFO    | untangled | ============================================================
+2026-09-14 15:03:45,138 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 15:03:45,139 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 15:03:45,144 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 15:03:45,153 | INFO    | untangled | Application composition complete
+2026-09-14 15:04:09,347 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 15:04:12,489 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 15:04:29,578 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 15:04:35,993 | ERROR   | untangled.app | Failed to build view Sprint Planning
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\app_controller.py", line 295, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\navigation_controller.py", line 247, in get_view
+    from app.views.sprint_planning_view import SprintPlanningView
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\sprint_planning_view.py", line 11, in <module>
+    from app.views.task_view import _format_ticket, _task_id_key
+ImportError: cannot import name '_format_ticket' from 'app.views.task_view' (C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\task_view.py)
+2026-09-14 15:04:43,139 | ERROR   | untangled.app | Failed to build view Sprint Planning
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\app_controller.py", line 295, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\navigation_controller.py", line 247, in get_view
+    from app.views.sprint_planning_view import SprintPlanningView
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\sprint_planning_view.py", line 11, in <module>
+    from app.views.task_view import _format_ticket, _task_id_key
+ImportError: cannot import name '_format_ticket' from 'app.views.task_view' (C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\task_view.py)
+2026-09-14 15:04:46,838 | ERROR   | untangled.app | Failed to build view Sprint Planning
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\app_controller.py", line 295, in _navigate_destination
+    view = self._navigation_controller.get_view(
+        destination, workspace, controller
+    )
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\navigation_controller.py", line 247, in get_view
+    from app.views.sprint_planning_view import SprintPlanningView
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\sprint_planning_view.py", line 11, in <module>
+    from app.views.task_view import _format_ticket, _task_id_key
+ImportError: cannot import name '_format_ticket' from 'app.views.task_view' (C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\task_view.py)
+2026-09-14 15:10:33,257 | INFO    | untangled | ============================================================
+2026-09-14 15:10:33,284 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-14 15:10:33,292 | INFO    | untangled | ============================================================
+2026-09-14 15:10:33,318 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 15:10:33,333 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-14 15:10:33,380 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-14 15:10:33,441 | INFO    | untangled | Application composition complete
+2026-09-14 15:11:31,032 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-14 15:11:35,084 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 15:11:41,367 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 15:14:10,241 | INFO    | untangled.app | User logged out
+2026-09-14 15:14:34,232 | INFO    | untangled.app | Opening main window for Siyanda Nkosi (Staff)
+2026-09-14 15:14:36,300 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-14 15:14:43,405 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-14 15:16:01,222 | INFO    | untangled.app | User logged out

@@ -8,6 +8,7 @@ from app.controllers.approval_controller import ApprovalController
 from app.models.approval import ApprovalRequest
 from app.utils.theme import Theme
 from app.widgets.approval_card import ApprovalCard
+from app.utils.async_tasks import run_in_background
 
 
 class ApprovalView(ctk.CTkFrame):
@@ -64,19 +65,36 @@ class ApprovalView(ctk.CTkFrame):
             self.status_filter.set(status)
 
     def refresh(self) -> None:
-        for child in self._list_frame.winfo_children():
-            child.destroy()
-        requests = self._controller.get_approvals(self.status_filter.get())
-        if not requests:
+        status = self.status_filter.get()
+
+        def fetch():
+            return self._controller.get_approvals(status)
+
+        def apply(requests):
+            for child in self._list_frame.winfo_children():
+                child.destroy()
+            requests = requests or []
+            if not requests:
+                ctk.CTkLabel(
+                    self._list_frame, text="No approval requests found.", text_color=Theme.MUTED_TEXT,
+                    font=("Segoe UI", 14)
+                ).grid(row=0, column=0, sticky="w")
+                return
+            for row, request in enumerate(requests):
+                ApprovalCard(self._list_frame, request, self._open_review).grid(
+                    row=row, column=0, sticky="ew", pady=(0, 12)
+                )
+
+        def failed(exc):
+            print(f"⚠️ approvals refresh failed: {exc}")
+            for child in self._list_frame.winfo_children():
+                child.destroy()
             ctk.CTkLabel(
-                self._list_frame, text="No approval requests found.", text_color=Theme.MUTED_TEXT,
+                self._list_frame, text="Could not load approvals.", text_color=Theme.MUTED_TEXT,
                 font=("Segoe UI", 14)
             ).grid(row=0, column=0, sticky="w")
-            return
-        for row, request in enumerate(requests):
-            ApprovalCard(self._list_frame, request, self._open_review).grid(
-                row=row, column=0, sticky="ew", pady=(0, 12)
-            )
+
+        run_in_background(self, fetch, apply, failed, name="approvals-loader")
 
     def _open_request_form(self) -> None:
         ApprovalRequestModal(self, self._controller, self.refresh)

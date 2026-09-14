@@ -14,6 +14,7 @@ from app.models.notification import Notification
 from app.utils.theme import Theme
 from app.widgets.notification_card import NotificationCard
 from app.utils.sound import SoundManager
+from app.utils.async_tasks import run_in_background, bump_generation
 import customtkinter as ctk
 from tkinter import messagebox
 
@@ -111,6 +112,29 @@ class NotificationView(ctk.CTkFrame):
         )
         self.mark_all_btn.pack(side="right", padx=(10, 0))
 
+        # Unread / missed summary banner
+        self.summary_bar = ctk.CTkFrame(self, fg_color="transparent", height=36)
+        self.summary_bar.pack(fill="x", padx=20, pady=(8, 0))
+        self.summary_label = ctk.CTkLabel(
+            self.summary_bar,
+            text="",
+            font=("Segoe UI", 13, "bold"),
+            text_color=Theme.TEXT,
+            anchor="w",
+        )
+        self.summary_label.pack(side="left")
+        self.unread_chip = ctk.CTkLabel(
+            self.summary_bar,
+            text="",
+            font=("Segoe UI", 11, "bold"),
+            text_color="#FFFFFF",
+            fg_color="#DC2626",
+            corner_radius=10,
+            width=0,
+            height=24,
+        )
+        # packed only when count > 0
+
         self.list_frame = ctk.CTkScrollableFrame(
             self,
             fg_color="transparent",
@@ -145,6 +169,14 @@ class NotificationView(ctk.CTkFrame):
         if notification_id and not isinstance(notification_id, int):
             notification_id = str(notification_id)
 
+        # Prefer service parser when available
+        is_read = False
+        try:
+            from app.services.notification_service import NotificationService
+            is_read = NotificationService._parse_is_read(item)
+        except Exception:
+            is_read = bool(item.get("is_read") or item.get("read") or item.get("isRead"))
+
         return Notification(
             id=notification_id,
             recipient_role=item.get("recipient_role", ""),
@@ -154,7 +186,7 @@ class NotificationView(ctk.CTkFrame):
             reference_type=item.get("reference_type", ""),
             reference_id=item.get("reference_id"),
             is_executive=item.get("is_executive", False),
-            is_read=item.get("is_read", False),
+            is_read=is_read,
             created_at=item.get("created_at") or item.get("createdAt"),
         )
 
@@ -166,151 +198,196 @@ class NotificationView(ctk.CTkFrame):
         return ""
 
     def mark_all_as_read(self):
-        """Mark every unread notification (for current role filter) as read and stop sound."""
-        try:
-            role = self.role_var.get() or "All"
-            # Confirm when there are many
-            unread = self.controller.get_notifications(role=role, unread_only=True) or []
-            count = len(unread)
-            if count == 0:
-                messagebox.showinfo("Notifications", "There are no unread notifications.")
-                return
+        """Mark every unread notification as read (non-blocking) and stop sound."""
+        role = self.role_var.get() or "All"
+        ok = messagebox.askyesno(
+            "Mark all as read",
+            "Mark all unread notifications as read?",
+        )
+        if not ok:
+            return
 
-            ok = messagebox.askyesno(
-                "Mark all as read",
-                f"Mark {count} unread notification(s) as read?",
-            )
-            if not ok:
-                return
-
-            updated = 0
+        def do_mark():
             if hasattr(self.controller, "mark_all_read"):
-                updated = int(self.controller.mark_all_read(role) or 0)
-            else:
-                for item in unread:
-                    nid = self._extract_id(item)
-                    if nid:
-                        self.controller.mark_read(nid)
-                        updated += 1
+                return int(self.controller.mark_all_read(role) or 0)
+            items = self.controller.get_notifications(role=role, unread_only=True) or []
+            count = 0
+            for item in items:
+                nid = self._extract_id(item)
+                if nid:
+                    self.controller.mark_read(nid)
+                    count += 1
+            return count
 
+        def on_ok(updated):
+            if self._destroyed:
+                return
             SoundManager.stop_reminder()
             self._previous_notification_ids = set()
             print(f"✅ Marked {updated} notification(s) as read")
+            # Force sidebar badge to 0 immediately (don't wait for poll / stale API)
+            try:
+                top = self.winfo_toplevel()
+                btn = getattr(top, "_nav_buttons", {}).get("Notifications")
+                if btn is not None and hasattr(btn, "set_badge"):
+                    btn.set_badge(0)
+                if hasattr(top, "_last_unread"):
+                    top._last_unread = 0
+                if hasattr(top, "_poll_notification_badge"):
+                    top.after(500, top._poll_notification_badge)
+            except Exception:
+                pass
             self.refresh()
-            messagebox.showinfo("Notifications", f"Marked {updated} notification(s) as read.")
-        except Exception as e:
-            print(f"⚠️ Mark all as read failed: {e}")
+            messagebox.showinfo(
+                "Notifications",
+                f"Marked {updated} notification(s) as read." if updated else "No unread notifications.",
+            )
+
+        def on_err(exc):
+            print(f"⚠️ Mark all as read failed: {exc}")
             import traceback
             traceback.print_exc()
-            messagebox.showerror("Error", f"Could not mark all as read:\n{e}")
+            messagebox.showerror("Error", f"Could not mark all as read:\n{exc}")
+
+        run_in_background(self, do_mark, on_ok, on_err, name="notif-mark-all")
 
     def refresh(self):
         if self._destroyed:
             return
 
-        for child in self.list_frame.winfo_children():
-            child.destroy()
+        role = self.role_var.get()
+        unread_only = self.unread_var.get()
 
-        display_notifications = self.controller.get_notifications(
-            role=self.role_var.get(),
-            unread_only=self.unread_var.get(),
-        )
+        def fetch():
+            display = self.controller.get_notifications(role=role, unread_only=unread_only)
+            unread = self.controller.get_notifications(role=role, unread_only=True)
+            return display, unread
 
-        unread_check = self.controller.get_notifications(
-            role=self.role_var.get(),
-            unread_only=True,
-        )
+        def apply(result):
+            if self._destroyed:
+                return
+            display_notifications, unread_check = result
+            for child in self.list_frame.winfo_children():
+                child.destroy()
 
-        current_ids = set()
-        for item in unread_check or []:
-            nid = self._extract_id(item)
-            if nid:
-                current_ids.add(nid)
+            current_ids = set()
+            for item in unread_check or []:
+                nid = self._extract_id(item)
+                if nid:
+                    current_ids.add(nid)
 
-        new_notifications = current_ids - self._previous_notification_ids
+            new_notifications = current_ids - self._previous_notification_ids
 
-        if SoundManager.is_enabled():
-            if new_notifications:
-                print(f"🔔 Playing sound for {len(new_notifications)} new notification(s)")
-                SoundManager.play_notification_sound()
+            if SoundManager.is_enabled():
+                if new_notifications:
+                    print(f"🔔 Playing sound for {len(new_notifications)} new notification(s)")
+                    SoundManager.play_notification_sound()
 
-            if current_ids:
-                SoundManager.start_reminder(interval_seconds=18)
+                if current_ids:
+                    SoundManager.start_reminder(interval_seconds=18)
+                else:
+                    SoundManager.stop_reminder()
             else:
                 SoundManager.stop_reminder()
-        else:
-            SoundManager.stop_reminder()
 
-        self._previous_notification_ids = current_ids
+            self._previous_notification_ids = current_ids
 
-        # Enable/disable Mark all button
-        try:
-            if current_ids:
-                self.mark_all_btn.configure(state="normal")
-            else:
-                self.mark_all_btn.configure(state="disabled")
-        except Exception:
-            pass
+            try:
+                if current_ids:
+                    self.mark_all_btn.configure(state="normal")
+                else:
+                    self.mark_all_btn.configure(state="disabled")
+            except Exception:
+                pass
 
-        if not display_notifications:
+            # Unread / missed banner (shows exact count e.g. 9)
+            unread_count = len(current_ids)
+            try:
+                if unread_count > 0:
+                    label = "missed notification" if unread_count == 1 else "missed notifications"
+                    self.summary_label.configure(
+                        text=f"You have {unread_count} {label}",
+                        text_color="#DC2626",
+                    )
+                    self.unread_chip.configure(text=f"  {unread_count}  ")
+                    if not self.unread_chip.winfo_ismapped():
+                        self.unread_chip.pack(side="left", padx=(10, 0))
+                else:
+                    self.summary_label.configure(
+                        text="All caught up — no unread notifications",
+                        text_color=Theme.MUTED_TEXT,
+                    )
+                    try:
+                        self.unread_chip.pack_forget()
+                    except Exception:
+                        pass
+            except Exception as exc:
+                print(f"⚠️ summary banner update failed: {exc}")
+
+            if not display_notifications:
+                ctk.CTkLabel(
+                    self.list_frame,
+                    text="No notifications found",
+                    font=("Segoe UI", 13),
+                    text_color=Theme.MUTED_TEXT,
+                ).pack(pady=40)
+                return
+
+            for item in display_notifications:
+                notification = self._convert(item)
+                card = NotificationCard(
+                    self.list_frame,
+                    notification,
+                    self.mark_as_read,
+                )
+                card.pack(fill="x", pady=6)
+
+        def failed(exc):
+            print(f"⚠️ notifications refresh failed: {exc}")
+            if self._destroyed:
+                return
+            for child in self.list_frame.winfo_children():
+                child.destroy()
             ctk.CTkLabel(
                 self.list_frame,
-                text="No notifications found",
+                text="Could not load notifications",
                 font=("Segoe UI", 13),
                 text_color=Theme.MUTED_TEXT,
             ).pack(pady=40)
-            return
 
-        for item in display_notifications:
-            notification = self._convert(item)
-            card = NotificationCard(
-                self.list_frame,
-                notification,
-                self.mark_as_read,
-            )
-            card.pack(fill="x", pady=6)
+        gen = bump_generation(self)
+        run_in_background(self, fetch, apply, failed, name="notifications-loader", generation=gen)
 
     def mark_as_read(self, notification_id):
         if not notification_id:
             return
 
-        try:
-            notification_id_str = str(notification_id)
-            print(f"📋 Marking notification as read: {notification_id_str}")
+        notification_id_str = str(notification_id)
+        print(f"📋 Marking notification as read: {notification_id_str}")
 
-            notification_found = None
-            notifications = self.controller.get_notifications(role="All", unread_only=False)
-            for n in notifications:
-                if self._extract_id(n) == notification_id_str:
-                    notification_found = n
-                    break
+        def do_mark():
+            return self.controller.mark_read(notification_id_str)
 
-            self.controller.mark_read(notification_id_str)
+        def on_ok(_result):
+            if self._destroyed:
+                return
             print(f"✅ Notification {notification_id_str} marked as read")
-
-            if notification_found:
-                category = None
-                reference = None
-                if isinstance(notification_found, Notification):
-                    category = notification_found.category
-                    reference = notification_found.reference_id
-                elif isinstance(notification_found, dict):
-                    category = notification_found.get("category", "")
-                    reference = (
-                        notification_found.get("reference_id")
-                        or notification_found.get("reference")
-                    )
-
-                if category in ("Quote Assignment", "Quote Assigned"):
-                    print(f"📋 Quote assignment notification – reference: {reference}")
-                    self._handle_quote_assignment(notification_found, reference)
-
+            SoundManager.stop_reminder()
             self.refresh()
+            # Refresh sidebar badge
+            try:
+                top = self.winfo_toplevel()
+                if hasattr(top, "_poll_notification_badge"):
+                    top.after(200, top._poll_notification_badge)
+            except Exception:
+                pass
 
-        except Exception as e:
-            print(f"Mark read failed: {e}")
+        def on_err(exc):
+            print(f"Mark read failed: {exc}")
             import traceback
             traceback.print_exc()
+
+        run_in_background(self, do_mark, on_ok, on_err, name="notif-mark-read")
 
     def _handle_quote_assignment(self, notification, reference):
         if not reference:

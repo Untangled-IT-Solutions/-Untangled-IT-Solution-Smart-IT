@@ -563,38 +563,58 @@ class MainWindow(ctk.CTkToplevel):
                 pass
 
     def _poll_notification_badge(self) -> None:
-        """Refresh the Notifications sidebar badge every ~25s."""
+        """Refresh the Notifications sidebar badge every ~25s (non-blocking)."""
         if self._is_destroyed:
             return
-        count = 0
-        try:
+
+        def fetch():
             ctrl = self._notification_controller
             if ctrl is not None and hasattr(ctrl, "get_unread_count"):
-                count = int(ctrl.get_unread_count() or 0)
-        except Exception as exc:
-            print(f"⚠️ notification badge poll failed: {exc}")
-            count = 0
+                return int(ctrl.get_unread_count() or 0)
+            return 0
 
-        try:
-            btn = self._nav_buttons.get("Notifications")
-            if btn is not None and hasattr(btn, "set_badge"):
-                btn.set_badge(count)
-        except Exception:
-            pass
-
-        # Optional: play sound when unread increases
-        if count > self._last_unread and self._last_unread >= 0:
+        def apply(count):
+            if self._is_destroyed:
+                return
+            count = int(count or 0)
             try:
-                from app.utils.sound import SoundManager
-                SoundManager.play_notification_sound()
+                btn = self._nav_buttons.get("Notifications")
+                if btn is not None and hasattr(btn, "set_badge"):
+                    btn.set_badge(count)
             except Exception:
                 pass
-        self._last_unread = count
+            # Play sound when unread increases
+            last = getattr(self, "_last_unread", -1)
+            if count > last and last >= 0:
+                try:
+                    from app.utils.sound import SoundManager
+                    SoundManager.play_notification_sound()
+                except Exception:
+                    pass
+            self._last_unread = count
+            try:
+                self._notif_poll_job = self.after(25000, self._poll_notification_badge)
+            except Exception:
+                self._notif_poll_job = None
+
+        def failed(exc):
+            print(f"⚠️ notification badge poll failed: {exc}")
+            if self._is_destroyed:
+                return
+            try:
+                self._notif_poll_job = self.after(25000, self._poll_notification_badge)
+            except Exception:
+                self._notif_poll_job = None
 
         try:
-            self._notif_poll_job = self.after(25000, self._poll_notification_badge)
-        except Exception:
-            self._notif_poll_job = None
+            from app.utils.async_tasks import run_in_background
+            run_in_background(self, fetch, apply, failed, name="notif-badge-poll")
+        except Exception as exc:
+            print(f"⚠️ could not start badge poll: {exc}")
+            try:
+                self._notif_poll_job = self.after(25000, self._poll_notification_badge)
+            except Exception:
+                self._notif_poll_job = None
 
     def _add_timer_to_header(self):
         if (
@@ -1023,11 +1043,13 @@ class MainWindow(ctk.CTkToplevel):
         self,
         view,
         destination: Optional[str] = None,
+        reuse: bool = False,
     ):
-        """Display a newly-created view without destroying the current view first.
+        """Show a workspace page immediately (UI shell first).
 
-        This makes navigation transactional: if a destination fails to build,
-        the previous working screen remains visible.
+        ``reuse=True`` keeps the previous view instance alive in the view cache
+        (grid_remove instead of destroy) so navigation back is instant.
+        Data loading is never required before the page is shown.
         """
         if self._is_destroyed or view is None:
             return False
@@ -1038,7 +1060,7 @@ class MainWindow(ctk.CTkToplevel):
         except Exception:
             return False
 
-        # Place the new view first. If grid succeeds, the old view can be removed.
+        # Paint the target page first – navigation must feel instant
         try:
             view.grid(
                 row=0,
@@ -1048,16 +1070,14 @@ class MainWindow(ctk.CTkToplevel):
                 pady=28,
             )
             view.lift()
-            # Force Tk to process the geometry change before replacing the
-            # previous workspace. This avoids a blank workspace during
-            # rapid navigation between complex CustomTkinter views.
             self.workspace.update_idletasks()
         except Exception as exp:
             print(f"❌ Error displaying view: {exp}")
-            try:
-                view.destroy()
-            except Exception:
-                pass
+            if not reuse:
+                try:
+                    view.destroy()
+                except Exception:
+                    pass
             return False
 
         old_view = self._active_view
@@ -1068,14 +1088,133 @@ class MainWindow(ctk.CTkToplevel):
         if old_view is not None and old_view is not view:
             try:
                 if old_view.winfo_exists():
-                    old_view.destroy()
+                    # Keep instances for the view cache – only hide them
+                    old_view.grid_remove()
             except Exception:
                 pass
 
         self.set_active_nav(self._active_destination)
+
+        # Data load is owned by the view (on_show / refresh). Only hide the
+        # global nav loader if the view has nothing to load.
+        try:
+            # Re-assert loader above the newly shown page (if still marked visible)
+            if getattr(self, "_nav_loading_visible", False):
+                self.after(20, lambda: self._nav_loading_overlay.lift() if getattr(self, "_nav_loading_visible", False) else None)
+            if not hasattr(view, "refresh") and not hasattr(view, "on_show"):
+                self.after(80, self.hide_nav_loading)
+            else:
+                # Soft timeout so a hung request cannot leave the overlay forever
+                self.after(10000, self.hide_nav_loading)
+        except Exception as exp:
+            print(f"⚠️ post-nav schedule failed: {exp}")
+            self.hide_nav_loading()
         return True
 
+    # ------------------------------------------------------------------ nav loading
+    def _ensure_nav_loading(self) -> None:
+        """Create a full-workspace loading overlay (once)."""
+        if getattr(self, "_nav_loading_overlay", None) is not None:
+            return
+        try:
+            host = self.workspace
+        except Exception:
+            return
+        # Semi-opaque feel via solid panel; always child of workspace
+        overlay = ctk.CTkFrame(host, fg_color=Theme.BG, corner_radius=0)
+        card = ctk.CTkFrame(
+            overlay,
+            fg_color=Theme.PANEL if hasattr(Theme, "PANEL") else "#FFFFFF",
+            corner_radius=16,
+            border_width=1,
+            border_color=getattr(Theme, "BORDER", "#E5E7EB"),
+            width=320,
+            height=130,
+        )
+        card.place(relx=0.5, rely=0.4, anchor="center")
+        card.pack_propagate(False)
+        self._nav_loading_spinner = ctk.CTkLabel(
+            card, text="⏳", font=ctk.CTkFont(size=28),
+            text_color=getattr(Theme, "ACCENT", "#60920D"),
+        )
+        self._nav_loading_spinner.pack(pady=(24, 6))
+        self._nav_loading_label = ctk.CTkLabel(
+            card,
+            text="Loading…",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=getattr(Theme, "TEXT", "#0F172A"),
+        )
+        self._nav_loading_label.pack(pady=(0, 4))
+        ctk.CTkLabel(
+            card,
+            text="Fetching data from server",
+            font=ctk.CTkFont(size=11),
+            text_color=getattr(Theme, "MUTED_TEXT", "#64748B"),
+        ).pack(pady=(0, 18))
+        self._nav_loading_overlay = overlay
+        self._nav_loading_visible = False
+        self._nav_spin_job = None
+        self._nav_spin_frames = ["⏳", "↻", "⏳", "↺"]
+        self._nav_spin_idx = 0
+
+    def _animate_nav_spinner(self) -> None:
+        if not getattr(self, "_nav_loading_visible", False):
+            return
+        frames = getattr(self, "_nav_spin_frames", ["⏳"])
+        idx = getattr(self, "_nav_spin_idx", 0) % len(frames)
+        try:
+            self._nav_loading_spinner.configure(text=frames[idx])
+        except Exception:
+            pass
+        self._nav_spin_idx = idx + 1
+        try:
+            self._nav_spin_job = self.after(280, self._animate_nav_spinner)
+        except Exception:
+            self._nav_spin_job = None
+
+    def show_nav_loading(self, message: str = "Loading…") -> None:
+        """Show workspace-wide loader above the current page."""
+        if self._is_destroyed:
+            return
+        try:
+            self._ensure_nav_loading()
+            self._nav_loading_label.configure(text=message or "Loading…")
+            # Parent must be workspace so it covers the page content
+            try:
+                self._nav_loading_overlay.place(in_=self.workspace, relx=0, rely=0, relwidth=1, relheight=1)
+            except Exception:
+                self._nav_loading_overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._nav_loading_overlay.lift()
+            self._nav_loading_visible = True
+            if self._nav_spin_job is None:
+                self._animate_nav_spinner()
+            # Keep on top after the view is gridded
+            self.after(30, lambda: self._nav_loading_overlay.lift() if self._nav_loading_visible else None)
+            self.after(120, lambda: self._nav_loading_overlay.lift() if self._nav_loading_visible else None)
+        except Exception as exc:
+            print(f"⚠️ show_nav_loading failed: {exc}")
+
+    def hide_nav_loading(self) -> None:
+        """Hide workspace-wide loader when data is ready (or on error)."""
+        if self._is_destroyed:
+            return
+        self._nav_loading_visible = False
+        job = getattr(self, "_nav_spin_job", None)
+        if job is not None:
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+            self._nav_spin_job = None
+        ov = getattr(self, "_nav_loading_overlay", None)
+        if ov is not None:
+            try:
+                ov.place_forget()
+            except Exception:
+                pass
+
     def navigate_to(self, destination: str) -> None:
+
         """Navigate safely on Tk's main event loop.
 
         Sidebar callbacks can originate from nested CustomTkinter widgets.
@@ -1095,6 +1234,8 @@ class MainWindow(ctk.CTkToplevel):
             if self._is_destroyed:
                 return
             try:
+                # Show loader immediately on every sidebar navigation
+                self.show_nav_loading(f"Loading {destination}…")
                 result = self._navigation_controller.navigate(destination)
                 if result:
                     print(f"🧭 Workspace request completed: {destination}")
@@ -1103,12 +1244,16 @@ class MainWindow(ctk.CTkToplevel):
                             self.after(800, self._poll_notification_badge)
                         except Exception:
                             pass
+                    # Safety: hide loader if view never signals ready (e.g. Settings)
+                    self.after(12000, self.hide_nav_loading)
                 else:
                     print(f"⚠️ Workspace request rejected: {destination}")
+                    self.hide_nav_loading()
             except Exception as exp:
                 print(f"❌ Navigation dispatch failed for {destination}: {exp}")
                 import traceback
                 traceback.print_exc()
+                self.hide_nav_loading()
 
         try:
             self.after(0, dispatch)

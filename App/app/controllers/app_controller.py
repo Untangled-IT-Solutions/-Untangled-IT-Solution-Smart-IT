@@ -70,6 +70,10 @@ class AppController:
         self._backend = backend
         self._mongo_attendance = MongoAttendanceService(backend)
 
+        # Reusable workspace views – instant navigation
+        self._view_cache: dict[str, object] = {}
+
+
         # Domain services (all API-backed)
         self._approval_service = ApprovalService(backend, people_service)
         self._calendar_service = CalendarService(backend)
@@ -225,7 +229,7 @@ class AppController:
         self._hidden_root.mainloop()
 
     def _navigate_destination(self, destination: str) -> bool:
-        """Build and show a workspace view for the NavigationController."""
+        """Show a workspace page immediately; reuse cached views; load data in background."""
         window = self._main_window
         if window is None:
             return False
@@ -234,9 +238,36 @@ class AppController:
         if workspace is None:
             return False
 
+        # Notify previous view it is hidden (cancel stale loads)
+        try:
+            prev = getattr(window, "_active_view", None)
+            if prev is not None and hasattr(prev, "on_hide"):
+                prev.on_hide()
+        except Exception:
+            pass
+
+        # Instant path: reuse existing view instance
+        cached = self._view_cache.get(destination)
+        if cached is not None:
+            try:
+                if cached.winfo_exists():
+                    ok = bool(window.show_workspace_view(cached, destination, reuse=True))
+                    if ok:
+                        try:
+                            if hasattr(cached, "on_show"):
+                                cached.on_show()
+                            elif hasattr(cached, "refresh"):
+                                cached.refresh()
+                        except Exception as exc:
+                            logger.debug("cached view on_show failed: %s", exc)
+                    return ok
+            except Exception:
+                self._view_cache.pop(destination, None)
+
         controller_map = {
             "Dashboard": self._dashboard_controller,
             "Tasks": self._task_controller,
+            "Sprint Planning": self._task_controller,
             "Work": self._task_controller,
             "People": self._people_controller,
             "Attendance": self._attendance_controller,
@@ -252,8 +283,6 @@ class AppController:
         controller = controller_map.get(destination)
 
         try:
-            # Attendance needs the same MongoAttendanceService the header timer uses,
-            # plus the logged-in account (employee_id). Navigation alone does not inject them.
             if destination == "Attendance":
                 from app.views.attendance_view import AttendanceView
                 view = AttendanceView(
@@ -274,12 +303,31 @@ class AppController:
         if view is None:
             return False
 
+        # Cache for instant return visits (except dialogs-heavy pages if needed)
+        self._view_cache[destination] = view
+
         try:
-            return bool(window.show_workspace_view(view, destination))
+            ok = bool(window.show_workspace_view(view, destination, reuse=False))
+            if ok and hasattr(view, "on_show"):
+                try:
+                    view.on_show()
+                except Exception:
+                    pass
+            return ok
         except Exception as exc:
             logger.exception("Failed to show view %s", destination)
             print(f"❌ Failed to show view {destination}: {exc}")
             return False
+
+    def clear_view_cache(self) -> None:
+        """Destroy cached workspace views (call on logout)."""
+        for dest, view in list(getattr(self, "_view_cache", {}).items()):
+            try:
+                if hasattr(view, "destroy"):
+                    view.destroy()
+            except Exception:
+                pass
+        self._view_cache = {}
 
 
     def check_for_updates(self, show_up_to_date: bool = False) -> None:
@@ -381,6 +429,10 @@ class AppController:
             logger.exception("Could not open up-to-date dialog")
 
     def _logout(self) -> None:
+        try:
+            self.clear_view_cache()
+        except Exception:
+            pass
         logger.info("User logged out")
         try:
             self._auth.logout()

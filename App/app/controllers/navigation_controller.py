@@ -211,6 +211,12 @@ class NavigationController:
             "Quote Management", "Order Management",
         ]
         if self.is_manager():
+            # Insert sprint planning near Tasks
+            if "Tasks" in base_items:
+                i = base_items.index("Tasks") + 1
+                base_items.insert(i, "Sprint Planning")
+            else:
+                base_items.append("Sprint Planning")
             base_items.extend(["Quote Sync", "User Management"])
         base_items.append("Settings")
         return base_items
@@ -234,16 +240,22 @@ class NavigationController:
 
         elif name == "Tasks":
             from app.views.task_view import TaskView
-            return TaskView(workspace, controller)
+            account = self.get_current_account() if hasattr(self, "get_current_account") else None
+            return TaskView(workspace, controller, current_account=account)
+
+        elif name == "Sprint Planning":
+            from app.views.sprint_planning_view import SprintPlanningView
+            account = self.get_current_account() if hasattr(self, "get_current_account") else None
+            return SprintPlanningView(workspace, controller, current_account=account)
 
         elif name == "Attendance":
             from app.views.attendance_view import AttendanceView
             return AttendanceView(workspace, controller)
 
         elif name == "Work":
-            # Production: Work is task-based (Backend API). Old Mongo quote workspace is retired.
             from app.views.task_view import TaskView
-            return TaskView(workspace, controller)
+            account = self.get_current_account() if hasattr(self, "get_current_account") else None
+            return TaskView(workspace, controller, current_account=account)
 
         elif name == "People":
             from app.views.people_view import PeopleView

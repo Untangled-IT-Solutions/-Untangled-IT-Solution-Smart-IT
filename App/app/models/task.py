@@ -1,4 +1,4 @@
-"""Task / unified Work model – production."""
+"""Task / unified Work model – production (API-backed)."""
 
 from __future__ import annotations
 
@@ -30,6 +30,11 @@ class Task:
     active_timer_started_at: Optional[str] = None
     director_approval_status: Optional[str] = None
     returned_reason: Optional[str] = None
+    # Extended fields used by TaskView / Sprint Planning
+    sprint_bucket: str = "Backlog"
+    story_points: int = 1
+    hardware_serial: str = ""
+    external_reference: str = ""
     raw: dict = field(default_factory=dict, repr=False)
 
 

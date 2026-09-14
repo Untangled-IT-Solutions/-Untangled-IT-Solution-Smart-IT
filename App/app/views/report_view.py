@@ -4,6 +4,7 @@ import customtkinter as ctk
 
 from app.controllers.report_controller import ReportController
 from app.utils.theme import Theme
+from app.utils.async_tasks import run_in_background
 
 
 class ReportView(ctk.CTkFrame):
@@ -53,20 +54,35 @@ class ReportView(ctk.CTkFrame):
             self.report_menu.set(report_type)
 
     def refresh(self) -> None:
-        for child in self.preview_frame.winfo_children():
-            child.destroy()
-        rows = self._controller.preview(self.report_menu.get())
-        self.status_label.configure(text=f"{len(rows)} records ready")
-        if not rows:
-            ctk.CTkLabel(self.preview_frame, text="No records found.", text_color=Theme.MUTED_TEXT).grid(row=0, column=0, padx=16, pady=16, sticky="w")
-            return
-        headers = list(rows[0].keys())
-        for column, header in enumerate(headers):
-            self.preview_frame.grid_columnconfigure(column, weight=1)
-            ctk.CTkLabel(self.preview_frame, text=header, text_color=Theme.TEXT, font=Theme.FONT_SMALL).grid(row=0, column=column, padx=10, pady=(12, 8), sticky="w")
-        for row_index, row in enumerate(rows[:50], start=1):
+        report_type = self.report_menu.get()
+
+        def fetch():
+            return self._controller.preview(report_type)
+
+        def apply(rows):
+            for child in self.preview_frame.winfo_children():
+                child.destroy()
+            rows = rows or []
+            self.status_label.configure(text=f"{len(rows)} records ready")
+            if not rows:
+                ctk.CTkLabel(self.preview_frame, text="No records found.", text_color=Theme.MUTED_TEXT).grid(row=0, column=0, padx=16, pady=16, sticky="w")
+                return
+            headers = list(rows[0].keys())
             for column, header in enumerate(headers):
-                ctk.CTkLabel(self.preview_frame, text=str(row.get(header, "")), text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL, wraplength=180, justify="left").grid(row=row_index, column=column, padx=10, pady=5, sticky="w")
+                self.preview_frame.grid_columnconfigure(column, weight=1)
+                ctk.CTkLabel(self.preview_frame, text=header, text_color=Theme.TEXT, font=Theme.FONT_SMALL).grid(row=0, column=column, padx=10, pady=(12, 8), sticky="w")
+            for row_index, row in enumerate(rows[:50], start=1):
+                for column, header in enumerate(headers):
+                    ctk.CTkLabel(self.preview_frame, text=str(row.get(header, "")), text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL, wraplength=180, justify="left").grid(row=row_index, column=column, padx=10, pady=5, sticky="w")
+
+        def failed(exc):
+            print(f"⚠️ report refresh failed: {exc}")
+            for child in self.preview_frame.winfo_children():
+                child.destroy()
+            self.status_label.configure(text="Could not load report")
+            ctk.CTkLabel(self.preview_frame, text="Could not load report.", text_color=Theme.MUTED_TEXT).grid(row=0, column=0, padx=16, pady=16, sticky="w")
+
+        run_in_background(self, fetch, apply, failed, name="report-loader")
 
     def _export(self) -> None:
         path = self._controller.export(self.report_menu.get(), self.export_menu.get())

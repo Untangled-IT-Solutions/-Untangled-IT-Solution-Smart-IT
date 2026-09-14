@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from app.controllers.office_request_controller import OfficeRequestController
 from app.utils.theme import Theme
+from app.utils.async_tasks import run_in_background
 from app.widgets.office_request_card import OfficeRequestCard
 
 
@@ -37,17 +38,32 @@ class OfficeRequestView(ctk.CTkFrame):
         self._list_frame.grid_columnconfigure(0, weight=1)
 
     def refresh(self) -> None:
-        for child in self._list_frame.winfo_children():
-            child.destroy()
-        requests = self._controller.get_requests()
-        if not requests:
+        def fetch():
+            return self._controller.get_requests()
+
+        def apply(requests):
+            for child in self._list_frame.winfo_children():
+                child.destroy()
+            requests = requests or []
+            if not requests:
+                ctk.CTkLabel(
+                    self._list_frame, text="No office requests submitted.", text_color=Theme.MUTED_TEXT,
+                    font=("Segoe UI", 14)
+                ).grid(row=0, column=0, sticky="w")
+                return
+            for row, request in enumerate(requests):
+                OfficeRequestCard(self._list_frame, request).grid(row=row, column=0, pady=(0, 12), sticky="ew")
+
+        def failed(exc):
+            print(f"⚠️ office requests refresh failed: {exc}")
+            for child in self._list_frame.winfo_children():
+                child.destroy()
             ctk.CTkLabel(
-                self._list_frame, text="No office requests submitted.", text_color=Theme.MUTED_TEXT,
+                self._list_frame, text="Could not load office requests.", text_color=Theme.MUTED_TEXT,
                 font=("Segoe UI", 14)
             ).grid(row=0, column=0, sticky="w")
-            return
-        for row, request in enumerate(requests):
-            OfficeRequestCard(self._list_frame, request).grid(row=row, column=0, pady=(0, 12), sticky="ew")
+
+        run_in_background(self, fetch, apply, failed, name="office-requests-loader")
 
     def _open_request_form(self) -> None:
         OfficeRequestModal(self, self._controller, self.refresh)

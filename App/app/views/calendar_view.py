@@ -9,6 +9,7 @@ import customtkinter as ctk
 from app.controllers.calendar_controller import CalendarController
 from app.models.calendar_event import CalendarEvent
 from app.utils.theme import Theme
+from app.utils.async_tasks import run_in_background
 
 
 class CalendarView(ctk.CTkFrame):
@@ -133,12 +134,24 @@ class CalendarView(ctk.CTkFrame):
             self._selected_day = None
 
     def refresh(self) -> None:
-        """Render a month from database-backed Work-derived events."""
+        """Render a month from database-backed Work-derived events (non-blocking)."""
         self.month_label.configure(text=f"{calendar.month_name[self._month]} {self._year}")
-        events = self._controller.get_month_events(self._year, self._month)
-        events = self._filter_events(events)
-        self._render_calendar(events)
-        self._render_events(events)
+        year, month = self._year, self._month
+
+        def fetch():
+            return self._controller.get_month_events(year, month)
+
+        def apply(events):
+            events = self._filter_events(events or [])
+            self._render_calendar(events)
+            self._render_events(events)
+
+        def failed(exc):
+            print(f"⚠️ calendar refresh failed: {exc}")
+            self._render_calendar([])
+            self._render_events([])
+
+        run_in_background(self, fetch, apply, failed, name="calendar-loader")
 
     def _filter_events(self, events: list[CalendarEvent]) -> list[CalendarEvent]:
         query = self.event_search.get().strip().casefold()

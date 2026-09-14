@@ -203,6 +203,11 @@ class AttendanceView(ctk.CTkFrame):
     def _hide_loading(self):
         if self._is_destroyed:
             return
+        try:
+            from app.utils.async_tasks import hide_global_nav_loading
+            hide_global_nav_loading(self)
+        except Exception:
+            pass
         self._loading_visible = False
         if getattr(self, "_spin_job", None) is not None:
             try:

@@ -17,6 +17,7 @@ except ModuleNotFoundError:
 
 from app.controllers.login_controller import LoginController
 from app.utils.theme import Theme
+from app.utils.async_tasks import run_in_background, start_ui_dispatcher
 
 
 class _WorkArea(NamedTuple):
@@ -47,13 +48,13 @@ class LoginView(ctk.CTk):
     DISABLED = "#8A958C"
     FONT = "Segoe UI"
 
-    MIN_W, MIN_H = 420, 500
-    PREFERRED_W = 920
-    PREFERRED_H = 540
-    LARGE_W = 960
-    LARGE_H = 560
+    MIN_W, MIN_H = 720, 520
+    PREFERRED_W = 980
+    PREFERRED_H = 580
+    LARGE_W = 1040
+    LARGE_H = 600
 
-    DESKTOP_SPLIT = 860
+    DESKTOP_SPLIT = 700
     HEIGHT_LARGE = 600
     HEIGHT_NORMAL = 540
     HEIGHT_COMPACT = 500
@@ -96,6 +97,10 @@ class LoginView(ctk.CTk):
         self.after(200, self._focus_username)
         self.after_idle(self._apply_layout)
         self.after(60, self._set_geometry)
+        try:
+            start_ui_dispatcher(self)
+        except Exception as exc:
+            print(f"⚠️ Could not start UI dispatcher on login: {exc}")
         self.deiconify()
         self.lift()
         self.focus_force()
@@ -218,10 +223,13 @@ class LoginView(ctk.CTk):
             return
         try:
             w, h, x, y = self._calculate_window_size()
+            # Prefer a comfortable desktop login – never open in ultra-narrow compact mode
+            w = max(w, min(self.PREFERRED_W, max(self.MIN_W, 900)))
+            h = max(h, min(self.PREFERRED_H, 560))
             self.geometry(f"{w}x{h}+{x}+{y}")
-            # Lock max size so the window cannot grow beyond its designed dimensions
-            self.maxsize(w, h)
-            # On Windows also hide the maximize button from the title bar
+            self.minsize(self.MIN_W, self.MIN_H)
+            # Soft max – user can still resize within reason
+            self.maxsize(1200, 800)
             self._disable_maximize_button()
         except Exception:
             pass
@@ -277,8 +285,8 @@ class LoginView(ctk.CTk):
         if mode == "large_desktop":
             return {
                 "mode": mode,
-                "form_padx": 40, "form_pady": 18,
-                "brand_padx": 28, "brand_pady": 20,
+                "form_padx": 56, "form_pady": 24,
+                "brand_padx": 40, "brand_pady": 28,
                 "input_h": 44, "btn_h": 46, "show_w": 60,
                 "gap_label": 4, "gap_section": 10,
                 "gap_welcome": 6, "gap_subtitle": 12,
@@ -293,8 +301,8 @@ class LoginView(ctk.CTk):
         if mode == "normal_desktop":
             return {
                 "mode": mode,
-                "form_padx": 32, "form_pady": 14,
-                "brand_padx": 24, "brand_pady": 16,
+                "form_padx": 48, "form_pady": 20,
+                "brand_padx": 36, "brand_pady": 24,
                 "input_h": 42, "btn_h": 44, "show_w": 58,
                 "gap_label": 3, "gap_section": 9,
                 "gap_welcome": 4, "gap_subtitle": 10,
@@ -309,7 +317,7 @@ class LoginView(ctk.CTk):
         if mode == "compact_desktop":
             return {
                 "mode": mode,
-                "form_padx": 26, "form_pady": 10,
+                "form_padx": 36, "form_pady": 16,
                 "brand_padx": 18, "brand_pady": 12,
                 "input_h": 40, "btn_h": 42, "show_w": 56,
                 "gap_label": 3, "gap_section": 7,
@@ -324,7 +332,7 @@ class LoginView(ctk.CTk):
             }
         return {
             "mode": mode,
-            "form_padx": 20, "form_pady": 10,
+            "form_padx": 28, "form_pady": 14,
             "brand_padx": 16, "brand_pady": 10,
             "input_h": 40, "btn_h": 42, "show_w": 56,
             "gap_label": 3, "gap_section": 7,
@@ -414,7 +422,13 @@ class LoginView(ctk.CTk):
         self._form_center.grid_columnconfigure(0, weight=1)
 
         form = ctk.CTkFrame(self._form_center, fg_color="transparent")
-        form.grid(row=1, column=0, sticky="ew", padx=36, pady=16)
+        form.grid(row=1, column=0, sticky="ew", padx=48, pady=24)
+        # Cap form content width so left/right never feel crushed
+        form.configure(width=420)
+        try:
+            form.grid_propagate(True)
+        except Exception:
+            pass
         form.grid_columnconfigure(0, weight=1)
         self._form = form
 
@@ -923,8 +937,8 @@ class LoginView(ctk.CTk):
             split = metrics["mode"] != "small"
 
             if split:
-                self._shell.grid_columnconfigure(0, weight=5)
-                self._shell.grid_columnconfigure(1, weight=6)
+                self._shell.grid_columnconfigure(0, weight=1)
+                self._shell.grid_columnconfigure(1, weight=1)
                 self._brand_panel.grid()
                 self._compact_brand.grid_remove()
                 self._brand_inner.grid_configure(
@@ -945,18 +959,28 @@ class LoginView(ctk.CTk):
                 # Ensure white logo is mounted on the green background
                 self.after(30, self._mount_compact_logo_white)
 
+            # Generous side padding – form should never look crushed left/right
+            form_padx = max(40, int(metrics["form_padx"]))
             if metrics.get("center_form", False) and split:
                 self._form_center.grid_rowconfigure(0, weight=1)
                 self._form_center.grid_rowconfigure(2, weight=1)
+                # Center a max-width form column inside the panel
                 self._form.grid_configure(
-                    padx=metrics["form_padx"], pady=metrics["form_pady"], sticky="ew"
+                    padx=form_padx, pady=max(20, int(metrics["form_pady"])), sticky="ew"
                 )
             else:
                 self._form_center.grid_rowconfigure(0, weight=0)
                 self._form_center.grid_rowconfigure(2, weight=0)
                 self._form.grid_configure(
-                    padx=metrics["form_padx"], pady=metrics["form_pady"], sticky="new"
+                    padx=form_padx, pady=max(16, int(metrics["form_pady"])), sticky="new"
                 )
+            # Keep inputs from stretching edge-to-edge on wide panels
+            try:
+                half = max(320, (w // 2) if split else w)
+                content_w = min(440, half - form_padx * 2)
+                self._form.configure(width=max(320, content_w))
+            except Exception:
+                pass
 
             self._welcome_lbl.configure(font=self._font(metrics["heading_size"], True))
             self._welcome_lbl.grid_configure(pady=(metrics["gap_welcome"], 2))
@@ -1065,10 +1089,14 @@ class LoginView(ctk.CTk):
         self._loading_label.configure(text="Connecting securely…")
         self.error_label.configure(text="")
         self.update_idletasks()
-        try:
-            success, message = self._controller.login(username, password)
+
+        def do_login():
+            return self._controller.login(username, password)
+
+        def on_success(result):
             if self._is_destroyed:
                 return
+            success, message = result
             if success:
                 self._login_success = True
                 self.error_label.configure(text="")
@@ -1083,12 +1111,17 @@ class LoginView(ctk.CTk):
                 self._loading_label.configure(text="")
                 self.error_label.configure(text=message or "Sign in failed.")
                 self.username_entry.focus_set()
-        except Exception as exc:
+
+        def on_error(exc):
+            if self._is_destroyed:
+                return
             self._reset_login_button()
             self._loading_label.configure(text="")
             self.error_label.configure(text=f"Login error: {exc}")
             import traceback
             traceback.print_exc()
+
+        run_in_background(self, do_login, on_success, on_error, name="login-api")
 
     def _reset_login_button(self) -> None:
         try:

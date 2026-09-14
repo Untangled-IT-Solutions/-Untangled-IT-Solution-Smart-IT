@@ -4,6 +4,7 @@ import customtkinter as ctk
 
 from app.controllers.project_controller import ProjectController
 from app.utils.theme import Theme
+from app.utils.async_tasks import run_in_background
 
 
 class ProjectView(ctk.CTkFrame):
@@ -26,27 +27,41 @@ class ProjectView(ctk.CTkFrame):
         self.refresh()
 
     def refresh(self) -> None:
-        for child in self.list_frame.winfo_children():
-            child.destroy()
-        projects = self._controller.get_projects()
-        if not projects:
-            ctk.CTkLabel(self.list_frame, text="No projects found.", text_color=Theme.MUTED_TEXT).grid(
+        def fetch():
+            return self._controller.get_projects()
+
+        def apply(projects):
+            for child in self.list_frame.winfo_children():
+                child.destroy()
+            projects = projects or []
+            if not projects:
+                ctk.CTkLabel(self.list_frame, text="No projects found.", text_color=Theme.MUTED_TEXT).grid(
+                    row=0, column=0, sticky="w"
+                )
+                return
+            for index, project in enumerate(projects):
+                card = ctk.CTkFrame(self.list_frame, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
+                card.grid(row=index // 2, column=index % 2, padx=(0 if index % 2 == 0 else 10, 10 if index % 2 == 0 else 0), pady=(0, 14), sticky="ew")
+                ctk.CTkLabel(card, text=project.name, text_color=Theme.TEXT, font=Theme.FONT_HEADING, wraplength=440, justify="left").pack(anchor="w", padx=16, pady=(16, 4))
+                ctk.CTkProgressBar(card, progress_color=Theme.ACCENT).pack(fill="x", padx=16, pady=(4, 8))
+                card.winfo_children()[1].set(project.progress / 100)
+                details = (
+                    f"{project.status} | {project.department} | {project.progress}%\n"
+                    f"Members: {project.members or 'Unassigned'}\n"
+                    f"Milestones: {project.milestones or 'No milestones'}\n"
+                    f"Timeline: {project.timeline or 'No timeline'}\n"
+                    f"Budget: {project.budget_placeholder}\n"
+                    f"Documents: {project.documents or 'No documents'}\n"
+                    f"Activity: {project.activity_feed or 'No activity'}"
+                )
+                ctk.CTkLabel(card, text=details, text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL, justify="left", wraplength=480).pack(anchor="w", padx=16, pady=(0, 16))
+
+        def failed(exc):
+            print(f"⚠️ projects refresh failed: {exc}")
+            for child in self.list_frame.winfo_children():
+                child.destroy()
+            ctk.CTkLabel(self.list_frame, text="Could not load projects.", text_color=Theme.MUTED_TEXT).grid(
                 row=0, column=0, sticky="w"
             )
-            return
-        for index, project in enumerate(projects):
-            card = ctk.CTkFrame(self.list_frame, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-            card.grid(row=index // 2, column=index % 2, padx=(0 if index % 2 == 0 else 10, 10 if index % 2 == 0 else 0), pady=(0, 14), sticky="ew")
-            ctk.CTkLabel(card, text=project.name, text_color=Theme.TEXT, font=Theme.FONT_HEADING, wraplength=440, justify="left").pack(anchor="w", padx=16, pady=(16, 4))
-            ctk.CTkProgressBar(card, progress_color=Theme.ACCENT).pack(fill="x", padx=16, pady=(4, 8))
-            card.winfo_children()[1].set(project.progress / 100)
-            details = (
-                f"{project.status} | {project.department} | {project.progress}%\n"
-                f"Members: {project.members or 'Unassigned'}\n"
-                f"Milestones: {project.milestones or 'No milestones'}\n"
-                f"Timeline: {project.timeline or 'No timeline'}\n"
-                f"Budget: {project.budget_placeholder}\n"
-                f"Documents: {project.documents or 'No documents'}\n"
-                f"Activity: {project.activity_feed or 'No activity'}"
-            )
-            ctk.CTkLabel(card, text=details, text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL, justify="left", wraplength=480).pack(anchor="w", padx=16, pady=(0, 16))
+
+        run_in_background(self, fetch, apply, failed, name="projects-loader")
