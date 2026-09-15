@@ -29,16 +29,21 @@ class AttendanceService:
     def break_end(self, employee_id: Optional[int] = None) -> Dict[str, Any]:
         return self._backend.break_end(employee_id)
 
-    # Compatibility helpers used by AttendanceController
-    def can_manage_attendance(self) -> bool:
-        return True
-
     def get_today(self, employee_id: Any = None) -> Dict[str, Any]:
-        return self.status()
+        if employee_id is None:
+            return self.status()
+        return self._backend.attendance_today(employee_id=employee_id)
 
     def get_history(self, employee_id: Any = None, days: int = 30) -> List[dict]:
         try:
-            data = self._backend.request("GET", f"/api/attendance/history?days={days}")
+            data = self._backend.attendance_history(days, employee_id)
             return data.get("records") or data.get("items") or []
         except BackendAPIError:
             return []
+
+    def get_team_today(self) -> List[dict]:
+        data = self._backend.request("GET", "/api/attendance/team", use_cache=False)
+        return data.get("records") or []
+
+    def get_working_now(self) -> Dict[str, Any]:
+        return self._backend.request("GET", "/api/attendance/working-now", use_cache=False)

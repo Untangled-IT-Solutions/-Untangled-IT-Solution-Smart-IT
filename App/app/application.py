@@ -50,17 +50,12 @@ class Application:
         print(f"🌐 Connected to backend: {self.backend.base_url}")
         logger.info("Backend client ready → %s", self.backend.base_url)
 
-        # Non-blocking connectivity probe (Render free tier can take 30–60s on cold start)
-        import threading
-        def _probe():
-            try:
-                health = self.backend.health()
-                print(f"✅ Backend health: {health.get('status') or health.get('ok') or 'ok'}")
-            except Exception as exc:
-                print(f"⚠️  Backend not reachable yet: {exc}")
-                print("   Login will still be attempted. If using Render free tier, the first request may take 30–60s (cold start).")
-        threading.Thread(target=_probe, daemon=True, name="health-probe").start()
-
+        # Connectivity checks must not delay creation of the login window.
+        from app.utils.async_tasks import run_in_background
+        run_in_background(self._temp_root, self.backend.health,
+                          lambda health: logger.info("Backend health check completed"),
+                          lambda exc: logger.warning("Backend not reachable yet: %s", exc),
+                          name="startup-health")
 
         # Auth stack
         self.mongo_auth = BackendAuthService(self.backend)

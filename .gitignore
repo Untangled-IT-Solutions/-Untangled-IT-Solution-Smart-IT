@@ -8,3 +8,19 @@ Backend/node_modules/
 App.zip
 .github.zip
 *.zip
+
+# Local dependencies, generated files, and private runtime data
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/build/
+**/dist/
+*.py[cod]
+*.log
+.env.*
+!.env.example
+App/data/
+App/logs/
+App/cache/
+App/build_metadata/

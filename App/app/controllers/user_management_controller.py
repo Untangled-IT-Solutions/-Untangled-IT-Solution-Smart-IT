@@ -8,7 +8,7 @@ from app.services.backend_auth_service import BackendAuthService
 
 
 class UserManagementController:
-    _ADMIN_ROLES = {"Director", "Branch Manager", "Operations Manager", "Business Lead", "Manager", "Admin", "Administrator", "Super Admin"}
+    _ADMIN_ROLES = {"Director", "Branch Manager", "Operations Manager", "Super Admin"}
 
     def __init__(self, mongo_auth_service: Optional[BackendAuthService], people_service: Any = None, auth_service: Optional[AuthService] = None) -> None:
         self._mongo_auth = mongo_auth_service

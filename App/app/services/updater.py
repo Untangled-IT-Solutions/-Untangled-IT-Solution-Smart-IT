@@ -88,9 +88,28 @@ def run_installer(installer_path: Path) -> int:
         print(f"ERROR: Installer not found: {installer_path}", file=sys.stderr)
         return 1
 
+
+def restart_nexus(executable_path: Path) -> bool:
+    """Start the updated desktop executable after a successful install."""
+    executable_path = executable_path.resolve()
+    if not executable_path.is_file():
+        print(f"ERROR: Nexus executable not found after update: {executable_path}", file=sys.stderr)
+        return False
+    try:
+        subprocess.Popen(
+            [str(executable_path)], cwd=str(executable_path.parent),
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            close_fds=True,
+        )
+        return True
+    except OSError as exc:
+        print(f"ERROR: Failed to restart Nexus: {exc}", file=sys.stderr)
+        return False
+
     args = [
         str(installer_path),
         "/SILENT",
+        "/SUPPRESSMSGBOXES",
         "/NORESTART",
         "/CLOSEAPPLICATIONS",
         "/RESTARTAPPLICATIONS",
@@ -131,7 +150,14 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    return run_installer(installer)
+    result = run_installer(installer)
+    if result != 0:
+        return result
+
+    # updater.exe is installed beside UntangledNexus.exe. An optional third
+    # argument makes this independently testable and supports future layouts.
+    restart_path = Path(argv[2]) if len(argv) >= 3 else Path(sys.executable).resolve().parent / "UntangledNexus.exe"
+    return 0 if restart_nexus(restart_path) else 1
 
 
 if __name__ == "__main__":

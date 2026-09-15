@@ -46,6 +46,10 @@ App/env/
 App/build/
 App/dist/
 App/*.spec.bak
+build/
+dist/
+build_metadata/
+updater.spec
 
 # ========================================
 # Runtime data
@@ -78,3 +82,7 @@ Desktop.ini
 .vscode/
 .idea/
 *.swp
+# Paths relative to this desktop project
+.venv/
+.pytest_cache/
+__pycache__/

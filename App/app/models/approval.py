@@ -1,6 +1,7 @@
 """Approval workflow domain model."""
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -23,3 +24,8 @@ class ApprovalRequest:
     business_approved_by: str = ""
     director_approved_by: str = ""
     rejection_reason: str = ""
+    leave_type: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    document_ids: tuple[str, ...] = ()
+    raw: dict[str, Any] | None = None

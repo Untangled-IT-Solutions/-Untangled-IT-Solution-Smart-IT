@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock
+import sys
 
 import pytest
 
@@ -132,6 +133,36 @@ def test_missing_installer_asset_returns_none():
     assert service.check_for_update() is None
 
 
+def test_release_without_checksum_is_rejected():
+    session = MagicMock()
+    response = MagicMock()
+    response.status_code = 200
+    response.raise_for_status = MagicMock()
+    installer = "Untangled-Nexus-Setup-1.0.1.exe"
+    response.json.return_value = _release_payload("1.0.1", assets=[{
+        "name": installer,
+        "browser_download_url": f"https://github.com/example/releases/{installer}",
+    }])
+    session.get.return_value = response
+    assert UpdateService(current_version="1.0.0", session=session).check_for_update() is None
+
+
+def test_wrong_version_installer_asset_is_rejected():
+    session = MagicMock()
+    response = MagicMock()
+    response.status_code = 200
+    response.raise_for_status = MagicMock()
+    response.json.return_value = _release_payload("1.0.2", assets=_release_payload("1.0.1")["assets"])
+    session.get.return_value = response
+    assert UpdateService(current_version="1.0.0", session=session).check_for_update() is None
+
+
+def test_untrusted_lookalike_download_host_is_rejected(tmp_path: Path):
+    update = UpdateInfo("1.0.1", "v1.0.1", "https://evil.test/?github.com", "https://github.com/hash", "")
+    with pytest.raises(ValueError, match="untrusted host"):
+        UpdateService(current_version="1.0.0").download_installer(update, destination_dir=tmp_path)
+
+
 def test_draft_and_prerelease_ignored():
     session = MagicMock()
     response = MagicMock()
@@ -233,3 +264,38 @@ def test_updater_main_missing_installer():
 
 def test_wait_for_process_already_gone():
     assert updater_mod.wait_for_process(0, timeout=1) is True
+
+
+def test_updater_restarts_after_successful_install(tmp_path: Path, monkeypatch):
+    installer = tmp_path / "setup.exe"
+    executable = tmp_path / "UntangledNexus.exe"
+    installer.write_bytes(b"installer")
+    executable.write_bytes(b"application")
+    restarted = []
+    monkeypatch.setattr(updater_mod, "wait_for_process", lambda *args, **kwargs: True)
+    monkeypatch.setattr(updater_mod, "run_installer", lambda path: 0)
+    monkeypatch.setattr(updater_mod, "restart_nexus", lambda path: restarted.append(path) or True)
+    assert updater_mod.main([str(installer), "123", str(executable)]) == 0
+    assert restarted == [executable]
+
+
+def test_launch_updater_uses_temporary_copy_and_passes_restart_path(tmp_path: Path, monkeypatch):
+    install_dir = tmp_path / "installed"
+    install_dir.mkdir()
+    updater = install_dir / "updater.exe"
+    nexus = install_dir / "UntangledNexus.exe"
+    installer = tmp_path / "Untangled-Nexus-Setup-1.0.1.exe"
+    updater.write_bytes(b"updater")
+    nexus.write_bytes(b"nexus")
+    installer.write_bytes(b"installer")
+    launched = {}
+    service = UpdateService(current_version="1.0.0")
+    monkeypatch.setattr(service, "_locate_updater", lambda: updater)
+    monkeypatch.setattr("app.services.update_service.tempfile.gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr("app.services.update_service.subprocess.Popen", lambda args, **kwargs: launched.update(args=args, kwargs=kwargs))
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    service.launch_updater(installer)
+    staged = Path(launched["args"][0])
+    assert staged.parent == tmp_path / "UntangledNexusUpdates"
+    assert staged.read_bytes() == b"updater"
+    assert launched["args"][3] == str(nexus.resolve())

@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 import customtkinter as ctk
 
@@ -17,7 +17,7 @@ except ModuleNotFoundError:
 
 from app.controllers.login_controller import LoginController
 from app.utils.theme import Theme
-from app.utils.async_tasks import run_in_background, start_ui_dispatcher
+from app.utils.ui_tasks import ui_task, RemoteCall
 
 
 class _WorkArea(NamedTuple):
@@ -48,13 +48,13 @@ class LoginView(ctk.CTk):
     DISABLED = "#8A958C"
     FONT = "Segoe UI"
 
-    MIN_W, MIN_H = 720, 520
-    PREFERRED_W = 980
-    PREFERRED_H = 580
-    LARGE_W = 1040
-    LARGE_H = 600
+    MIN_W, MIN_H = 420, 500
+    PREFERRED_W = 920
+    PREFERRED_H = 540
+    LARGE_W = 960
+    LARGE_H = 560
 
-    DESKTOP_SPLIT = 700
+    DESKTOP_SPLIT = 860
     HEIGHT_LARGE = 600
     HEIGHT_NORMAL = 540
     HEIGHT_COMPACT = 500
@@ -97,10 +97,6 @@ class LoginView(ctk.CTk):
         self.after(200, self._focus_username)
         self.after_idle(self._apply_layout)
         self.after(60, self._set_geometry)
-        try:
-            start_ui_dispatcher(self)
-        except Exception as exc:
-            print(f"⚠️ Could not start UI dispatcher on login: {exc}")
         self.deiconify()
         self.lift()
         self.focus_force()
@@ -223,13 +219,10 @@ class LoginView(ctk.CTk):
             return
         try:
             w, h, x, y = self._calculate_window_size()
-            # Prefer a comfortable desktop login – never open in ultra-narrow compact mode
-            w = max(w, min(self.PREFERRED_W, max(self.MIN_W, 900)))
-            h = max(h, min(self.PREFERRED_H, 560))
             self.geometry(f"{w}x{h}+{x}+{y}")
-            self.minsize(self.MIN_W, self.MIN_H)
-            # Soft max – user can still resize within reason
-            self.maxsize(1200, 800)
+            # Lock max size so the window cannot grow beyond its designed dimensions
+            self.maxsize(w, h)
+            # On Windows also hide the maximize button from the title bar
             self._disable_maximize_button()
         except Exception:
             pass
@@ -285,8 +278,8 @@ class LoginView(ctk.CTk):
         if mode == "large_desktop":
             return {
                 "mode": mode,
-                "form_padx": 56, "form_pady": 24,
-                "brand_padx": 40, "brand_pady": 28,
+                "form_padx": 40, "form_pady": 18,
+                "brand_padx": 28, "brand_pady": 20,
                 "input_h": 44, "btn_h": 46, "show_w": 60,
                 "gap_label": 4, "gap_section": 10,
                 "gap_welcome": 6, "gap_subtitle": 12,
@@ -301,8 +294,8 @@ class LoginView(ctk.CTk):
         if mode == "normal_desktop":
             return {
                 "mode": mode,
-                "form_padx": 48, "form_pady": 20,
-                "brand_padx": 36, "brand_pady": 24,
+                "form_padx": 32, "form_pady": 14,
+                "brand_padx": 24, "brand_pady": 16,
                 "input_h": 42, "btn_h": 44, "show_w": 58,
                 "gap_label": 3, "gap_section": 9,
                 "gap_welcome": 4, "gap_subtitle": 10,
@@ -317,7 +310,7 @@ class LoginView(ctk.CTk):
         if mode == "compact_desktop":
             return {
                 "mode": mode,
-                "form_padx": 36, "form_pady": 16,
+                "form_padx": 26, "form_pady": 10,
                 "brand_padx": 18, "brand_pady": 12,
                 "input_h": 40, "btn_h": 42, "show_w": 56,
                 "gap_label": 3, "gap_section": 7,
@@ -332,7 +325,7 @@ class LoginView(ctk.CTk):
             }
         return {
             "mode": mode,
-            "form_padx": 28, "form_pady": 14,
+            "form_padx": 20, "form_pady": 10,
             "brand_padx": 16, "brand_pady": 10,
             "input_h": 40, "btn_h": 42, "show_w": 56,
             "gap_label": 3, "gap_section": 7,
@@ -422,13 +415,7 @@ class LoginView(ctk.CTk):
         self._form_center.grid_columnconfigure(0, weight=1)
 
         form = ctk.CTkFrame(self._form_center, fg_color="transparent")
-        form.grid(row=1, column=0, sticky="ew", padx=48, pady=24)
-        # Cap form content width so left/right never feel crushed
-        form.configure(width=420)
-        try:
-            form.grid_propagate(True)
-        except Exception:
-            pass
+        form.grid(row=1, column=0, sticky="ew", padx=36, pady=16)
         form.grid_columnconfigure(0, weight=1)
         self._form = form
 
@@ -937,8 +924,8 @@ class LoginView(ctk.CTk):
             split = metrics["mode"] != "small"
 
             if split:
-                self._shell.grid_columnconfigure(0, weight=1)
-                self._shell.grid_columnconfigure(1, weight=1)
+                self._shell.grid_columnconfigure(0, weight=5)
+                self._shell.grid_columnconfigure(1, weight=6)
                 self._brand_panel.grid()
                 self._compact_brand.grid_remove()
                 self._brand_inner.grid_configure(
@@ -959,28 +946,18 @@ class LoginView(ctk.CTk):
                 # Ensure white logo is mounted on the green background
                 self.after(30, self._mount_compact_logo_white)
 
-            # Generous side padding – form should never look crushed left/right
-            form_padx = max(40, int(metrics["form_padx"]))
             if metrics.get("center_form", False) and split:
                 self._form_center.grid_rowconfigure(0, weight=1)
                 self._form_center.grid_rowconfigure(2, weight=1)
-                # Center a max-width form column inside the panel
                 self._form.grid_configure(
-                    padx=form_padx, pady=max(20, int(metrics["form_pady"])), sticky="ew"
+                    padx=metrics["form_padx"], pady=metrics["form_pady"], sticky="ew"
                 )
             else:
                 self._form_center.grid_rowconfigure(0, weight=0)
                 self._form_center.grid_rowconfigure(2, weight=0)
                 self._form.grid_configure(
-                    padx=form_padx, pady=max(16, int(metrics["form_pady"])), sticky="new"
+                    padx=metrics["form_padx"], pady=metrics["form_pady"], sticky="new"
                 )
-            # Keep inputs from stretching edge-to-edge on wide panels
-            try:
-                half = max(320, (w // 2) if split else w)
-                content_w = min(440, half - form_padx * 2)
-                self._form.configure(width=max(320, content_w))
-            except Exception:
-                pass
 
             self._welcome_lbl.configure(font=self._font(metrics["heading_size"], True))
             self._welcome_lbl.grid_configure(pady=(metrics["gap_welcome"], 2))
@@ -1074,6 +1051,7 @@ class LoginView(ctk.CTk):
         self.username_entry.configure(border_color=self.PRIMARY)
         self.password_entry.configure(border_color=self.PRIMARY)
 
+    @ui_task
     def _submit(self) -> None:
         if self._is_destroyed or self._login_success:
             return
@@ -1089,39 +1067,56 @@ class LoginView(ctk.CTk):
         self._loading_label.configure(text="Connecting securely…")
         self.error_label.configure(text="")
         self.update_idletasks()
-
-        def do_login():
-            return self._controller.login(username, password)
-
-        def on_success(result):
+        try:
+            success, message = yield RemoteCall(self._controller.login, username, password, notify_success=False)
             if self._is_destroyed:
                 return
-            success, message = result
-            if success:
-                self._login_success = True
-                self.error_label.configure(text="")
-                self._loading_label.configure(text="Signed in successfully", text_color=self.PRIMARY)
-                self.login_button.configure(
-                    text="Welcome", fg_color=self.PRIMARY,
-                    hover_color=self.PRIMARY, state="normal",
-                )
-                self.after(200, self.withdraw)  # visual only; AppController quits mainloop
-            else:
+            if not success:
                 self._reset_login_button()
                 self._loading_label.configure(text="")
                 self.error_label.configure(text=message or "Sign in failed.")
                 self.username_entry.focus_set()
-
-        def on_error(exc):
-            if self._is_destroyed:
                 return
+            if self._controller.requires_password_change:
+                self._loading_label.configure(text="Password change required", text_color=self.PRIMARY)
+                PasswordChangeDialog(
+                    self,
+                    self._controller,
+                    current_password=password,
+                    on_complete=self._finish_login,
+                    on_cancel=self._cancel_password_change,
+                )
+                self.password_entry.delete(0, "end")
+                return
+            self._finish_login()
+        except Exception as exc:
             self._reset_login_button()
             self._loading_label.configure(text="")
             self.error_label.configure(text=f"Login error: {exc}")
             import traceback
             traceback.print_exc()
 
-        run_in_background(self, do_login, on_success, on_error, name="login-api")
+    def _finish_login(self) -> None:
+        if self._is_destroyed or self._login_success:
+            return
+        self._login_success = True
+        self._controller.complete_login()
+        try:
+            self.error_label.configure(text="")
+            self._loading_label.configure(text="Signed in successfully", text_color=self.PRIMARY)
+            self.login_button.configure(
+                text="Welcome", fg_color=self.PRIMARY,
+                hover_color=self.PRIMARY, state="normal",
+            )
+            self.after(200, self.withdraw)  # visual only; AppController quits mainloop
+        except Exception:
+            pass
+
+    def _cancel_password_change(self) -> None:
+        self.password_entry.delete(0, "end")
+        self._loading_label.configure(text="")
+        self.error_label.configure(text="Password change cancelled. Sign in again to continue.")
+        self._reset_login_button()
 
     def _reset_login_button(self) -> None:
         try:
@@ -1174,3 +1169,138 @@ class LoginView(ctk.CTk):
             super().destroy()
         except Exception:
             pass
+
+
+class PasswordChangeDialog(ctk.CTkToplevel):
+    """Mandatory first-login password change using the temporary session."""
+
+    def __init__(
+        self,
+        master: LoginView,
+        controller: LoginController,
+        *,
+        current_password: str,
+        on_complete: Callable[[], None],
+        on_cancel: Callable[[], None],
+    ) -> None:
+        super().__init__(master)
+        self._controller = controller
+        self._current_password = current_password
+        self._on_complete = on_complete
+        self._on_cancel = on_cancel
+        self._closed = False
+
+        self.title("Set a new password")
+        self.geometry("430x360")
+        self.resizable(False, False)
+        self.configure(fg_color=master._bg())
+        self.transient(master)
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.grab_set()
+
+        panel = ctk.CTkFrame(self, fg_color=master._panel(), corner_radius=14)
+        panel.pack(fill="both", expand=True, padx=22, pady=22)
+        panel.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            panel,
+            text="Create your password",
+            font=master._font(22, True),
+            text_color=master._text(),
+        ).grid(row=0, column=0, sticky="w", padx=22, pady=(22, 4))
+        ctk.CTkLabel(
+            panel,
+            text="Your temporary password must be changed before Nexus opens.",
+            font=master._font(12),
+            text_color=master._muted(),
+            wraplength=340,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", padx=22, pady=(0, 16))
+
+        self.new_password = ctk.CTkEntry(
+            panel,
+            placeholder_text="New password (at least 8 characters)",
+            show="●",
+            height=42,
+        )
+        self.new_password.grid(row=2, column=0, sticky="ew", padx=22, pady=6)
+        self.confirm_password = ctk.CTkEntry(
+            panel,
+            placeholder_text="Confirm new password",
+            show="●",
+            height=42,
+        )
+        self.confirm_password.grid(row=3, column=0, sticky="ew", padx=22, pady=6)
+        self.message = ctk.CTkLabel(
+            panel,
+            text="",
+            text_color=master.ERROR,
+            anchor="w",
+            wraplength=340,
+        )
+        self.message.grid(row=4, column=0, sticky="ew", padx=22, pady=(5, 0))
+
+        buttons = ctk.CTkFrame(panel, fg_color="transparent")
+        buttons.grid(row=5, column=0, sticky="ew", padx=22, pady=(14, 22))
+        buttons.grid_columnconfigure((0, 1), weight=1)
+        self.cancel_button = ctk.CTkButton(
+            buttons, text="Cancel", fg_color=master.DISABLED, command=self._cancel
+        )
+        self.cancel_button.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        self.save_button = ctk.CTkButton(
+            buttons,
+            text="Save password",
+            fg_color=master.PRIMARY,
+            hover_color=master.PRIMARY_HOVER,
+            command=self._save,
+        )
+        self.save_button.grid(row=0, column=1, sticky="ew", padx=(5, 0))
+        self.bind("<Return>", lambda _event: self._save())
+        self.after(80, self.new_password.focus_set)
+
+    def _set_busy(self, busy: bool) -> None:
+        state = "disabled" if busy else "normal"
+        self.save_button.configure(state=state, text="Saving..." if busy else "Save password")
+        self.cancel_button.configure(state=state)
+
+    @ui_task
+    def _save(self) -> None:
+        new_password = self.new_password.get()
+        confirmation = self.confirm_password.get()
+        if len(new_password) < 8:
+            self.message.configure(text="Use at least 8 characters.")
+            return
+        if new_password != confirmation:
+            self.message.configure(text="The new passwords do not match.")
+            return
+        if new_password == self._current_password:
+            self.message.configure(text="Choose a password different from the temporary password.")
+            return
+        self._set_busy(True)
+        self.message.configure(text="Changing password...", text_color="#60920D")
+        success, message = yield RemoteCall(
+            self._controller.change_password,
+            self._current_password,
+            new_password,
+        )
+        if not success:
+            self._set_busy(False)
+            self.message.configure(text=message or "Password change failed.", text_color="#D64545")
+            return
+        self._closed = True
+        self._current_password = ""
+        self.grab_release()
+        self.destroy()
+        self._on_complete()
+
+    @ui_task
+    def _cancel(self) -> None:
+        if self._closed:
+            return
+        self._set_busy(True)
+        yield RemoteCall(self._controller.cancel_pending_login)
+        self._closed = True
+        self._current_password = ""
+        self.grab_release()
+        self.destroy()
+        self._on_cancel()

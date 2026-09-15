@@ -28,6 +28,8 @@ MongoDB operations are delegated to the controller/service layer.
 
 from __future__ import annotations
 
+from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, action_steps, ui_callback
+
 from datetime import datetime
 from typing import Any
 
@@ -48,6 +50,7 @@ class UserManagementView(ctk.CTkFrame):
         "Intern",
     )
 
+    @ui_task
     def __init__(self, master: object, controller: object) -> None:
         super().__init__(
             master,
@@ -93,7 +96,7 @@ class UserManagementView(ctk.CTkFrame):
 
         self.after_idle(self._apply_responsive_layout)
 
-        self._refresh_all()
+        (yield from ui_steps(self._refresh_all))
 
     # ------------------------------------------------------------------
     # Layout
@@ -507,11 +510,13 @@ class UserManagementView(ctk.CTkFrame):
     # Refresh
     # ------------------------------------------------------------------
 
+    @ui_task
     def _refresh_all(self) -> None:
-        self._refresh_employees()
-        self._refresh_statistics()
-        self._refresh_users()
+        (yield from ui_steps(self._refresh_employees))
+        (yield from ui_steps(self._refresh_statistics))
+        (yield from ui_steps(self._refresh_users))
 
+    @ui_task
     def _refresh_employees(self) -> None:
         """
         Load real employees from MongoDB through the controller.
@@ -535,7 +540,7 @@ class UserManagementView(ctk.CTkFrame):
             status
         """
         try:
-            employees = self._controller.get_employees_without_accounts()
+            employees = (yield RemoteCall(self._controller.get_employees_without_accounts))
 
             self._employees.clear()
 
@@ -590,9 +595,10 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.DANGER,
             )
 
+    @ui_task
     def _refresh_statistics(self) -> None:
         try:
-            stats = self._controller.get_user_statistics()
+            stats = (yield RemoteCall(self._controller.get_user_statistics))
 
             self.stat_labels["total_users"].configure(
                 text=str(
@@ -633,6 +639,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.DANGER,
             )
 
+    @ui_task
     def _refresh_users(self) -> None:
         for widget in self.user_list.winfo_children():
             widget.destroy()
@@ -640,9 +647,9 @@ class UserManagementView(ctk.CTkFrame):
         try:
             mode = self.filter_menu.get()
 
-            users = self._controller.get_all_users(
+            users = (yield RemoteCall(self._controller.get_all_users, 
                 include_inactive=mode != "Active Only",
-            )
+            ))
 
             if mode == "Inactive Only":
                 users = [
@@ -1067,6 +1074,7 @@ class UserManagementView(ctk.CTkFrame):
     # Save / generate / reset
     # ------------------------------------------------------------------
 
+    @ui_task
     def _save_credentials(self) -> None:
         """
         Create or update the MongoDB user account.
@@ -1103,14 +1111,14 @@ class UserManagementView(ctk.CTkFrame):
             )
 
             user = (
-                self._controller
-                .create_user_with_password(
+                (yield RemoteCall(self._controller
+                .create_user_with_password, 
                     employee_id=employee_id,
                     username=username,
                     password=password,
                     role=role,
                     active=active,
-                )
+                ))
             )
 
             self.password_entry.delete(
@@ -1128,7 +1136,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.SUCCESS,
             )
 
-            self._refresh_all()
+            (yield from ui_steps(self._refresh_all))
 
         except Exception as error:
             self._message(
@@ -1136,6 +1144,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.DANGER,
             )
 
+    @ui_task
     def _generate_credentials(self) -> None:
         try:
             employee_id = (
@@ -1159,25 +1168,25 @@ class UserManagementView(ctk.CTkFrame):
                     user,
                     password,
                 ) = (
-                    self._controller
-                    .create_user_with_generated_password(
+                    (yield RemoteCall(self._controller
+                    .create_user_with_generated_password, 
                         employee_id=employee_id,
                         username=username,
                         role=role,
                         active=active,
-                    )
+                    ))
                 )
             else:
                 (
                     user,
                     password,
                 ) = (
-                    self._controller
-                    .create_user_from_employee(
+                    (yield RemoteCall(self._controller
+                    .create_user_from_employee, 
                         employee_id=employee_id,
                         role=role,
                         active=active,
-                    )
+                    ))
                 )
 
             self._password_popup(
@@ -1193,7 +1202,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.SUCCESS,
             )
 
-            self._refresh_all()
+            (yield from ui_steps(self._refresh_all))
 
         except Exception as error:
             self._message(
@@ -1201,6 +1210,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.DANGER,
             )
 
+    @ui_task
     def _reset_password(
         self,
         user_id: str,
@@ -1208,10 +1218,10 @@ class UserManagementView(ctk.CTkFrame):
     ) -> None:
         try:
             password = (
-                self._controller
-                .reset_user_password_generated(
+                (yield RemoteCall(self._controller
+                .reset_user_password_generated, 
                     user_id
-                )
+                ))
             )
 
             self._password_popup(
@@ -1234,16 +1244,17 @@ class UserManagementView(ctk.CTkFrame):
     # Account status
     # ------------------------------------------------------------------
 
+    @ui_task
     def _change_status(
         self,
         user_id: str,
         active: bool,
     ) -> None:
         try:
-            self._controller.set_user_status(
+            (yield RemoteCall(self._controller.set_user_status, 
                 user_id,
                 active,
-            )
+            ))
 
             self._message(
                 (
@@ -1254,7 +1265,7 @@ class UserManagementView(ctk.CTkFrame):
                 Theme.SUCCESS,
             )
 
-            self._refresh_all()
+            (yield from ui_steps(self._refresh_all))
 
         except Exception as error:
             self._message(
@@ -1330,20 +1341,21 @@ class UserManagementView(ctk.CTkFrame):
             padx=6,
         )
 
+        @ui_callback(self)
         def confirm() -> None:
             dialog.destroy()
 
             try:
-                self._controller.delete_user(
+                (yield RemoteCall(self._controller.delete_user, 
                     user_id
-                )
+                ))
 
                 self._message(
                     f"Deleted {username}.",
                     Theme.SUCCESS,
                 )
 
-                self._refresh_all()
+                (yield from ui_steps(self._refresh_all))
 
             except Exception as error:
                 self._message(

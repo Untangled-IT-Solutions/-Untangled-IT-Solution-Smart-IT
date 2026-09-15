@@ -3,7 +3,7 @@
 Internal operations desktop client for Untangled IT Solutions.
 
 - **UI:** CustomTkinter (Python 3.12)
-- **Data:** Backend HTTPS API only (MongoDB stays on the server)
+- **Data:** Dedicated Nexus FastAPI over HTTPS (MongoDB stays on the server)
 - **Release:** Git tag → GitHub Actions → Windows installer
 
 ---
@@ -75,13 +75,16 @@ Tags must match:
 Desktop (CustomTkinter)
         │  HTTPS
         ▼
-Backend API
+Dedicated Nexus FastAPI (../untangled-nexus-api-main)
         │
         ▼
 MongoDB
 ```
 
 The desktop application does **not** open MongoDB connections and does **not** ship database credentials.
+
+The public Website uses the separate Node service in `../Backend`. See
+`../ARCHITECTURE.md` for configuration and the staged compatibility boundary.
 
 ---
 
@@ -148,3 +151,54 @@ untangled_nexus_prod/
 ---
 
 Built for Untangled IT Solutions. Keep the repository **private**.
+
+
+## UI network work (Phase 4)
+
+All API work belongs in a worker. The existing `app/utils/async_tasks.py`
+dispatcher now uses queue delivery only; workers must never call `after`,
+`winfo_*` or widget methods. Call `run_in_background(owner, operation, success,
+error)` from Tk for simple operations. Completion is discarded when the owner
+has been destroyed. Existing Dashboard and attendance queues remain supported.
+
+For forms with dependent API calls, `app/utils/ui_tasks.py` provides explicit
+continuations without moving widget construction into worker threads:
+
+```python
+@ui_task
+def save(self):
+    title = self.title_entry.get()  # Tk thread
+    try:
+        result = yield RemoteCall(self.controller.save, title)  # worker
+        self.status.configure(text="Saved")  # Tk thread again
+        yield from ui_steps(self.refresh)
+    except BackendAPIError as exc:
+        self.status.configure(text=str(exc))
+```
+
+Use `ui_steps` for dependent decorated helpers. Do not send a lambda that reads
+widgets to `run_in_background`; capture its inputs first. Task action lambdas
+instead yield a `RemoteCall` and are driven by `action_steps` on Tk. A view/form
+allows one active workflow, prevents duplicate mutations and queues the latest
+refresh/filter request. Loading overlays are scoped to the view, so navigation
+and the surrounding window remain responsive. Constructors that fetch menus
+show a loading view and finish building after the response arrives.
+
+`BackendAPIClient.request` rejects attempts to perform I/O on an active Tk main
+thread. Transport errors are surfaced in the application even when a legacy
+service catches them. Expired sessions are queued back to Tk with a token check,
+and repeated expiry responses produce one sign-in prompt.
+
+Login and startup use the same worker boundary. The login button is disabled
+while a request is pending and restored after failure. Accounts marked
+`require_password_change` cannot open the main window: Nexus presents a private
+password-change dialog and calls `/api/auth/change-password` in a worker. Closing
+that dialog revokes the temporary session. Passwords are never written to local
+files or logs, and the temporary password is cleared from widgets and dialog
+state when the flow finishes.
+
+Run `python -m pytest tests -q` with the desktop requirements and pytest installed.
+The GUI tests require a working Tcl/Tk runtime and a desktop session. They create
+hidden Tk windows and a localhost HTTP server with a four-second response delay;
+they never contact the production API. They also check screen loading, callback
+threads, duplicate actions, destroyed views, errors/retry and session expiry.

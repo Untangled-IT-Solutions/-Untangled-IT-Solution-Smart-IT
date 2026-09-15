@@ -1,24 +1,26 @@
 """Office requests workspace view."""
 
+from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, action_steps, ui_callback
+
 from collections.abc import Callable
 
 import customtkinter as ctk
 
 from app.controllers.office_request_controller import OfficeRequestController
 from app.utils.theme import Theme
-from app.utils.async_tasks import run_in_background
 from app.widgets.office_request_card import OfficeRequestCard
 
 
 class OfficeRequestView(ctk.CTkFrame):
     """Creates office supply requests through the standard approval workflow."""
 
+    @ui_task
     def __init__(self, master: object, controller: OfficeRequestController) -> None:
         super().__init__(master, fg_color=Theme.BG, corner_radius=0)
         self._controller = controller
         self._list_frame: ctk.CTkScrollableFrame | None = None
         self._build_layout()
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
     def _build_layout(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -37,33 +39,19 @@ class OfficeRequestView(ctk.CTkFrame):
         self._list_frame.grid(row=1, column=0, pady=(20, 0), sticky="nsew")
         self._list_frame.grid_columnconfigure(0, weight=1)
 
+    @ui_task
     def refresh(self) -> None:
-        def fetch():
-            return self._controller.get_requests()
-
-        def apply(requests):
-            for child in self._list_frame.winfo_children():
-                child.destroy()
-            requests = requests or []
-            if not requests:
-                ctk.CTkLabel(
-                    self._list_frame, text="No office requests submitted.", text_color=Theme.MUTED_TEXT,
-                    font=("Segoe UI", 14)
-                ).grid(row=0, column=0, sticky="w")
-                return
-            for row, request in enumerate(requests):
-                OfficeRequestCard(self._list_frame, request).grid(row=row, column=0, pady=(0, 12), sticky="ew")
-
-        def failed(exc):
-            print(f"⚠️ office requests refresh failed: {exc}")
-            for child in self._list_frame.winfo_children():
-                child.destroy()
+        for child in self._list_frame.winfo_children():
+            child.destroy()
+        requests = (yield RemoteCall(self._controller.get_requests))
+        if not requests:
             ctk.CTkLabel(
-                self._list_frame, text="Could not load office requests.", text_color=Theme.MUTED_TEXT,
+                self._list_frame, text="No office requests submitted.", text_color=Theme.MUTED_TEXT,
                 font=("Segoe UI", 14)
             ).grid(row=0, column=0, sticky="w")
-
-        run_in_background(self, fetch, apply, failed, name="office-requests-loader")
+            return
+        for row, request in enumerate(requests):
+            OfficeRequestCard(self._list_frame, request).grid(row=row, column=0, pady=(0, 12), sticky="ew")
 
     def _open_request_form(self) -> None:
         OfficeRequestModal(self, self._controller, self.refresh)
@@ -72,6 +60,7 @@ class OfficeRequestView(ctk.CTkFrame):
 class OfficeRequestModal(ctk.CTkToplevel):
     """Creates one office request and submits its approval record."""
 
+    @ui_task
     def __init__(
         self, master: object, controller: OfficeRequestController, on_saved: Callable[[], None]
     ) -> None:
@@ -83,8 +72,9 @@ class OfficeRequestModal(ctk.CTkToplevel):
         self.configure(fg_color=Theme.BG)
         self.transient(master)
         self.grab_set()
-        self._build_layout()
+        (yield from ui_steps(self._build_layout))
 
+    @ui_task
     def _build_layout(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
@@ -93,10 +83,10 @@ class OfficeRequestModal(ctk.CTkToplevel):
         form = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
         form.grid(row=1, column=0, padx=26, sticky="ew")
         form.grid_columnconfigure(0, weight=1)
-        self.item_entry = self._option(form, "Item", self._controller.get_items(), 0)
+        self.item_entry = self._option(form, "Item", (yield RemoteCall(self._controller.get_items)), 0)
         self.quantity_entry = self._entry(form, "Quantity", 1, "1")
-        self.requested_by_entry = self._option(form, "Requested By", self._controller.get_people_names(), 2)
-        self.department_entry = self._option(form, "Department", self._controller.get_departments(), 3)
+        self.requested_by_entry = self._option(form, "Requested By", (yield RemoteCall(self._controller.get_people_names)), 2)
+        self.department_entry = self._option(form, "Department", (yield RemoteCall(self._controller.get_departments)), 3)
         ctk.CTkLabel(form, text="Notes", text_color=Theme.MUTED_TEXT, font=("Segoe UI", 12)).grid(
             row=8, column=0, padx=18, pady=(0, 5), sticky="w"
         )
@@ -134,13 +124,14 @@ class OfficeRequestModal(ctk.CTkToplevel):
         option.grid(row=(row * 2) + 1, column=0, padx=18, pady=(0, 12), sticky="ew")
         return option
 
+    @ui_task
     def _save(self) -> None:
         try:
-            self._controller.create_request(
+            (yield RemoteCall(self._controller.create_request, 
                 self.item_entry.get(), self.quantity_entry.get(), self.requested_by_entry.get(),
                 self.department_entry.get(), self.notes_entry.get("1.0", "end").strip(),
                 bool(self.requires_director.get())
-            )
+            ))
         except ValueError as error:
             self.error_label.configure(text=str(error))
             return

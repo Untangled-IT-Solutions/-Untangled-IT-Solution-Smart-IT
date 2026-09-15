@@ -4,53 +4,25 @@ Worker threads must not call Tk APIs directly. Results are placed on a
 thread-safe queue and drained by a main-thread poller started via
 ``start_ui_dispatcher(root)``.
 
-Also provides:
-  - ThreadPoolExecutor for concurrent API work
-  - generation tokens so stale responses never update the wrong page
+This avoids the Python 3.13+/3.14 error:
+    RuntimeError: main thread is not in main loop
+when scheduling ``after`` from a background thread.
 """
 from __future__ import annotations
 
 import queue
 import threading
 import traceback
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Optional
 
 # Cross-thread hand-off. Workers only put; the UI poller only get.
 _UI_QUEUE: queue.Queue[Callable[[], None]] = queue.Queue()
-_DISPATCHER_STARTED = False
-_DISPATCHER_LOCK = threading.Lock()
-_POLL_MS = 40
-
-# Shared pool – reuses threads instead of spawning one per click
-_EXECUTOR = ThreadPoolExecutor(max_workers=6, thread_name_prefix="nexus-bg")
-
-# Per-owner generation counters (stale response protection)
-_GENERATIONS: dict[int, int] = {}
-_GEN_LOCK = threading.Lock()
-
-
-def bump_generation(owner: Any) -> int:
-    """Invalidate in-flight loads for ``owner``. Returns the new generation id."""
-    key = id(owner)
-    with _GEN_LOCK:
-        gen = _GENERATIONS.get(key, 0) + 1
-        _GENERATIONS[key] = gen
-        return gen
-
-
-def current_generation(owner: Any) -> int:
-    with _GEN_LOCK:
-        return _GENERATIONS.get(id(owner), 0)
-
-
-def is_generation_current(owner: Any, generation: int) -> bool:
-    return current_generation(owner) == generation
+_POLL_MS = 50
 
 
 def _drain_ui_queue() -> None:
     """Run all pending UI callbacks on the Tk thread."""
-    while True:
+    for _ in range(100):
         try:
             callback = _UI_QUEUE.get_nowait()
         except queue.Empty:
@@ -61,60 +33,32 @@ def _drain_ui_queue() -> None:
             traceback.print_exc()
 
 
-def hide_global_nav_loading(owner: Any) -> None:
-    """Hide MainWindow nav loader if present (safe from any widget)."""
-    try:
-        top = owner.winfo_toplevel() if owner is not None else None
-        if top is not None and hasattr(top, "hide_nav_loading"):
-            top.hide_nav_loading()
-    except Exception:
-        pass
-
-
 def start_ui_dispatcher(root: Any) -> None:
-    """Start a repeating main-thread poller on ``root`` (call once)."""
-    global _DISPATCHER_STARTED
-    with _DISPATCHER_LOCK:
-        if _DISPATCHER_STARTED:
-            return
-        _DISPATCHER_STARTED = True
-
-    def poll() -> None:
-        _drain_ui_queue()
+    """One poller per root; login and main windows have distinct lifetimes."""
+    if getattr(root, '_nexus_dispatcher_started', False):
+        return
+    root._nexus_dispatcher_started = True
+    def poll():
         try:
-            if root.winfo_exists():
-                root.after(_POLL_MS, poll)
+            if not root.winfo_exists():
+                return
+            _drain_ui_queue()
+            root.after(_POLL_MS, poll)
         except Exception:
-            global _DISPATCHER_STARTED
-            with _DISPATCHER_LOCK:
-                _DISPATCHER_STARTED = False
-
-    try:
-        root.after(_POLL_MS, poll)
-        print("✅ UI dispatcher started (queue poller)")
-    except Exception as exc:
-        with _DISPATCHER_LOCK:
-            _DISPATCHER_STARTED = False
-        print(f"❌ Could not start UI dispatcher: {exc}")
+            root._nexus_dispatcher_started = False
+    root.after(_POLL_MS, poll)
 
 
 def _schedule_on_ui(owner: Any, callback: Callable[[], None]) -> None:
-    """Queue ``callback`` for the main-thread poller."""
-    _UI_QUEUE.put(callback)
-    targets = []
-    try:
-        top = owner.winfo_toplevel()
-        if top is not None:
-            targets.append(top)
-    except Exception:
-        pass
-    targets.append(owner)
-    for target in targets:
+    """Workers only enqueue. All Tk calls execute in the main-thread poller."""
+    def deliver():
         try:
-            target.after(0, _drain_ui_queue)
-            return
+            exists = owner.winfo_exists()
         except Exception:
-            continue
+            return
+        if exists and not getattr(owner, '_is_destroyed', False) and not getattr(owner, '_destroyed', False):
+            callback()
+    _UI_QUEUE.put(deliver)
 
 
 def run_in_background(
@@ -124,49 +68,35 @@ def run_in_background(
     on_error: Optional[Callable[[Exception], None]] = None,
     *,
     name: str = "nexus-worker",
-    generation: Optional[int] = None,
-) -> None:
-    """Run ``operation`` off the Tk thread; marshal result back to the UI thread.
+) -> threading.Thread:
+    """Run ``operation`` off the Tk thread and marshal its result back."""
 
-    If ``generation`` is set, success/error callbacks are skipped when the
-    owner's generation has moved on (user navigated away / refreshed again).
-    """
+    start_ui_dispatcher(owner.winfo_toplevel())
 
     def worker() -> None:
         try:
             result = operation()
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - depends on runtime I/O
             traceback.print_exc()
-
-            def report(error=exc) -> None:
-                if generation is not None and not is_generation_current(owner, generation):
-                    return
-                try:
-                    if on_error is not None:
+            if on_error is not None:
+                def report(error=exc) -> None:
+                    try:
                         on_error(error)
-                except Exception:
-                    traceback.print_exc()
-                finally:
-                    hide_global_nav_loading(owner)
+                    except Exception:
+                        traceback.print_exc()
 
-            _schedule_on_ui(owner, report)
+                _schedule_on_ui(owner, report)
             return
 
-        def deliver(value=result) -> None:
-            if generation is not None and not is_generation_current(owner, generation):
-                return
-            try:
-                if on_success is not None:
+        if on_success is not None:
+            def deliver(value=result) -> None:
+                try:
                     on_success(value)
-            except Exception:
-                traceback.print_exc()
-            finally:
-                hide_global_nav_loading(owner)
+                except Exception:
+                    traceback.print_exc()
 
-        _schedule_on_ui(owner, deliver)
+            _schedule_on_ui(owner, deliver)
 
-    try:
-        _EXECUTOR.submit(worker)
-    except Exception:
-        # Fallback if executor is shut down
-        threading.Thread(target=worker, name=name, daemon=True).start()
+    thread = threading.Thread(target=worker, name=name, daemon=True)
+    thread.start()
+    return thread

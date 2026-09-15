@@ -253,17 +253,21 @@ class DashboardService:
         return {"items": items, "error": None}
 
     def get_business_lead_dashboard(self) -> Dict[str, Any]:
-        try:
-            data = self._backend.request("GET", "/api/dashboard/business-lead")
-            if isinstance(data, dict) and data:
-                return data
-        except BackendAPIError:
-            pass
-        return self.get_summary()
+        return self._get_role_dashboard("/api/dashboard/business-lead")
 
     def get_director_dashboard(self) -> Dict[str, Any]:
+        return self._get_role_dashboard("/api/dashboard/director")
+
+    def get_operations_dashboard(self) -> Dict[str, Any]:
+        return self._get_role_dashboard("/api/dashboard/operations")
+
+    def get_personal_dashboard(self) -> Dict[str, Any]:
+        return self._get_role_dashboard("/api/dashboard/summary")
+
+    def _get_role_dashboard(self, path: str) -> Dict[str, Any]:
+        """Fetch a role endpoint; the authenticated API remains the authority."""
         try:
-            data = self._backend.request("GET", "/api/dashboard/director")
+            data = self._backend.request("GET", path)
             if isinstance(data, dict) and data:
                 return data
         except BackendAPIError:

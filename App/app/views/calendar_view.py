@@ -1,5 +1,7 @@
 """Calendar workspace view."""
 
+from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, action_steps, ui_callback
+
 import calendar
 from collections import defaultdict
 from datetime import date
@@ -9,7 +11,6 @@ import customtkinter as ctk
 from app.controllers.calendar_controller import CalendarController
 from app.models.calendar_event import CalendarEvent
 from app.utils.theme import Theme
-from app.utils.async_tasks import run_in_background
 
 
 class CalendarView(ctk.CTkFrame):
@@ -18,6 +19,7 @@ class CalendarView(ctk.CTkFrame):
     CALENDAR_BLUE = "#4F7DF3"
     CALENDAR_BLUE_HOVER = "#3D68D6"
 
+    @ui_task
     def __init__(
         self,
         master: object,
@@ -34,10 +36,11 @@ class CalendarView(ctk.CTkFrame):
         self._event_list: ctk.CTkScrollableFrame | None = None
         self._event_dialog: CalendarEventDialog | None = None
         self._selected_day: str | None = None
-        self._build_layout()
+        (yield from ui_steps(self._build_layout))
         self._apply_initial_filters()
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
+    @ui_task
     def _build_layout(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
@@ -86,7 +89,7 @@ class CalendarView(ctk.CTkFrame):
         self.event_search.bind("<KeyRelease>", lambda _event: self.refresh())
         self.type_filter = ctk.CTkOptionMenu(
             filters,
-            values=["All event types", *self._controller.get_event_types()],
+            values=["All event types", *(yield RemoteCall(self._controller.get_event_types))],
             width=160,
             height=40,
             fg_color="#E5E7EB",
@@ -133,25 +136,14 @@ class CalendarView(ctk.CTkFrame):
         if self._initial_filters.get("range") == "Upcoming":
             self._selected_day = None
 
+    @ui_task
     def refresh(self) -> None:
-        """Render a month from database-backed Work-derived events (non-blocking)."""
+        """Render a month from database-backed Work-derived events."""
         self.month_label.configure(text=f"{calendar.month_name[self._month]} {self._year}")
-        year, month = self._year, self._month
-
-        def fetch():
-            return self._controller.get_month_events(year, month)
-
-        def apply(events):
-            events = self._filter_events(events or [])
-            self._render_calendar(events)
-            self._render_events(events)
-
-        def failed(exc):
-            print(f"⚠️ calendar refresh failed: {exc}")
-            self._render_calendar([])
-            self._render_events([])
-
-        run_in_background(self, fetch, apply, failed, name="calendar-loader")
+        events = (yield RemoteCall(self._controller.get_month_events, self._year, self._month))
+        events = self._filter_events(events)
+        self._render_calendar(events)
+        self._render_events(events)
 
     def _filter_events(self, events: list[CalendarEvent]) -> list[CalendarEvent]:
         query = self.event_search.get().strip().casefold()
@@ -166,10 +158,11 @@ class CalendarView(ctk.CTkFrame):
             filtered.append(event)
         return filtered
 
+    @ui_task
     def _clear_filters(self) -> None:
         self.event_search.delete(0, "end")
         self.type_filter.set("All event types")
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
     def _render_calendar(self, events: list[CalendarEvent]) -> None:
         for child in self._calendar_frame.winfo_children():
@@ -265,6 +258,7 @@ class CalendarView(ctk.CTkFrame):
                     command=lambda selected=event: self._delete_event(selected)
                 ).pack(side="left")
 
+    @ui_task
     def _change_month(self, offset: int) -> None:
         month = self._month + offset
         if month == 0:
@@ -275,22 +269,25 @@ class CalendarView(ctk.CTkFrame):
             month = 1
         self._month = month
         self._selected_day = None
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
+    @ui_task
     def _go_today(self) -> None:
         today = date.today()
         self._year = today.year
         self._month = today.month
         self._selected_day = today.isoformat()
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
+    @ui_task
     def _show_all(self) -> None:
         self._selected_day = None
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
+    @ui_task
     def _select_day(self, selected_day: str) -> None:
         self._selected_day = selected_day
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
     def _bind_day(self, widget: object, selected_day: str) -> None:
         if isinstance(widget, ctk.CTkBaseClass):
@@ -308,15 +305,17 @@ class CalendarView(ctk.CTkFrame):
             self._on_event_saved,
         )
 
+    @ui_task
     def _on_event_saved(self) -> None:
         self._event_dialog = None
-        self.refresh()
+        (yield from ui_steps(self.refresh))
 
+    @ui_task
     def _delete_event(self, event: CalendarEvent) -> None:
         if event.id is None:
             return
-        self._controller.delete_event(event.id)
-        self.refresh()
+        (yield RemoteCall(self._controller.delete_event, event.id))
+        (yield from ui_steps(self.refresh))
 
     @staticmethod
     def _event_color(event: CalendarEvent) -> str:
@@ -342,6 +341,7 @@ class CalendarView(ctk.CTkFrame):
 class CalendarEventDialog(ctk.CTkToplevel):
     """Accessible pop-up form for creating and editing manual calendar events."""
 
+    @ui_task
     def __init__(
         self,
         master: object,
@@ -363,9 +363,10 @@ class CalendarEventDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-        self._build_form()
+        (yield from ui_steps(self._build_form))
         self.after(50, self._centre_on_parent)
 
+    @ui_task
     def _build_form(self) -> None:
         heading = "Edit Event" if self._event else "Add Event"
         ctk.CTkLabel(self, text=heading, text_color=Theme.TEXT, font=Theme.FONT_HEADING).grid(
@@ -381,13 +382,13 @@ class CalendarEventDialog(ctk.CTkToplevel):
         form.grid(row=1, column=0, padx=28, pady=(8, 0), sticky="nsew")
         form.grid_columnconfigure((0, 1), weight=1)
         self.title_entry = self._entry(form, "Event title", self._event.title if self._event else "", 0, 0)
-        self.type_menu = self._menu(form, "Event type", self._controller.get_event_types(), self._event.event_type if self._event else "Meeting", 0, 1)
+        self.type_menu = self._menu(form, "Event type", (yield RemoteCall(self._controller.get_event_types)), self._event.event_type if self._event else "Meeting", 0, 1)
         self.start_entry = self._entry(form, "Start date (YYYY-MM-DD)", self._event.start_date if self._event else self._selected_date, 1, 0)
         self.end_entry = self._entry(form, "End date (optional)", self._event.end_date if self._event else "", 1, 1)
-        departments = ["General", *self._controller.get_departments()]
+        departments = ["General", *(yield RemoteCall(self._controller.get_departments))]
         self.department_menu = self._menu(form, "Department", departments, self._event.department if self._event else departments[0], 2, 0)
         self.recurrence_menu = self._menu(
-            form, "Recurrence", self._controller.get_recurrence_options(),
+            form, "Recurrence", (yield RemoteCall(self._controller.get_recurrence_options)),
             self._event.recurrence if self._event else "None", 2, 1
         )
         ctk.CTkLabel(form, text="Details", text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL).grid(
@@ -453,6 +454,7 @@ class CalendarEventDialog(ctk.CTkToplevel):
         menu.set(value if value in values else values[0])
         return menu
 
+    @ui_task
     def _save(self) -> None:
         try:
             values = (
@@ -465,9 +467,9 @@ class CalendarEventDialog(ctk.CTkToplevel):
                 self.recurrence_menu.get(),
             )
             if self._event and self._event.id is not None:
-                self._controller.update_event(self._event.id, *values)
+                (yield RemoteCall(self._controller.update_event, self._event.id, *values))
             else:
-                self._controller.create_event(*values)
+                (yield RemoteCall(self._controller.create_event, *values))
         except ValueError as error:
             self.error_label.configure(text=str(error))
             return

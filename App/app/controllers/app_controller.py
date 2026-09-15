@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from app.utils.async_tasks import _schedule_on_ui, run_in_background
 from typing import Any, Optional
 
 import customtkinter as ctk
@@ -68,11 +69,9 @@ class AppController:
         self._attendance = attendance_service
         self._work = work_service
         self._backend = backend
+        self._backend.on_session_expired = self._queue_session_expired
+        self._backend.on_request_error = self._queue_request_error
         self._mongo_attendance = MongoAttendanceService(backend)
-
-        # Reusable workspace views – instant navigation
-        self._view_cache: dict[str, object] = {}
-
 
         # Domain services (all API-backed)
         self._approval_service = ApprovalService(backend, people_service)
@@ -97,10 +96,14 @@ class AppController:
             notification_service=self._notification_controller,
             get_current_account=lambda: self._current_account,
         )
-        self._dashboard_controller = DashboardController(dashboard_service)
+        self._dashboard_controller = DashboardController(
+            dashboard_service, get_current_account=lambda: self._current_account
+        )
         self._people_controller = PeopleController(people_service)
         self._attendance_controller = AttendanceController(
-            attendance_service, people_service
+            attendance_service,
+            people_service,
+            get_current_account=lambda: self._current_account,
         )
         self._user_management_controller = UserManagementController(
             mongo_auth_service=mongo_auth_service,
@@ -108,7 +111,9 @@ class AppController:
             auth_service=auth_service,
         )
         self._approval_controller = ApprovalController(
-            self._approval_service, self._notification_service
+            self._approval_service,
+            self._notification_service,
+            get_current_account=lambda: self._current_account,
         )
         self._calendar_controller = CalendarController(
             self._calendar_service, people_service
@@ -167,6 +172,7 @@ class AppController:
             self._show_main()
 
     def _show_main(self) -> None:
+        self._session_expiry_pending = False
         account = self._current_account
         if account is None:
             logger.error("No authenticated account")
@@ -229,7 +235,7 @@ class AppController:
         self._hidden_root.mainloop()
 
     def _navigate_destination(self, destination: str) -> bool:
-        """Show a workspace page immediately; reuse cached views; load data in background."""
+        """Build and show a workspace view for the NavigationController."""
         window = self._main_window
         if window is None:
             return False
@@ -238,36 +244,9 @@ class AppController:
         if workspace is None:
             return False
 
-        # Notify previous view it is hidden (cancel stale loads)
-        try:
-            prev = getattr(window, "_active_view", None)
-            if prev is not None and hasattr(prev, "on_hide"):
-                prev.on_hide()
-        except Exception:
-            pass
-
-        # Instant path: reuse existing view instance
-        cached = self._view_cache.get(destination)
-        if cached is not None:
-            try:
-                if cached.winfo_exists():
-                    ok = bool(window.show_workspace_view(cached, destination, reuse=True))
-                    if ok:
-                        try:
-                            if hasattr(cached, "on_show"):
-                                cached.on_show()
-                            elif hasattr(cached, "refresh"):
-                                cached.refresh()
-                        except Exception as exc:
-                            logger.debug("cached view on_show failed: %s", exc)
-                    return ok
-            except Exception:
-                self._view_cache.pop(destination, None)
-
         controller_map = {
             "Dashboard": self._dashboard_controller,
             "Tasks": self._task_controller,
-            "Sprint Planning": self._task_controller,
             "Work": self._task_controller,
             "People": self._people_controller,
             "Attendance": self._attendance_controller,
@@ -283,6 +262,8 @@ class AppController:
         controller = controller_map.get(destination)
 
         try:
+            # Attendance needs the same MongoAttendanceService the header timer uses,
+            # plus the logged-in account (employee_id). Navigation alone does not inject them.
             if destination == "Attendance":
                 from app.views.attendance_view import AttendanceView
                 view = AttendanceView(
@@ -303,31 +284,12 @@ class AppController:
         if view is None:
             return False
 
-        # Cache for instant return visits (except dialogs-heavy pages if needed)
-        self._view_cache[destination] = view
-
         try:
-            ok = bool(window.show_workspace_view(view, destination, reuse=False))
-            if ok and hasattr(view, "on_show"):
-                try:
-                    view.on_show()
-                except Exception:
-                    pass
-            return ok
+            return bool(window.show_workspace_view(view, destination))
         except Exception as exc:
             logger.exception("Failed to show view %s", destination)
             print(f"❌ Failed to show view {destination}: {exc}")
             return False
-
-    def clear_view_cache(self) -> None:
-        """Destroy cached workspace views (call on logout)."""
-        for dest, view in list(getattr(self, "_view_cache", {}).items()):
-            try:
-                if hasattr(view, "destroy"):
-                    view.destroy()
-            except Exception:
-                pass
-        self._view_cache = {}
 
 
     def check_for_updates(self, show_up_to_date: bool = False) -> None:
@@ -376,7 +338,7 @@ class AppController:
                 self._update_check_in_progress = False
                 return
             try:
-                window.after(0, on_ui)
+                _schedule_on_ui(window, on_ui)
             except Exception:
                 self._update_check_in_progress = False
 
@@ -428,16 +390,50 @@ class AppController:
         except Exception:
             logger.exception("Could not open up-to-date dialog")
 
+    def _queue_request_error(self, message, token):
+        window = self._main_window
+        if window is not None:
+            def show():
+                if token != self._backend.token:
+                    return
+                label = getattr(window, '_api_error_banner', None)
+                if label is None or not label.winfo_exists():
+                    label = ctk.CTkLabel(window, text='', fg_color='#8b2525', text_color='white', corner_radius=6)
+                    window._api_error_banner = label
+                label.configure(text=message + '  Please retry.')
+                label.place(relx=.5, rely=1, y=-8, anchor='s')
+                label.lift()
+                previous = getattr(window, '_api_error_job', None)
+                if previous:
+                    window.after_cancel(previous)
+                window._api_error_job = window.after(12000, label.place_forget)
+            _schedule_on_ui(window, show)
+
+    def _queue_session_expired(self, token):
+        window = self._main_window
+        if window is not None:
+            _schedule_on_ui(window, lambda: self._session_expired(token))
+
+    def _session_expired(self, token):
+        if token != self._backend.token or getattr(self, '_logout_running', False) or getattr(self, '_session_expiry_pending', False):
+            return
+        self._session_expiry_pending = True
+        from tkinter import messagebox
+        messagebox.showwarning('Session expired', 'Please sign in again to continue.', parent=self._main_window)
+        self._logout()
+
     def _logout(self) -> None:
-        try:
-            self.clear_view_cache()
-        except Exception:
-            pass
         logger.info("User logged out")
-        try:
-            self._auth.logout()
-        except Exception:
-            pass
+        if getattr(self, '_logout_running', False):
+            return
+        self._logout_running = True
+        owner = self._main_window or self._login_view
+        run_in_background(owner, self._auth.logout,
+                          lambda _: self._finish_logout(),
+                          lambda exc: self._finish_logout(), name='logout')
+
+    def _finish_logout(self):
+        self._logout_running = False
         self._current_account = None
 
         if self._main_window is not None:

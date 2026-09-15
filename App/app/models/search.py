@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SearchResult:
-    """A lightweight result from a cross-module SQLite search."""
+    """A lightweight result from a cross-module backend search."""
 
     source: str
     title: str

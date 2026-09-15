@@ -118,6 +118,19 @@ def _is_executive(role: str) -> bool:
     )
 
 
+def _dashboard_kind(role: str) -> str:
+    value = (role or "").strip().lower().replace("_", " ").replace("-", " ")
+    if value == "director":
+        return "director"
+    if value == "business lead":
+        return "business_lead"
+    if value in {"operations manager", "super admin"}:
+        return "operations"
+    if value == "branch manager":
+        return "management"
+    return "personal"
+
+
 def _attendance_block(summary: Any) -> dict:
     """
     Read attendance from canonical places only.
@@ -219,7 +232,8 @@ class DashboardView(ctk.CTkFrame):
         self._account = self._find_current_account()
         self._navigation_controller = self._find_navigation_controller()
         role = str(_v(self._account, "role", "Employee") or "Employee")
-        self._executive = _is_executive(role)
+        self._dashboard_type = _dashboard_kind(role)
+        self._executive = self._dashboard_type != "personal"
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -261,7 +275,10 @@ class DashboardView(ctk.CTkFrame):
             command=self._safe_refresh,
         ).pack(side="right", padx=12, pady=8)
 
-        if self._executive:
+        if self._dashboard_type in {"director", "business_lead", "operations"}:
+            self._build_role_dashboard()
+            self._apply_role_dashboard(None)
+        elif self._executive:
             self._build_executive()
             self._apply_executive(None)
         else:
@@ -329,11 +346,6 @@ class DashboardView(ctk.CTkFrame):
     def _hide_loading(self) -> None:
         if self._is_destroyed:
             return
-        try:
-            from app.utils.async_tasks import hide_global_nav_loading
-            hide_global_nav_loading(self)
-        except Exception:
-            pass
         self._loading_visible = False
         job = getattr(self, "_spin_job", None)
         if job is not None:
@@ -584,6 +596,106 @@ class DashboardView(ctk.CTkFrame):
     # ==================================================================
     # EXECUTIVE LAYOUT
     # ==================================================================
+
+    def _build_role_dashboard(self) -> None:
+        """Build a deliberately different surface for each management role."""
+        self._build_welcome_banner(executive=True)
+        titles = {
+            "director": "Executive business summary and decisions requiring your attention.",
+            "business_lead": "Your team's work, time, attendance, and business activity.",
+            "operations": "Daily operational command centre across work, people, and requests.",
+        }
+        self.welcome_subtitle.configure(text=titles[self._dashboard_type])
+
+        specs = {
+            "director": [("health", "Business Health"), ("working", "People Working"),
+                         ("leave", "People on Leave"), ("important", "Important Work"),
+                         ("overdue", "Overdue Work")],
+            "business_lead": [("team", "Team Members"), ("working", "Working Now"),
+                              ("active", "Active Tasks"), ("overdue", "Overdue Tasks"),
+                              ("hours", "Task Duration")],
+            "operations": [("incoming", "Incoming Tasks"), ("review", "QA / Review"),
+                           ("leave", "Leave Queue"), ("office", "Office Requests"),
+                           ("issues", "Operational Issues")],
+        }[self._dashboard_type]
+        row = ctk.CTkFrame(self.content, fg_color="transparent")
+        row.grid(row=2, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 12))
+        self.role_kpi = {}
+        for i, (key, title) in enumerate(specs):
+            row.grid_columnconfigure(i, weight=1, uniform="role_kpi")
+            card = ctk.CTkFrame(row, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER)
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 5, 0 if i == 4 else 5))
+            ctk.CTkLabel(card, text=title, font=ctk.CTkFont(size=11), text_color=MUTED).pack(anchor="w", padx=14, pady=(13, 2))
+            value = ctk.CTkLabel(card, text=UNAVAILABLE, font=ctk.CTkFont(size=21, weight="bold"), text_color=TEXT)
+            value.pack(anchor="w", padx=14, pady=(0, 13))
+            self.role_kpi[key] = value
+
+        panel_titles = {
+            "director": ["Important Work", "Director Approvals", "Business Attention"],
+            "business_lead": ["Team Work and Duration", "Team Attendance", "Business Activity"],
+            "operations": ["Assignment and QA Queues", "People and Workload", "Operational Services"],
+        }[self._dashboard_type]
+        panels = ctk.CTkFrame(self.content, fg_color="transparent")
+        panels.grid(row=3, column=0, sticky="ew", padx=self.OUTER_PAD, pady=(0, 18))
+        self.role_panels = []
+        for i, title in enumerate(panel_titles):
+            panels.grid_columnconfigure(i, weight=1, uniform="role_panel")
+            card = self._card(panels, title)
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0 if i == 2 else 6))
+            body = ctk.CTkLabel(card, text="Loading…", justify="left", anchor="nw",
+                                wraplength=330, font=ctk.CTkFont(size=12), text_color=TEXT)
+            body.pack(fill="both", expand=True, padx=14, pady=(0, 16))
+            self.role_panels.append(body)
+
+        destinations = {
+            "director": [("Approvals", "Approvals"), ("Reports", "Reports"), ("People", "People")],
+            "business_lead": [("Tasks", "Tasks"), ("Attendance", "Attendance"), ("Projects", "Projects")],
+            "operations": [("Tasks", "Tasks"), ("Approvals", "Approvals"), ("Office Requests", "Office Requests"),
+                           ("Calendar", "Calendar"), ("Notifications", "Notifications")],
+        }[self._dashboard_type]
+        actions = ctk.CTkFrame(self.content, fg_color="transparent")
+        actions.grid(row=4, column=0, sticky="w", padx=self.OUTER_PAD, pady=(0, 20))
+        for label, destination in destinations:
+            ctk.CTkButton(actions, text=label, width=130, height=36, corner_radius=10,
+                          fg_color=GREEN, hover_color="#15803D",
+                          command=lambda d=destination: self._navigate(d)).pack(side="left", padx=(0, 8))
+
+    @staticmethod
+    def _lines(items, formatter, empty: str, limit: int = 8) -> str:
+        rows = list(items or [])[:limit]
+        return "\n".join(f"• {formatter(row)}" for row in rows) if rows else empty
+
+    def _apply_role_dashboard(self, summary) -> None:
+        if not hasattr(self, "role_kpi"):
+            return
+        data = summary if isinstance(summary, dict) else {}
+        set_kpi = lambda key, value: self.role_kpi[key].configure(text=UNAVAILABLE if value is None else str(value))
+        if self._dashboard_type == "director":
+            set_kpi("health", data.get("business_health"))
+            set_kpi("working", data.get("people_working"))
+            set_kpi("leave", data.get("people_on_leave"))
+            set_kpi("important", data.get("important_work_count"))
+            set_kpi("overdue", data.get("tasks_overdue"))
+            self.role_panels[0].configure(text=self._lines(data.get("important_work"), lambda r: f"{r.get('title') or 'Task'} · {r.get('status') or '—'} · {float(r.get('elapsed_hours') or 0):.1f}h", "No important work."))
+            self.role_panels[1].configure(text=self._lines(data.get("approvals_queue"), lambda r: f"{r.get('type') or r.get('title') or 'Request'} · {r.get('employee') or '—'}", "No Director approvals."))
+            self.role_panels[2].configure(text=f"Overdue work: {data.get('tasks_overdue', 0)}\nDocuments needing attention: {data.get('compliance_attention', 0)}\nCompleted this week: {data.get('completed_this_week', 0)}")
+        elif self._dashboard_type == "business_lead":
+            dump = data.get("task_dump") or {}
+            set_kpi("team", data.get("total_people")); set_kpi("working", data.get("people_working"))
+            set_kpi("active", (dump.get("Assigned", 0) + dump.get("In Progress", 0)))
+            set_kpi("overdue", dump.get("overdue")); set_kpi("hours", f"{float(data.get('actual_task_hours') or 0):.1f}h")
+            self.role_panels[0].configure(text=self._lines(data.get("team_work"), lambda r: f"{r.get('assigned_employee') or r.get('assignee') or 'Unassigned'} — {r.get('title') or 'Task'} · {r.get('status') or '—'} · {float(r.get('elapsed_hours') or 0):.1f}h", "No team work."))
+            self.role_panels[1].configure(text=self._lines(data.get("attendance_rows"), lambda r: f"{r.get('employee') or 'Team member'} — {r.get('description') or 'No activity'}", "No attendance activity."))
+            self.role_panels[2].configure(text=self._lines(data.get("business_activity"), lambda r: f"{r.get('employee') or 'Team member'} — {r.get('description') or 'Activity'}", "No recent activity."))
+        else:
+            incoming = data.get("incoming_task_dump") or []; review = data.get("qa_review_queue") or []
+            leave = data.get("leave_queue") or []; office = data.get("office_requests") or []; issues = data.get("operational_issues") or []
+            set_kpi("incoming", len(incoming)); set_kpi("review", len(review)); set_kpi("leave", len(leave)); set_kpi("office", len(office)); set_kpi("issues", len(issues))
+            combined = incoming[:4] + review[:4]
+            self.role_panels[0].configure(text=self._lines(combined, lambda r: f"{r.get('status') or 'Pending'} — {r.get('title') or 'Task'} · {r.get('assigned_employee') or 'Unassigned'}", "Assignment and review queues are clear."))
+            self.role_panels[1].configure(text=self._lines(data.get("employee_workload"), lambda r: f"{r.get('employee') or 'Unassigned'} — {r.get('tasks', 0)} tasks · {float(r.get('actual_hours') or 0):.1f}h", "No active workload."))
+            hr = data.get("hr") or {}; events = data.get("calendar_upcoming") or []
+            self.role_panels[2].configure(text=f"Unread notifications: {data.get('notifications_unread', 0)}\nUpcoming calendar items: {len(events)}\nActive employees: {hr.get('active_employees', 0)}\nDocuments needing attention: {hr.get('documents_needing_attention', 0)}")
 
     def _build_executive(self) -> None:
         self._build_welcome_banner(executive=True)
@@ -1255,7 +1367,9 @@ class DashboardView(ctk.CTkFrame):
             data = self._summary if summary is None else summary
             if isinstance(summary, dict) and summary.get("error") and self._summary is not None:
                 data = self._summary
-            if self._executive:
+            if self._dashboard_type in {"director", "business_lead", "operations"}:
+                self._apply_role_dashboard(data)
+            elif self._executive:
                 self._apply_executive(data)
             else:
                 self._apply_employee(data)

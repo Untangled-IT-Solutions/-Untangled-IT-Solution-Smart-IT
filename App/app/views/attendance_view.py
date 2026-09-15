@@ -9,6 +9,7 @@ import customtkinter as ctk
 from datetime import datetime
 import queue
 import threading
+from app.utils.ui_tasks import ui_task, RemoteCall
 from typing import Optional, Dict, Any, List
 
 from app.controllers.attendance_controller import AttendanceController
@@ -38,6 +39,7 @@ SOFT_BANNER_BORDER = "#BBF7D0"
 class AttendanceView(ctk.CTkFrame):
     """Modern attendance workspace with live timer (content area only)."""
 
+    @ui_task
     def __init__(
         self,
         master,
@@ -103,17 +105,6 @@ class AttendanceView(ctk.CTkFrame):
             self._can_manage = bool(checker()) if callable(checker) else False
         except Exception:
             self._can_manage = False
-
-        if self._can_manage:
-            try:
-                self._employees = controller.get_employees() or []
-                self._employees_by_name = {
-                    e.full_name: e for e in self._employees
-                    if getattr(e, "id", None) is not None
-                }
-            except Exception:
-                self._employees = []
-                self._employees_by_name = {}
 
         self._build_layout()
 
@@ -203,11 +194,6 @@ class AttendanceView(ctk.CTkFrame):
     def _hide_loading(self):
         if self._is_destroyed:
             return
-        try:
-            from app.utils.async_tasks import hide_global_nav_loading
-            hide_global_nav_loading(self)
-        except Exception:
-            pass
         self._loading_visible = False
         if getattr(self, "_spin_job", None) is not None:
             try:
@@ -355,38 +341,8 @@ class AttendanceView(ctk.CTkFrame):
             text_color=TEXT,
         ).grid(row=0, column=0, sticky="w", padx=20, pady=(20, 12))
 
-        # Manager employee selector
-        if self._can_manage and self._employees_by_name:
-            emp_frame = ctk.CTkFrame(self.left_panel, fg_color="transparent")
-            emp_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 10))
-            emp_frame.grid_columnconfigure(1, weight=1)
-
-            ctk.CTkLabel(
-                emp_frame,
-                text="👤 Employee",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color=MUTED,
-            ).grid(row=0, column=0, padx=(0, 10), sticky="w")
-
-            names = list(self._employees_by_name.keys())
-            self.employee_menu = ctk.CTkOptionMenu(
-                emp_frame,
-                values=names,
-                fg_color="#F8FAFC",
-                button_color=PRIMARY,
-                button_hover_color=PRIMARY_DARK,
-                text_color=TEXT,
-                dropdown_text_color=TEXT,
-                dropdown_fg_color=CARD,
-                dropdown_hover_color="#F1F5F9",
-                command=lambda _v: self.refresh(),
-                font=ctk.CTkFont(size=13),
-                height=34,
-            )
-            self.employee_menu.set(names[0])
-            self.employee_menu.grid(row=0, column=1, sticky="ew")
-        else:
-            self.employee_menu = None
+        # Attendance actions always belong to the signed-in employee.
+        self.employee_menu = None
 
         # Status banner
         self._banner = ctk.CTkFrame(
@@ -525,25 +481,32 @@ class AttendanceView(ctk.CTkFrame):
 
         ctk.CTkLabel(
             policy,
-            text="☰  Attendance Policy",
+            text="👥  Team Attendance Today" if self._can_manage else "☰  Attendance Policy",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=TEXT,
         ).grid(row=0, column=0, sticky="w", padx=20, pady=(18, 12))
 
-        self._policy_row(policy, 1, "🕐", "Working Hours", "09:00 AM – 04:00 PM")
-        self._policy_separator(policy, 2)
-        self._policy_row(policy, 3, "☕", "Break Time", "12:00 PM – 01:00 PM (1 hour)")
-        self._policy_separator(policy, 4)
-        self._policy_row(
-            policy, 5, "📅", "Late Arrival",
-            "After 09:00 AM (may affect your day's record)"
-        )
-        self._policy_separator(policy, 6)
-        self._policy_row(
-            policy, 7, "🛡", "Early Departure",
-            "Before 04:00 PM (may affect your day's record)",
-            last=True,
-        )
+        if self._can_manage:
+            self.team_summary_label = ctk.CTkLabel(
+                policy, text="Loading team attendance…", text_color=MUTED,
+                font=ctk.CTkFont(size=12), anchor="w",
+            )
+            self.team_summary_label.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 8))
+            self.team_frame = ctk.CTkScrollableFrame(
+                policy, fg_color="transparent", height=150, corner_radius=0,
+            )
+            self.team_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 14))
+            self.team_frame.grid_columnconfigure(0, weight=1)
+        else:
+            self.team_summary_label = None
+            self.team_frame = None
+            self._policy_row(policy, 1, "🕐", "Working Hours", "09:00 AM – 04:00 PM")
+            self._policy_separator(policy, 2)
+            self._policy_row(policy, 3, "☕", "Break Time", "12:00 PM – 01:00 PM (1 hour)")
+            self._policy_separator(policy, 4)
+            self._policy_row(policy, 5, "📅", "Late Arrival", "After 09:00 AM (may affect your day's record)")
+            self._policy_separator(policy, 6)
+            self._policy_row(policy, 7, "🛡", "Early Departure", "Before 04:00 PM (may affect your day's record)", last=True)
 
         # --- Recent Activity ---
         activity = ctk.CTkFrame(
@@ -677,9 +640,6 @@ class AttendanceView(ctk.CTkFrame):
         return None
 
     def _employee_identity(self):
-        employee = self._selected_employee()
-        if employee is not None:
-            return employee.id, employee.full_name
         return getattr(self._account, "employee_id", None), getattr(self._account, "full_name", "")
 
     # ------------------------------------------------------------------
@@ -891,17 +851,66 @@ class AttendanceView(ctk.CTkFrame):
         except Exception as exc:
             print(f"⚠️ Timer render error: {exc}")
 
+    @ui_task
     def _update_supporting_data(self, employee_id):
-        """Refresh calendar/history/totals only after backend synchronization."""
+        """Fetch supporting data in workers; render a consistent local snapshot."""
         try:
-            self._weekly_total = self._mongo.get_weekly_total(employee_id)
-            self._monthly_total = self._mongo.get_monthly_total(employee_id)
+            self._history_records = yield RemoteCall(self._mongo.get_weekly_timesheet, employee_id)
+            self._weekly_total = sum(float(r.get('hours_worked') or 0) for r in self._history_records)
+            self._monthly_total = yield RemoteCall(self._mongo.get_monthly_total, employee_id)
         except Exception as exc:
-            print(f"⚠️ Error updating totals: {exc}")
-
+            self._backend_error(exc, 'Attendance history')
+            return
         self._render_totals()
         self._render_calendar(employee_id)
         self._render_history(employee_id)
+        if self._can_manage:
+            try:
+                team_records = yield RemoteCall(self._controller.get_team_today)
+                working = yield RemoteCall(self._controller.get_working_now)
+                self._render_team_attendance(team_records or [], working or {})
+            except Exception as exc:
+                self._backend_error(exc, 'Team attendance')
+
+    def _render_team_attendance(self, records, working):
+        if self.team_frame is None or self.team_summary_label is None:
+            return
+        for child in self.team_frame.winfo_children():
+            child.destroy()
+        active_count = int((working or {}).get("count") or 0)
+        break_count = int((working or {}).get("on_break_count") or 0)
+        self.team_summary_label.configure(
+            text=f"{active_count} working  •  {break_count} on break  •  {len(records)} record(s) today"
+        )
+        if not records:
+            ctk.CTkLabel(
+                self.team_frame, text="No team attendance recorded today.",
+                text_color=MUTED, font=ctk.CTkFont(size=12),
+            ).grid(row=0, column=0, sticky="w", padx=8, pady=8)
+            return
+        for row, record in enumerate(records):
+            status = str(record.get("status") or "not_started")
+            label = {
+                "clocked_in": "Working",
+                "on_break": "On break",
+                "clocked_out": "Clocked out",
+            }.get(status, status.replace("_", " ").title())
+            line = ctk.CTkFrame(self.team_frame, fg_color="#F8FAFC", corner_radius=8)
+            line.grid(row=row, column=0, sticky="ew", padx=4, pady=3)
+            line.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                line, text=record.get("employee_name") or "Employee", text_color=TEXT,
+                font=ctk.CTkFont(size=12, weight="bold"), anchor="w",
+            ).grid(row=0, column=0, sticky="w", padx=10, pady=(7, 0))
+            ctk.CTkLabel(
+                line,
+                text=f"{self._time(record.get('clock_in_at'))} – {self._time(record.get('clock_out_at'))}",
+                text_color=MUTED, font=ctk.CTkFont(size=10), anchor="w",
+            ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 7))
+            ctk.CTkLabel(
+                line, text=label, text_color=ORANGE if status == "on_break" else PRIMARY,
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).grid(row=0, column=1, rowspan=2, padx=10)
 
     def _render_totals(self):
         if self._is_destroyed:
@@ -1052,11 +1061,11 @@ class AttendanceView(ctk.CTkFrame):
             pass
 
         # Button enablement:
-        # - Clock In: allowed when not_started OR already clocked_out (re-open day)
+        # - Clock In: allowed only before today's attendance has started
         # - Clock Out: only while actively clocked in
         # - Start Break / End Break: only in matching active phase
         self._set_actions(
-            "normal" if phase in ("not_started", "clocked_out") else "disabled",
+            "normal" if phase == "not_started" else "disabled",
             "normal" if phase == "clocked_in" else "disabled",
             "normal" if phase == "clocked_in" else "disabled",
             "normal" if phase == "on_break" else "disabled",
@@ -1119,7 +1128,7 @@ class AttendanceView(ctk.CTkFrame):
         except Exception:
             pass
         try:
-            _ = self._mongo.get_weekly_timesheet(employee_id) if self._mongo else []
+            _ = getattr(self, '_history_records', [])
         except Exception as e:
             print(f"⚠️ Error loading calendar: {e}")
 
@@ -1132,7 +1141,7 @@ class AttendanceView(ctk.CTkFrame):
             child.destroy()
 
         try:
-            records = self._mongo.get_weekly_timesheet(employee_id) if self._mongo else []
+            records = getattr(self, '_history_records', [])
         except Exception as e:
             print(f"⚠️ Error loading history: {e}")
             records = []

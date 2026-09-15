@@ -11,12 +11,13 @@ ROLE_PERMISSIONS = {
 }
 
 ROLE_MODULES = {
-    "Director": ("Dashboard", "People", "Work", "Attendance", "Calendar", "Approvals", "Office Requests", "Reports", "Search"),
-    "Branch Manager": ("Dashboard", "People", "Approvals", "Work", "Attendance", "Calendar", "Projects", "Reports", "Search"),
-    "Business Lead": ("Dashboard", "Approvals", "Work", "Projects", "Reports", "Search"),
-    "Operations Manager": ("Dashboard", "People", "Attendance", "Work", "Calendar", "Approvals", "Office Requests", "Projects", "Search"),
-    "Staff": ("Dashboard", "Work", "Attendance", "Calendar", "Office Requests", "Notifications", "Search"),
-    "Intern": ("Dashboard", "Work", "Attendance", "Calendar", "Office Requests", "Notifications", "Search"),
+    "Director": ("Dashboard", "People", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Tasks", "Reports", "Quote Management", "Order Management", "User Management", "Settings"),
+    "Branch Manager": ("Dashboard", "People", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Projects", "Tasks", "Reports", "Quote Management", "Order Management", "User Management", "Settings"),
+    "Business Lead": ("Dashboard", "Attendance", "Approvals", "Notifications", "Projects", "Tasks", "Reports", "Quote Management", "Order Management", "Settings"),
+    "Operations Manager": ("Dashboard", "People", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Projects", "Tasks", "Reports", "Quote Management", "Order Management", "User Management", "Settings"),
+    "Staff": ("Dashboard", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Tasks", "Settings"),
+    "Intern": ("Dashboard", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Tasks", "Settings"),
+    "Super Admin": ("Dashboard", "People", "Attendance", "Calendar", "Approvals", "Office Requests", "Notifications", "Projects", "Tasks", "Reports", "Quote Management", "Order Management", "User Management", "Settings"),
 }
 
 MANAGEMENT_ROLES = ("Director", "Branch Manager", "Business Lead", "Operations Manager")
@@ -36,7 +37,7 @@ def can_access_module(role: str, module: str) -> bool:
 
 def can_manage_attendance(role: str) -> bool:
     """Return whether a role may view or operate on other employees' attendance."""
-    return role in MANAGEMENT_ROLES
+    return role in ("Director", "Branch Manager", "Operations Manager", "Super Admin")
 
 
 def can_administer_accounts(role: str) -> bool:

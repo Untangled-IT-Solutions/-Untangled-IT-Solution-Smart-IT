@@ -1,0 +1,506 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #111111;
+
+  /* Brand */
+  --color-primary: #A4B885;
+  --color-primary-foreground: #111111;
+
+  --color-secondary: #EEF3E7;
+  --color-secondary-foreground: #111111;
+
+  --color-muted: #F7F9F4;
+  --color-muted-foreground: #6B7280;
+
+  /* Used for hover states */
+  --color-accent: #8FA36D;
+  --color-accent-foreground: #111111;
+
+  --color-border: #D7E2C8;
+  --color-input: #FFFFFF;
+  --color-ring: #A4B885;
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Dark theme */
+.dark {
+  --color-background: #111111;
+  --color-foreground: #F9FAFB;
+
+  --color-primary: #A4B885;
+  --color-primary-foreground: #111111;
+
+  --color-secondary: #2A2E24;
+  --color-secondary-foreground: #F9FAFB;
+
+  --color-muted: #1A1A1A;
+  --color-muted-foreground: #9CA3AF;
+
+  --color-accent: #8FA36D;
+  --color-accent-foreground: #111111;
+
+  --color-border: #3A4331;
+  --color-input: #1A1A1A;
+  --color-ring: #A4B885;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    transform 0.15s ease;
+}
+
+button:hover {
+  background-color: var(--color-accent);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+input,
+textarea,
+select {
+  background: var(--color-input);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================
+   ORBIT ANIMATIONS - SOLAR SYSTEM STYLE
+   ============================================ */
+
+/* Main orbit rotation - rotates the entire container */
+@keyframes orbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Counter-rotation - keeps icons upright while orbiting */
+@keyframes orbit-counter {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
+
+.animate-orbit {
+  animation: orbit 20s linear infinite;
+}
+
+.animate-orbit-counter {
+  animation: orbit-counter 20s linear infinite;
+}
+
+/* ============================================
+   DASH FLOW ANIMATION - Animated dashed lines
+   ============================================ */
+
+@keyframes dash-flow {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.animate-dash-flow {
+  animation: dash-flow 3s linear infinite;
+}
+
+/* ============================================
+   PULSE RING ANIMATION - Expanding rings around logo
+   ============================================ */
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2.5s ease-out infinite;
+}
+
+/* ============================================
+   FLOAT SOFT ANIMATION - Gentle floating for logo
+   ============================================ */
+
+@keyframes float-soft {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float-soft {
+  animation: float-soft 4s ease-in-out infinite;
+}
+
+/* ============================================
+   MARQUEE ANIMATION - Infinite scrolling partners
+   ============================================ */
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 20s linear infinite;
+}
+
+/* ============================================
+   FLOAT ANIMATIONS FOR ORBITING ICONS (Legacy)
+   ============================================ */
+
+@keyframes float-1 {
+  0%, 100% { 
+    transform: translate(-50%, 0px); 
+  }
+  50% { 
+    transform: translate(-50%, -10px); 
+  }
+}
+
+@keyframes float-2 {
+  0%, 100% { 
+    transform: translate(0, 0px); 
+  }
+  50% { 
+    transform: translate(8px, -8px); 
+  }
+}
+
+@keyframes float-3 {
+  0%, 100% { 
+    transform: translate(0, 0px); 
+  }
+  50% { 
+    transform: translate(-8px, 8px); 
+  }
+}
+
+@keyframes float-4 {
+  0%, 100% { 
+    transform: translate(-50%, 0px); 
+  }
+  50% { 
+    transform: translate(-50%, 10px); 
+  }
+}
+
+@keyframes float-5 {
+  0%, 100% { 
+    transform: translate(0, 0px); 
+  }
+  50% { 
+    transform: translate(8px, 8px); 
+  }
+}
+
+@keyframes float-6 {
+  0%, 100% { 
+    transform: translate(0, 0px); 
+  }
+  50% { 
+    transform: translate(-8px, -8px); 
+  }
+}
+
+.animate-float-1 { 
+  animation: float-1 4s ease-in-out infinite; 
+}
+
+.animate-float-2 { 
+  animation: float-2 4.5s ease-in-out infinite; 
+}
+
+.animate-float-3 { 
+  animation: float-3 5s ease-in-out infinite; 
+}
+
+.animate-float-4 { 
+  animation: float-4 3.5s ease-in-out infinite; 
+}
+
+.animate-float-5 { 
+  animation: float-5 5.5s ease-in-out infinite; 
+}
+
+.animate-float-6 { 
+  animation: float-6 4.2s ease-in-out infinite; 
+}
+
+/* ============================================
+   SPIN ANIMATION FOR ORBIT RING
+   ============================================ */
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+/* ============================================
+   PULSE ANIMATION FOR CENTRAL LOGO
+   ============================================ */
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(131, 151, 5, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(131, 151, 5, 0.2);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* ============================================
+   FADE IN ANIMATION FOR SECTIONS
+   ============================================ */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s ease-out forwards;
+}
+
+/* ============================================
+   SCROLL ANIMATIONS (Optional)
+   ============================================ */
+
+@keyframes scroll-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-scroll-reveal {
+  animation: scroll-reveal 0.8s ease-out forwards;
+}
+
+/* ============================================
+   STAGGERED ANIMATION DELAYS
+   ============================================ */
+
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* ============================================
+   LOADING ANIMATION - Fast spin for page load
+   ============================================ */
+
+@keyframes spin-fast {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-fast {
+  animation: spin-fast 0.5s linear infinite;
+}
+
+/* ============================================
+   SLOW PAN ANIMATION FOR HERO BACKGROUND
+   ============================================ */
+
+@keyframes slow-pan {
+  0% {
+    transform: scale(1) translateX(0);
+  }
+  50% {
+    transform: scale(1.05) translateX(-2%);
+  }
+  100% {
+    transform: scale(1) translateX(0);
+  }
+}
+
+.animate-slow-pan {
+  animation: slow-pan 20s ease-in-out infinite;
+}
+
+/* ============================================
+   SHEEN ANIMATION - Light sweep across hero
+   ============================================ */
+
+@keyframes sheen {
+  0% {
+    transform: skewX(12deg) translateX(-150%);
+  }
+  100% {
+    transform: skewX(12deg) translateX(150%);
+  }
+}
+
+.animate-sheen {
+  animation: sheen 8s ease-in-out infinite;
+}
+
+/* ============================================
+   PULSE SCALE ANIMATION - For loading dots
+   ============================================ */
+
+@keyframes pulse-scale {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+}
+
+.animate-pulse-scale {
+  animation: pulse-scale 1s ease-in-out infinite;
+}
+
+/* ============================================
+   SPIN DECELERATE - For loading animation
+   ============================================ */
+
+@keyframes spin-decelerate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-decelerate {
+  animation: spin-decelerate 0.5s cubic-bezier(0.1, 0.8, 0.2, 1) infinite;
+}
+
+/* ============================================
+   FADE IN LOADING - Smooth transition for loading completion
+   ============================================ */
+
+@keyframes fade-in-loading {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-loading {
+  animation: fade-in-loading 0.5s ease-out forwards;
+}
+
+/* ============================================
+   GLOW PULSE - For loading ring glow
+   ============================================ */
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(131, 151, 5, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(131, 151, 5, 0.3);
+  }
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
