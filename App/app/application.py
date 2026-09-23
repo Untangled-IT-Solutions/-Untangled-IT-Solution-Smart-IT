@@ -11,6 +11,16 @@ import customtkinter as ctk
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Windows consoles often default to cp1252 while the existing diagnostic output
+# contains Unicode symbols. A logging/print statement must never prevent startup.
+for stream in (sys.stdout, sys.stderr):
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
+
 from app.utils.config import APP_VERSION, COMPANY_NAME, LOG_DIR
 from app.utils.theme import Theme
 from app.services.backend_api_client import BackendAPIClient
