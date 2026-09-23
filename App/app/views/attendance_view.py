@@ -113,7 +113,7 @@ class AttendanceView(ctk.CTkFrame):
         self._timer_job = self.after(1000, self._local_timer_tick)
 
         # All backend I/O starts in a worker thread.
-        self._queue_job = self.after(50, self._drain_backend_queue)
+        self._queue_job = self.after(200, self._drain_backend_queue)
 
         # Show loader until the first status response arrives (~1–2s on Render).
         self.after(10, lambda: self._show_loading("Loading attendance…"))
@@ -669,9 +669,11 @@ class AttendanceView(ctk.CTkFrame):
         if self._is_destroyed:
             return
 
+        handled = False
         try:
             while True:
                 kind, payload, callback, action_name = self._backend_queue.get_nowait()
+                handled = True
                 if kind == "success":
                     if callback:
                         callback(payload)
@@ -684,7 +686,7 @@ class AttendanceView(ctk.CTkFrame):
 
         if not self._is_destroyed:
             try:
-                self._queue_job = self.after(50, self._drain_backend_queue)
+                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
             except Exception:
                 self._queue_job = None
 

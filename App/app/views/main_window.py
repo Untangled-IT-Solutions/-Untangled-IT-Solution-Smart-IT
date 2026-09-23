@@ -57,7 +57,7 @@ class TimerWidget(ctk.CTkFrame):
         self._build_layout()
         # TimerWidget is a UI component, not the navigation owner.
         # NavigationController must be attached to MainWindow instead.
-        self._queue_job = self.after(50, self._drain_backend_queue)
+        self._queue_job = self.after(200, self._drain_backend_queue)
         self.after(100, self._initial_sync)
 
     def _build_layout(self) -> None:
@@ -107,9 +107,11 @@ class TimerWidget(ctk.CTkFrame):
         if self._is_destroyed:
             return
 
+        handled = False
         try:
             while True:
                 kind, payload, callback, action_name = self._backend_queue.get_nowait()
+                handled = True
                 if kind == "success":
                     self._backend_success(payload, callback)
                 else:
@@ -121,7 +123,7 @@ class TimerWidget(ctk.CTkFrame):
 
         if not self._is_destroyed:
             try:
-                self._queue_job = self.after(50, self._drain_backend_queue)
+                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
             except Exception:
                 self._queue_job = None
 

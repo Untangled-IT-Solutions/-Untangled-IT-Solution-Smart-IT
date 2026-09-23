@@ -17,7 +17,8 @@ from typing import Any, Callable, Optional
 
 # Cross-thread hand-off. Workers only put; the UI poller only get.
 _UI_QUEUE: queue.Queue[Callable[[], None]] = queue.Queue()
-_POLL_MS = 50
+_ACTIVE_POLL_MS = 25
+_IDLE_POLL_MS = 200
 
 
 def _drain_ui_queue() -> None:
@@ -42,11 +43,12 @@ def start_ui_dispatcher(root: Any) -> None:
         try:
             if not root.winfo_exists():
                 return
+            had_work = not _UI_QUEUE.empty()
             _drain_ui_queue()
-            root.after(_POLL_MS, poll)
+            root.after(_ACTIVE_POLL_MS if had_work else _IDLE_POLL_MS, poll)
         except Exception:
             root._nexus_dispatcher_started = False
-    root.after(_POLL_MS, poll)
+    root.after(_IDLE_POLL_MS, poll)
 
 
 def _schedule_on_ui(owner: Any, callback: Callable[[], None]) -> None:

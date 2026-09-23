@@ -282,7 +282,7 @@ class DashboardView(ctk.CTkFrame):
         else:
             self._build_employee()
 
-        self._queue_job = self.after(50, self._drain_backend_queue)
+        self._queue_job = self.after(200, self._drain_backend_queue)
         self.after(150, self._safe_refresh)
         self._refresh_job = self.after(self.REFRESH_INTERVAL_MS, self._scheduled_refresh)
 
@@ -1322,9 +1322,11 @@ class DashboardView(ctk.CTkFrame):
     def _drain_backend_queue(self) -> None:
         if self._is_destroyed:
             return
+        handled = False
         try:
             while True:
                 success, summary, error = self._backend_queue.get_nowait()
+                handled = True
                 self._refresh_running = False
                 if success:
                     self._hide_loading()
@@ -1346,7 +1348,7 @@ class DashboardView(ctk.CTkFrame):
             print(f"⚠️ Dashboard result handling error: {exc}")
         if not self._is_destroyed:
             try:
-                self._queue_job = self.after(50, self._drain_backend_queue)
+                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
             except Exception:
                 self._queue_job = None
 
