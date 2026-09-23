@@ -174,7 +174,7 @@ class ApprovalRequestModal(ctk.CTkToplevel):
     @ui_task
     def _save(self) -> None:
         try:
-            (yield RemoteCall(self._controller.create_request, 
+            (yield RemoteCall(self._controller.create_request,
                 self.title_entry.get(), self.type_entry.get(), self.description_entry.get("1.0", "end").strip(),
                 self.requested_by_entry.get(), self.department_entry.get(), self.amount_entry.get(),
                 bool(self.requires_director.get())
@@ -384,7 +384,7 @@ class ApprovalReviewModal(ctk.CTkToplevel):
             return
         try:
             if rejected:
-                (yield RemoteCall(self._controller.reject, 
+                (yield RemoteCall(self._controller.reject,
                     self._request.id, "", self._request.current_stage,
                     self.reason_entry.get("1.0", "end").strip()
                 ))

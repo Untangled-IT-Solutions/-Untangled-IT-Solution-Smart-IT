@@ -16,10 +16,10 @@ const CatalogItemSchema = new Schema<ICatalogItem>(
   {
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
-    category: { 
-      type: String, 
-      enum: ['refurbished', 'accessories', 'software', 'services'], 
-      required: true 
+    category: {
+      type: String,
+      enum: ['refurbished', 'accessories', 'software', 'services'],
+      required: true
     },
     blurb: { type: String, required: true },
     from: { type: Number, default: null },

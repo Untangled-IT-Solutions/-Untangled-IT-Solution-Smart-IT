@@ -14,10 +14,10 @@ class NavigationController:
     # Role-based access control
     MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
     STAFF_ROLES = ["Staff", "Intern"]
-    
+
     # Who can see User Management
     USER_MANAGEMENT_ROLES = ["Director", "Operations Manager"]
-    
+
     # Who can see Quote Sync
     QUOTE_SYNC_ROLES = ["Director", "Business Lead", "Operations Manager"]
 
@@ -46,7 +46,7 @@ class NavigationController:
 
         # Get current user info
         self._update_user_info()
-        
+
         print(f"🔐 NavigationController initialized with role: {self._current_role}")
 
     # ----------------------------------------------------
@@ -72,7 +72,7 @@ class NavigationController:
                     self._current_full_name = getattr(session, "full_name", "")
                     if not self._current_username:
                         self._current_username = getattr(session, "email", "")
-        
+
         print(f"👤 User info - Role: {self._current_role}, Username: {self._current_username}, Full Name: {self._current_full_name}")
 
     def is_manager(self) -> bool:
@@ -223,7 +223,7 @@ class NavigationController:
 
     def get_view(self, name, workspace, controller):
         """Factory method for creating views with role-based access."""
-        
+
         if name == "Dashboard":
             from app.views.dashboard_view import DashboardView
             return DashboardView(workspace, controller)
@@ -320,24 +320,24 @@ class NavigationController:
             frame = ctk.CTkFrame(workspace, fg_color="transparent")
             frame.grid_columnconfigure(0, weight=1)
             frame.grid_rowconfigure(0, weight=1)
-            
+
             inner = ctk.CTkFrame(frame, fg_color="transparent")
             inner.grid(row=0, column=0)
-            
+
             ctk.CTkLabel(
                 inner,
                 text=f"{name}",
                 font=ctk.CTkFont(size=24, weight="bold"),
                 text_color=Theme.TEXT,
             ).pack(pady=(0, 8))
-            
+
             ctk.CTkLabel(
                 inner,
                 text="Coming Soon",
                 font=ctk.CTkFont(size=14),
                 text_color=Theme.MUTED_TEXT,
             ).pack()
-            
+
             return frame
 
     def _create_access_denied_view(self, workspace, title: str, message: str):
@@ -345,24 +345,24 @@ class NavigationController:
         frame = ctk.CTkFrame(workspace, fg_color="transparent")
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(0, weight=1)
-        
+
         inner = ctk.CTkFrame(frame, fg_color="transparent")
         inner.grid(row=0, column=0)
-        
+
         ctk.CTkLabel(
             inner,
             text="⛔ Access Denied",
             font=ctk.CTkFont(size=28, weight="bold"),
             text_color=Theme.DANGER,
         ).pack(pady=(0, 12))
-        
+
         ctk.CTkLabel(
             inner,
             text=f"{title}",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=Theme.TEXT,
         ).pack(pady=(0, 8))
-        
+
         ctk.CTkLabel(
             inner,
             text=message,
@@ -371,12 +371,12 @@ class NavigationController:
             justify="center",
             wraplength=500,
         ).pack()
-        
+
         ctk.CTkLabel(
             inner,
             text=f"\nYour role: {self._current_role}",
             font=ctk.CTkFont(size=12),
             text_color=Theme.MUTED_TEXT,
         ).pack()
-        
+
         return frame

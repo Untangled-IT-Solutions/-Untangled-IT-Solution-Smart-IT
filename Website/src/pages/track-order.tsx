@@ -1,21 +1,21 @@
 // src/pages/track-order.tsx
 import { useState, useEffect } from "react";
 import type { ReactElement } from "react";
-import { 
-  CheckCircle2, 
-  Clock, 
-  Package, 
-  User, 
-  Mail, 
-  Phone, 
-  ArrowLeft, 
-  AlertCircle, 
-  Loader2, 
-  Copy, 
-  Calendar, 
-  MapPin, 
-  ShoppingBag, 
-  Truck, 
+import {
+  CheckCircle2,
+  Clock,
+  Package,
+  User,
+  Mail,
+  Phone,
+  ArrowLeft,
+  AlertCircle,
+  Loader2,
+  Copy,
+  Calendar,
+  MapPin,
+  ShoppingBag,
+  Truck,
   Box,
   X,
   RefreshCw
@@ -23,33 +23,33 @@ import {
 import { trackOrder, type TrackedOrder } from "../lib/api";
 
 const ORDER_STATUSES: Record<string, { label: string; color: string; icon: ReactElement }> = {
-  pending: { 
-    label: "Pending", 
+  pending: {
+    label: "Pending",
     color: "text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 dark:text-yellow-400",
     icon: <Clock className="h-5 w-5" />
   },
-  confirmed: { 
-    label: "Confirmed ✅", 
+  confirmed: {
+    label: "Confirmed ✅",
     color: "text-blue-600 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400",
     icon: <CheckCircle2 className="h-5 w-5" />
   },
-  processing: { 
-    label: "Processing", 
+  processing: {
+    label: "Processing",
     color: "text-purple-600 bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400",
     icon: <RefreshCw className="h-5 w-5" />
   },
-  shipped: { 
-    label: "Shipped 🚚", 
+  shipped: {
+    label: "Shipped 🚚",
     color: "text-indigo-600 bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400",
     icon: <Truck className="h-5 w-5" />
   },
-  delivered: { 
-    label: "Delivered ✅", 
+  delivered: {
+    label: "Delivered ✅",
     color: "text-green-600 bg-green-100 dark:bg-green-900/30 dark:text-green-400",
     icon: <CheckCircle2 className="h-5 w-5" />
   },
-  cancelled: { 
-    label: "Cancelled ❌", 
+  cancelled: {
+    label: "Cancelled ❌",
     color: "text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400",
     icon: <X className="h-5 w-5" />
   }
@@ -68,14 +68,14 @@ export default function TrackOrderPage() {
     const params = new URLSearchParams(window.location.search);
     const refParam = params.get('ref');
     const emailParam = params.get('email');
-    
+
     if (refParam) {
       setReference(refParam);
     }
     if (emailParam) {
       setEmail(emailParam);
     }
-    
+
     // Auto-track if both params are present
     if (refParam && emailParam) {
       setTimeout(() => {
@@ -105,14 +105,14 @@ export default function TrackOrderPage() {
   const handleTrack = async (ref?: string, emailAddress?: string) => {
     const trackRef = ref || reference;
     const trackEmail = emailAddress || email;
-    
+
     if (!trackRef.trim() || !trackEmail.trim()) {
       setError('Please enter both reference number and email');
       return;
     }
-    
+
     console.log('🔍 Tracking order:', { ref: trackRef, email: trackEmail });
-    
+
     setLoading(true);
     setNotFound(false);
     setError(null);
@@ -270,8 +270,8 @@ export default function TrackOrderPage() {
                 <button
                   onClick={handleCopyReference}
                   className={`rounded-lg p-2 transition-colors ${
-                    copySuccess 
-                      ? 'bg-green-500 text-white' 
+                    copySuccess
+                      ? 'bg-green-500 text-white'
                       : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -340,8 +340,8 @@ export default function TrackOrderPage() {
             </h2>
             <ul className="mt-3 space-y-2">
               {order.items.map((item, index) => (
-                <li 
-                  key={item.id} 
+                <li
+                  key={item.id}
                   className={`flex items-center justify-between gap-4 py-2.5 px-3 rounded-lg ${
                     index % 2 === 0 ? 'bg-muted/30' : ''
                   }`}

@@ -127,7 +127,7 @@ class OfficeRequestModal(ctk.CTkToplevel):
     @ui_task
     def _save(self) -> None:
         try:
-            (yield RemoteCall(self._controller.create_request, 
+            (yield RemoteCall(self._controller.create_request,
                 self.item_entry.get(), self.quantity_entry.get(), self.requested_by_entry.get(),
                 self.department_entry.get(), self.notes_entry.get("1.0", "end").strip(),
                 bool(self.requires_director.get())

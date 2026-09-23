@@ -16,7 +16,7 @@ export type Product = {
   grade?: string;
   warranty?: string;
   keywords?: string[];
-  image?: string; 
+  image?: string;
 };
 
 export const PRODUCT_CATEGORIES = [

@@ -27,11 +27,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (!ready) return;
     document.documentElement.classList.toggle("dark", theme === "dark");
     window.localStorage.setItem("theme", theme);
-    
+
     // Also apply to body
     document.body.style.backgroundColor = theme === "light" ? "#ffffff" : "#000000";
     document.body.style.color = theme === "light" ? "#000000" : "#ffffff";
-    
+
     return () => {
       document.body.style.backgroundColor = "";
       document.body.style.color = "";

@@ -19,7 +19,7 @@ const productImages: Record<string, string> = {
   'dell-latitude-5420': laptop2,      // From home.tsx
   'dell-latitude-5440': laptop3,      // From home.tsx
   'dell-monitor-p2422h': monitor1,    // From home.tsx - THIS WAS MISSING!
-  
+
   // ============================================================
   // STORE-DATA FEATURED PRODUCTS
   // ============================================================
@@ -27,28 +27,28 @@ const productImages: Record<string, string> = {
   'featured-lat-5420': laptop2,
   'featured-lat-5440': laptop3,
   'featured-monitor': monitor1,
-  
+
   // ============================================================
   // BUSINESS LAPTOPS (from store-data)
   // ============================================================
   'lat-5440': laptop3,
   'lat-7440': laptop3,
   'tp-t14': laptop2,
-  
+
   // ============================================================
   // DESKTOPS AND WORKSTATIONS
   // ============================================================
   'opti-7010-new': laptop3,
   'ts-p3': laptop3,
   'prec-3660-new': laptop3,
-  
+
   // ============================================================
   // MONITORS
   // ============================================================
   'dell-u2723qe-new': monitor1,
   'lenovo-p27h': monitor1,
   'dell-u3423we': monitor1,
-  
+
   // ============================================================
   // ACCESSORIES - No images (will show placeholder)
   // ============================================================
@@ -56,7 +56,7 @@ const productImages: Record<string, string> = {
   'lenovo-dock-gen2': null,
   'dell-headset': null,
   'lenovo-combo': null,
-  
+
   // ============================================================
   // SERVICES - No images (will show placeholder)
   // ============================================================
@@ -185,7 +185,7 @@ export default function CartPage({ onNavigate }: CartPageProps) {
         <ul className="space-y-3">
           {cartItems.map((item) => {
             const productImage = getProductImage(item.id);
-            
+
             return (
               <li
                 key={item.id}
@@ -213,7 +213,7 @@ export default function CartPage({ onNavigate }: CartPageProps) {
                     }`} />
                   </div>
                 )}
-                
+
                 {/* Product Info */}
                 <div className="min-w-0">
                   <p className={`truncate text-sm font-bold ${
@@ -228,7 +228,7 @@ export default function CartPage({ onNavigate }: CartPageProps) {
                     {formatPrice ? formatPrice(item.price || 0) : `R${(item.price || 0).toFixed(2)}`}
                   </p>
                 </div>
-                
+
                 {/* Quantity Controls */}
                 <div className="flex shrink-0 items-center gap-2">
                   <div className={`flex items-center rounded-full border ${

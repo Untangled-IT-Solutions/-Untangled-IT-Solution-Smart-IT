@@ -14,10 +14,10 @@ const ServiceSchema = new Schema<IService>(
     id: { type: String, required: true, unique: true },
     name: { type: String, required: true },
     description: { type: String, required: true },
-    group: { 
-      type: String, 
-      enum: ['software', 'support', 'solutions'], 
-      required: true 
+    group: {
+      type: String,
+      enum: ['software', 'support', 'solutions'],
+      required: true
     },
   },
   {

@@ -35,7 +35,7 @@ export function QuoteCartProvider({ children }: { children: ReactNode }) {
       if (raw) {
         const parsed = JSON.parse(raw) as QuoteLine[];
         // Validate that items exist in catalog
-        const validLines = parsed.filter(line => 
+        const validLines = parsed.filter(line =>
           CATALOG.some(item => item.id === line.id)
         );
         setLines(validLines);

@@ -43,7 +43,7 @@ export default function SupportPage() {
       alert("Please select what you need help with.");
       return;
     }
-    
+
     const selectedService = SUPPORT_SERVICES.find(s => s.id === selected);
     const subject = `Support Request - ${formData.name}`;
     const body = [
@@ -91,9 +91,9 @@ export default function SupportPage() {
         </p>
         <button
           className="mt-6 rounded-xl bg-[#839705] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#98ab06] transition-colors"
-          onClick={() => { setDone(false); setSelected(null); setFormData({ 
+          onClick={() => { setDone(false); setSelected(null); setFormData({
             name: "", company: "", email: "", phone: "", address: "", city: "", postalCode: "",
-            deviceMake: "", deviceModel: "", serialNumber: "", biosVersion: "", osVersion: "", problem: "" 
+            deviceMake: "", deviceModel: "", serialNumber: "", biosVersion: "", osVersion: "", problem: ""
           }); }}
         >
           Log another request
@@ -131,8 +131,8 @@ export default function SupportPage() {
                   type="button"
                   onClick={() => setSelected(s.id)}
                   className={`rounded-2xl border p-4 text-left transition-colors ${
-                    active 
-                      ? "border-[#839705] bg-[#839705]/10" 
+                    active
+                      ? "border-[#839705] bg-[#839705]/10"
                       : theme === "light"
                         ? "border-[#D7E2C8] bg-white hover:bg-[#EEF3E7]"
                         : "border-[#3A4331] bg-[#1A1A1A] hover:bg-[#2A2E24]"
@@ -168,9 +168,9 @@ export default function SupportPage() {
               <span className="rounded-full bg-[#839705]/20 px-3 py-1 text-sm font-semibold text-[#839705]">
                 {selectedService?.name || selected}
               </span>
-              <button 
-                type="button" 
-                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors" 
+              <button
+                type="button"
+                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors"
                 onClick={handleBackToSelection}
               >
                 change

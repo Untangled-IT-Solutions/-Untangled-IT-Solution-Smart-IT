@@ -44,7 +44,7 @@ export default function LoadingAnimation({ onComplete }: LoadingAnimationProps) 
         {/* Spinning Logo Container */}
         <div className="relative mx-auto h-32 w-32 sm:h-48 sm:w-48">
           {/* Outer spinning ring */}
-          <div 
+          <div
             className="absolute inset-0 animate-spin"
             style={{ animationDuration: getSpinDuration() }}
           >
@@ -52,9 +52,9 @@ export default function LoadingAnimation({ onComplete }: LoadingAnimationProps) 
           </div>
 
           {/* Middle spinning ring (counter-rotating) */}
-          <div 
+          <div
             className="absolute inset-2 animate-spin"
-            style={{ 
+            style={{
               animationDuration: getSpinDuration(),
               animationDirection: 'reverse'
             }}
@@ -63,7 +63,7 @@ export default function LoadingAnimation({ onComplete }: LoadingAnimationProps) 
           </div>
 
           {/* Inner spinning ring */}
-          <div 
+          <div
             className="absolute inset-4 animate-spin"
             style={{ animationDuration: getSpinDuration() }}
           >

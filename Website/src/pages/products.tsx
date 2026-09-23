@@ -40,7 +40,7 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
     const q = search.trim().toLowerCase();
     return list.filter((p) => {
       const matchesCategory = category === "All" || p.category === category;
-      const matchesSearch = !q || 
+      const matchesSearch = !q ||
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         p.shortDescription.toLowerCase().includes(q) ||
@@ -60,9 +60,9 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
 
   const handleQuoteClick = (productId: string, productName: string) => {
     if (!isInQuote(productId)) {
-      addToQuote({ 
-        id: productId, 
-        name: productName, 
+      addToQuote({
+        id: productId,
+        name: productName,
         kind: "product"
       });
     }
@@ -90,7 +90,7 @@ export default function ProductsPage({ onNavigate }: ProductsPageProps) {
       quoteOnly: product.quoteOnly || false,
       image: product.image || '',
     };
-    
+
     addToCart(productId, 1, productData);
   };
 

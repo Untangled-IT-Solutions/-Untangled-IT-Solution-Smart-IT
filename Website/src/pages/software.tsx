@@ -50,7 +50,7 @@ export default function SoftwarePage() {
       alert("Please choose at least one service above.");
       return;
     }
-    
+
     const subject = `Software Project Enquiry - ${formData.name}`;
     const body = [
       "New software project enquiry:",
@@ -102,14 +102,14 @@ export default function SoftwarePage() {
         </p>
         <button
           className="mt-6 rounded-xl bg-[#839705] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#98ab06] transition-colors"
-          onClick={() => { 
-            setDone(false); 
-            setSelected([]); 
-            setFormData({ 
+          onClick={() => {
+            setDone(false);
+            setSelected([]);
+            setFormData({
               name: "", company: "", email: "", phone: "", address: "", city: "", postalCode: "",
               projectName: "", projectType: "", timeline: "", budget: "", existingSystems: "",
-              integrations: "", userCount: "", technicalRequirements: "", brief: "" 
-            }); 
+              integrations: "", userCount: "", technicalRequirements: "", brief: ""
+            });
           }}
         >
           Start another project
@@ -148,8 +148,8 @@ export default function SoftwarePage() {
                   type="button"
                   onClick={() => toggle(s.id)}
                   className={`rounded-2xl border p-4 text-left transition-colors ${
-                    active 
-                      ? "border-[#839705] bg-[#839705]/10" 
+                    active
+                      ? "border-[#839705] bg-[#839705]/10"
                       : theme === "light"
                         ? "border-[#D7E2C8] bg-white hover:bg-[#EEF3E7]"
                         : "border-[#3A4331] bg-[#1A1A1A] hover:bg-[#2A2E24]"
@@ -188,9 +188,9 @@ export default function SoftwarePage() {
                   {index < selected.length - 1 && ""}
                 </span>
               ))}
-              <button 
-                type="button" 
-                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors ml-2" 
+              <button
+                type="button"
+                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors ml-2"
                 onClick={() => setSelected([])}
               >
                 change

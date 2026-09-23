@@ -192,11 +192,11 @@ export default defineEventHandler(async () => {
     // Clear existing products
     await Product.deleteMany({});
     console.log('Cleared existing products');
-    
+
     // Insert products
     await Product.insertMany(productsData);
     console.log(`✅ Inserted ${productsData.length} products`);
-    
+
     return {
       success: true,
       message: 'Products seeded successfully',

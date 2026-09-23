@@ -2181,7 +2181,7 @@ class OrderManagementView(ctk.CTkFrame):
         order: Dict[str, Any],
         display_status: str,
     ):
-        (yield from ui_steps(self._update_order_status, 
+        (yield from ui_steps(self._update_order_status,
             order,
             display_status,
         ))
@@ -2192,7 +2192,7 @@ class OrderManagementView(ctk.CTkFrame):
         order: Dict[str, Any],
         display_status: str,
     ):
-        (yield from ui_steps(self._update_order_status, 
+        (yield from ui_steps(self._update_order_status,
             order,
             display_status,
         ))
@@ -2308,7 +2308,7 @@ class OrderManagementView(ctk.CTkFrame):
                     or employee.get("id")
                     or employee.get("_id")
                 )
-            response = (yield RemoteCall(self._backend_api.request, 
+            response = (yield RemoteCall(self._backend_api.request,
                 "PUT",
                 f"/api/admin/orders/{reference}/assignment",
                 {

@@ -33,7 +33,7 @@ function AppContent() {
   // --- NEW: Navigation function that supports data/params ---
   const handleNavigate = (page: string, data?: any) => {
     console.log('📍 Navigating with data:', page, data);
-    
+
     // Handle track-order with params
     if (page === 'track-order') {
       // Set current page and store data in a state or URL
@@ -101,9 +101,9 @@ function AppContent() {
         return <CheckoutPage onNavigate={handleNavigate} />
       case 'quote':
         return (
-          <QuotePage 
-            onClose={closeQuote} 
-            onNavigateToStore={navigateToStore} 
+          <QuotePage
+            onClose={closeQuote}
+            onNavigateToStore={navigateToStore}
             onNavigate={navigateTo}
           />
         );
@@ -118,7 +118,7 @@ function AppContent() {
 
   return (
     <>
-      <Header 
+      <Header
         onNavigate={navigateTo}
         currentPage={currentPage}
         onRequestQuote={openQuote}
@@ -132,7 +132,7 @@ function AppContent() {
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm">
           <div className="min-h-screen px-4 py-8">
             <div className="mx-auto max-w-3xl rounded-2xl bg-background shadow-2xl">
-              <QuotePage 
+              <QuotePage
                 onClose={closeQuote}
                 onNavigateToStore={navigateToStore}
                 onNavigate={navigateTo}

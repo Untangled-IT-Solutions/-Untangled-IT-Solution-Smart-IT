@@ -84,7 +84,7 @@ class PeopleView(ctk.CTkFrame):
         for child in self._cards_frame.winfo_children():
             child.destroy()
 
-        employees = (yield RemoteCall(self._controller.get_employees, 
+        employees = (yield RemoteCall(self._controller.get_employees,
             self.search_entry.get(),
             self.department_filter.get(),
             self.role_filter.get(),

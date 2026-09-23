@@ -39,7 +39,7 @@ class MongoUser:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
-    
+
     def to_dict(self) -> dict:
         return {
             "_id": self._id,

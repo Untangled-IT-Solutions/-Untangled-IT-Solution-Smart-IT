@@ -220,81 +220,81 @@ select {
    ============================================ */
 
 @keyframes float-1 {
-  0%, 100% { 
-    transform: translate(-50%, 0px); 
+  0%, 100% {
+    transform: translate(-50%, 0px);
   }
-  50% { 
-    transform: translate(-50%, -10px); 
+  50% {
+    transform: translate(-50%, -10px);
   }
 }
 
 @keyframes float-2 {
-  0%, 100% { 
-    transform: translate(0, 0px); 
+  0%, 100% {
+    transform: translate(0, 0px);
   }
-  50% { 
-    transform: translate(8px, -8px); 
+  50% {
+    transform: translate(8px, -8px);
   }
 }
 
 @keyframes float-3 {
-  0%, 100% { 
-    transform: translate(0, 0px); 
+  0%, 100% {
+    transform: translate(0, 0px);
   }
-  50% { 
-    transform: translate(-8px, 8px); 
+  50% {
+    transform: translate(-8px, 8px);
   }
 }
 
 @keyframes float-4 {
-  0%, 100% { 
-    transform: translate(-50%, 0px); 
+  0%, 100% {
+    transform: translate(-50%, 0px);
   }
-  50% { 
-    transform: translate(-50%, 10px); 
+  50% {
+    transform: translate(-50%, 10px);
   }
 }
 
 @keyframes float-5 {
-  0%, 100% { 
-    transform: translate(0, 0px); 
+  0%, 100% {
+    transform: translate(0, 0px);
   }
-  50% { 
-    transform: translate(8px, 8px); 
+  50% {
+    transform: translate(8px, 8px);
   }
 }
 
 @keyframes float-6 {
-  0%, 100% { 
-    transform: translate(0, 0px); 
+  0%, 100% {
+    transform: translate(0, 0px);
   }
-  50% { 
-    transform: translate(-8px, -8px); 
+  50% {
+    transform: translate(-8px, -8px);
   }
 }
 
-.animate-float-1 { 
-  animation: float-1 4s ease-in-out infinite; 
+.animate-float-1 {
+  animation: float-1 4s ease-in-out infinite;
 }
 
-.animate-float-2 { 
-  animation: float-2 4.5s ease-in-out infinite; 
+.animate-float-2 {
+  animation: float-2 4.5s ease-in-out infinite;
 }
 
-.animate-float-3 { 
-  animation: float-3 5s ease-in-out infinite; 
+.animate-float-3 {
+  animation: float-3 5s ease-in-out infinite;
 }
 
-.animate-float-4 { 
-  animation: float-4 3.5s ease-in-out infinite; 
+.animate-float-4 {
+  animation: float-4 3.5s ease-in-out infinite;
 }
 
-.animate-float-5 { 
-  animation: float-5 5.5s ease-in-out infinite; 
+.animate-float-5 {
+  animation: float-5 5.5s ease-in-out infinite;
 }
 
-.animate-float-6 { 
-  animation: float-6 4.2s ease-in-out infinite; 
+.animate-float-6 {
+  animation: float-6 4.2s ease-in-out infinite;
 }
 
 /* ============================================

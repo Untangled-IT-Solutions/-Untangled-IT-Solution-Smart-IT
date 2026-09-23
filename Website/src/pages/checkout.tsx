@@ -13,7 +13,7 @@ interface CheckoutPageProps {
 
 export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
   console.log('✅ CheckoutPage rendered');
-  
+
   const { theme } = useTheme();
   const { cart, clearCart, cartTotal, getCartItems } = useStore();
   const [placed, setPlaced] = useState(false);
@@ -54,12 +54,12 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
   // --- FIX: Navigate to track order page ---
   const handleTrackOrder = () => {
     if (!orderReference) return;
-    
+
     // Use React Router navigation if available
     if (onNavigate) {
-      onNavigate('track-order', { 
-        ref: orderReference, 
-        email: formData.email 
+      onNavigate('track-order', {
+        ref: orderReference,
+        email: formData.email
       });
     } else {
       // Fallback: Use URL with properly encoded parameters
@@ -78,13 +78,13 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
             </div>
             <CheckCircle2 className="mx-auto h-16 w-16 text-green-500 relative" />
           </div>
-          
+
           <h1 className="mt-4 text-3xl font-extrabold text-foreground">Order Placed! 🎉</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Thank you for your order. We'll confirm stock and delivery by email within 24 hours.
           </p>
         </div>
-        
+
         {orderReference && (
           <div className="mx-auto mt-8 w-full max-w-md rounded-2xl border-2 border-[#839705] bg-[#839705]/5 p-6 shadow-lg">
             <div className="flex items-center justify-center gap-2 mb-2">
@@ -93,7 +93,7 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
                 Your Order Reference
               </p>
             </div>
-            
+
             <div className="flex items-center justify-center gap-3 bg-background rounded-xl p-4 border border-border">
               <p className="text-2xl sm:text-3xl font-extrabold text-foreground font-mono tracking-wider">
                 {orderReference}
@@ -101,19 +101,19 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
               <button
                 onClick={handleCopyReference}
                 className={`rounded-lg p-2 transition-colors ${
-                  copySuccess 
-                    ? 'bg-green-500 text-white' 
+                  copySuccess
+                    ? 'bg-green-500 text-white'
                     : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {copySuccess ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
               </button>
             </div>
-            
+
             <p className="mt-3 text-center text-xs text-muted-foreground">
               {copySuccess ? '✅ Copied to clipboard!' : 'Keep this to track your order'}
             </p>
-            
+
             <div className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground border-t border-border pt-4">
               <Mail className="h-4 w-4" />
               <span>We've also sent this to <strong className="text-foreground">{formData.email}</strong></span>
@@ -346,14 +346,14 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
               </li>
             ))}
           </ul>
-          
+
           <div className={`mt-4 flex justify-between border-t pt-3 text-base font-extrabold ${
             theme === "light" ? "border-[#D7E2C8]" : "border-[#3A4331]"
           }`}>
             <span className="text-foreground">Total</span>
             <span className="text-foreground">{formatPrice(cartTotal)}</span>
           </div>
-          
+
           <button
             type="submit"
             disabled={isSubmitting}
@@ -371,12 +371,12 @@ export default function CheckoutPage({ onNavigate }: CheckoutPageProps = {}) {
               </>
             )}
           </button>
-          
+
           <div className="mt-3 flex items-center justify-center gap-1 text-xs text-muted-foreground">
             <Check className="h-3 w-3 text-green-500" />
             <span>Secure checkout</span>
           </div>
-          
+
           <p className="mt-2 text-center text-xs text-muted-foreground">
             You'll receive a reference number to track your order.
           </p>

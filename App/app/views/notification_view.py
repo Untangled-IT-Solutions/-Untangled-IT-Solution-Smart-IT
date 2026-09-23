@@ -216,12 +216,12 @@ class NotificationView(ctk.CTkFrame):
         for child in self.list_frame.winfo_children():
             child.destroy()
 
-        display_notifications = (yield RemoteCall(self.controller.get_notifications, 
+        display_notifications = (yield RemoteCall(self.controller.get_notifications,
             role=self.role_var.get(),
             unread_only=self.unread_var.get(),
         ))
 
-        unread_check = (yield RemoteCall(self.controller.get_notifications, 
+        unread_check = (yield RemoteCall(self.controller.get_notifications,
             role=self.role_var.get(),
             unread_only=True,
         ))

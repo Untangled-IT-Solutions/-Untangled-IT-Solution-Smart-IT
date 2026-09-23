@@ -48,8 +48,8 @@ const quoteSchema = new mongoose.Schema({
     qty: Number,
     image: String
   }],
-  status: { 
-    type: String, 
+  status: {
+    type: String,
     enum: [
       'received', 'in_review', 'quoted', 'closed', 'pending', 'waiting_feedback',
       'in_touch', 'approved', 'payment', 'assigned', 'accepted', 'in_progress',
@@ -64,8 +64,8 @@ const quoteSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
   paymentRequired: { type: Boolean, default: false },
   paymentAmount: { type: Number },
-  paymentStatus: { 
-    type: String, 
+  paymentStatus: {
+    type: String,
     enum: ['pending', 'paid', 'failed'],
     default: 'pending'
   },
@@ -105,8 +105,8 @@ const orderSchema = new mongoose.Schema({
     price: Number
   }],
   total: { type: Number, required: true },
-  status: { 
-    type: String, 
+  status: {
+    type: String,
     // Must match Work desktop Order Management statuses
     enum: [
       'pending',
@@ -192,17 +192,17 @@ async function ensurePerformanceIndexes() {
 async function connectDB() {
   try {
     console.log('📡 Connecting to MongoDB...');
-    
+
     if (!config.mongoUri) {
       console.error('❌ MONGODB_URI is not defined in environment variables');
       console.log('⚠️ Falling back to in-memory storage...');
       isMongoConnected = false;
       return false;
     }
-    
+
     const maskedUri = config.mongoUri.replace(/\/\/.*@/, '//<credentials>@');
     console.log(`🔗 Using URI: ${maskedUri}`);
-    
+
     const mongoOptions: any = {
       maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE || 20),
       minPoolSize: Number(process.env.MONGODB_MIN_POOL_SIZE || 5),
@@ -229,12 +229,12 @@ async function connectDB() {
 
     await mongoose.connect(config.mongoUri, mongoOptions);
     await ensurePerformanceIndexes();
-    
+
     isMongoConnected = true;
     console.log('✅ MongoDB connected successfully');
     console.log(`📊 Database: ${mongoose.connection.name}`);
     console.log(`🔗 Host: ${mongoose.connection.host}`);
-    
+
     return true;
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
@@ -302,7 +302,7 @@ function generateOrderReference(): string {
 
 function extractPaymentAmount(replyMessage: string): number | null {
   if (!replyMessage) return null;
-  
+
   const patterns = [
     /R\s*([\d,]+)/i,
     /pay\s*R\s*([\d,]+)/i,
@@ -312,7 +312,7 @@ function extractPaymentAmount(replyMessage: string): number | null {
     /price\s*R\s*([\d,]+)/i,
     /payment\s*R\s*([\d,]+)/i
   ];
-  
+
   for (const pattern of patterns) {
     const match = replyMessage.match(pattern);
     if (match) {
@@ -337,16 +337,16 @@ app.use('/api/quotes/track', eventHandler(async (event) => {
   }
 
   console.log(`🔍 Track quote request received: ${event.method}`);
-  
+
   try {
     const url = new URL(event.node.req.url || '', `http://${event.node.req.headers.host}`);
     const ref = url.searchParams.get('ref');
     const email = url.searchParams.get('email');
-    
+
     console.log(`🔍 ===== TRACK QUOTE REQUEST =====`);
     console.log(`🔍 Reference: ${ref}`);
     console.log(`🔍 Email: ${email}`);
-    
+
     if (!ref || !email) {
       return {
         success: false,
@@ -354,32 +354,32 @@ app.use('/api/quotes/track', eventHandler(async (event) => {
         quote: null
       };
     }
-    
+
     const cleanRef = ref.trim().toUpperCase();
     const cleanEmail = email.trim().toLowerCase();
-    
+
     console.log(`🔍 Cleaned Reference: ${cleanRef}`);
     console.log(`🔍 Cleaned Email: ${cleanEmail}`);
     console.log(`🔍 MongoDB connected: ${isMongoConnected}`);
-    
+
     let quote = null;
-    
+
     if (isMongoConnected) {
       console.log(`🔍 Searching MongoDB for quote...`);
       quote = await Quote.findOne({ reference: cleanRef, email: cleanEmail });
-      
+
       if (quote) {
         console.log(`✅ Found exact match: ${quote.reference}`);
       }
     }
-    
+
     if (!quote) {
       quote = inMemoryQuotes.find(q => q.reference === cleanRef && q.email === cleanEmail);
       if (quote) {
         console.log(`✅ Found in-memory match: ${quote.reference}`);
       }
     }
-    
+
     if (!quote) {
       console.log(`❌ Quote NOT FOUND: ${cleanRef} | ${cleanEmail}`);
       return {
@@ -388,16 +388,16 @@ app.use('/api/quotes/track', eventHandler(async (event) => {
         quote: null
       };
     }
-    
+
     console.log(`✅ ===== QUOTE FOUND =====`);
     console.log(`✅ Reference: ${quote.reference}`);
     console.log(`✅ Customer: ${quote.customerName}`);
     console.log(`✅ Status: ${quote.status}`);
     console.log(`✅ Items: ${quote.items.length}`);
-    
+
     let paymentRequired = quote.paymentRequired || false;
     let paymentAmount = quote.paymentAmount || 0;
-    
+
     if (!paymentRequired && quote.replyMessage) {
       const extractedAmount = extractPaymentAmount(quote.replyMessage);
       if (extractedAmount) {
@@ -406,7 +406,7 @@ app.use('/api/quotes/track', eventHandler(async (event) => {
         console.log(`💰 Auto-extracted payment amount: R${extractedAmount}`);
       }
     }
-    
+
     return {
       success: true,
       quote: {
@@ -453,22 +453,22 @@ app.use('/api/quotes', eventHandler(async (event) => {
   }
 
   console.log(`📋 Quotes request received: ${event.method}`);
-  
+
   // Handle POST - Create quote
   if (event.method === 'POST') {
     try {
       const body = await readBody(event);
       console.log('📥 Quote received:', JSON.stringify(body, null, 2));
-      
+
       const { customerName, company, email, phone, notes, items } = body;
-      
+
       if (!customerName || !email || !phone || !items || items.length === 0) {
         return { success: false, error: 'Missing required fields' };
       }
-      
+
       const reference = generateReference('UQ');
       console.log(`🔑 Generated reference: ${reference}`);
-      
+
       const quoteData = {
         reference,
         customerName,
@@ -489,9 +489,9 @@ app.use('/api/quotes', eventHandler(async (event) => {
         paymentStatus: 'pending',
         feedback: { submitted: false }
       };
-      
+
       let savedQuote;
-      
+
       if (isMongoConnected) {
         try {
           const quote = new Quote(quoteData);
@@ -508,14 +508,14 @@ app.use('/api/quotes', eventHandler(async (event) => {
         inMemoryQuotes.push(savedQuote);
         console.log(`💾 Quote saved in-memory: ${reference}`);
       }
-      
+
       return { success: true, reference: savedQuote.reference };
     } catch (error) {
       console.error('❌ Error:', error);
       return { success: false, error: 'Failed to process quote' };
     }
   }
-  
+
   // Handle GET - List all quotes
   if (event.method === 'GET') {
     try {
@@ -527,7 +527,7 @@ app.use('/api/quotes', eventHandler(async (event) => {
         quotes = inMemoryQuotes;
         console.log(`📋 Found ${quotes.length} quotes in memory`);
       }
-      
+
       return {
         success: true,
         count: quotes.length,
@@ -555,7 +555,7 @@ app.use('/api/quotes', eventHandler(async (event) => {
       return { success: false, error: 'Failed to fetch quotes' };
     }
   }
-  
+
   return { success: false, error: 'Method not allowed' };
 }));
 
@@ -565,17 +565,17 @@ app.use('/api/quotes', eventHandler(async (event) => {
 
 app.use('/api/orders/track', eventHandler(async (event) => {
   console.log(`🔍 Track order request received: ${event.method}`);
-  
+
   try {
     const url = new URL(event.node.req.url || '', `http://${event.node.req.headers.host}`);
     const ref = url.searchParams.get('ref');
     const email = url.searchParams.get('email');
-    
+
     console.log(`🔍 ===== TRACK ORDER REQUEST =====`);
     console.log(`🔍 Method: ${event.method}`);
     console.log(`🔍 Reference: ${ref}`);
     console.log(`🔍 Email: ${email}`);
-    
+
     if (!ref || !email) {
       return {
         success: false,
@@ -583,28 +583,28 @@ app.use('/api/orders/track', eventHandler(async (event) => {
         order: null
       };
     }
-    
+
     const cleanRef = ref.trim().toUpperCase();
     const cleanEmail = email.trim().toLowerCase();
-    
+
     console.log(`🔍 Cleaned Reference: ${cleanRef}`);
     console.log(`🔍 Cleaned Email: ${cleanEmail}`);
     console.log(`🔍 MongoDB connected: ${isMongoConnected}`);
-    
+
     let order = null;
-    
+
     if (isMongoConnected) {
       console.log(`🔍 Searching MongoDB for order...`);
-      
-      order = await Order.findOne({ 
-        reference: cleanRef, 
-        email: cleanEmail 
+
+      order = await Order.findOne({
+        reference: cleanRef,
+        email: cleanEmail
       });
-      
+
       if (order) {
         console.log(`✅ Found order: ${order.reference}`);
       }
-      
+
       if (!order) {
         console.log(`🔍 Trying search by reference only...`);
         order = await Order.findOne({ reference: cleanRef });
@@ -612,10 +612,10 @@ app.use('/api/orders/track', eventHandler(async (event) => {
           console.log(`✅ Found by reference: ${order.reference}`);
         }
       }
-      
+
       if (!order) {
         console.log(`🔍 Trying case insensitive search...`);
-        order = await Order.findOne({ 
+        order = await Order.findOne({
           reference: { $regex: new RegExp(`^${cleanRef}$`, 'i') }
         });
         if (order) {
@@ -623,14 +623,14 @@ app.use('/api/orders/track', eventHandler(async (event) => {
         }
       }
     }
-    
+
     if (!order) {
       order = inMemoryOrders.find(o => o.reference === cleanRef);
       if (order) {
         console.log(`✅ Found in-memory match: ${order.reference}`);
       }
     }
-    
+
     if (!order) {
       console.log(`❌ Order NOT FOUND: ${cleanRef} | ${cleanEmail}`);
       return {
@@ -639,13 +639,13 @@ app.use('/api/orders/track', eventHandler(async (event) => {
         order: null
       };
     }
-    
+
     console.log(`✅ ===== ORDER FOUND =====`);
     console.log(`✅ Reference: ${order.reference}`);
     console.log(`✅ Customer: ${order.customerName}`);
     console.log(`✅ Status: ${order.status}`);
     console.log(`✅ Total: R${order.total}`);
-    
+
     return {
       success: true,
       order: {
@@ -692,13 +692,13 @@ app.use('/api/orders', eventHandler(async (event) => {
   }
 
   console.log(`📋 Orders request received: ${event.method}`);
-  
+
   // Handle GET - List all orders
   if (event.method === 'GET') {
     try {
       console.log('📋 Fetching all orders...');
       let orders = [];
-      
+
       if (isMongoConnected) {
         orders = await Order.find({}).sort({ createdAt: -1 }).limit(50).lean();
         console.log(`📋 Found ${orders.length} orders in MongoDB`);
@@ -706,7 +706,7 @@ app.use('/api/orders', eventHandler(async (event) => {
         orders = inMemoryOrders;
         console.log(`📋 Found ${orders.length} orders in memory`);
       }
-      
+
       return {
         success: true,
         count: orders.length,
@@ -737,21 +737,21 @@ app.use('/api/orders', eventHandler(async (event) => {
       };
     }
   }
-  
+
   // Handle POST - Create new order
   if (event.method === 'POST') {
     try {
       const body = await readBody(event);
       console.log('📥 Order received:', JSON.stringify(body, null, 2));
-      
+
       const { customerName, company, email, phone, address, notes, items, total } = body;
-      
+
       if (!customerName || !email || !phone || !address || !items || items.length === 0) {
         return { success: false, error: 'Missing required fields' };
       }
-      
+
       const reference = generateOrderReference();
-      
+
       const orderData = {
         reference,
         customerName,
@@ -769,9 +769,9 @@ app.use('/api/orders', eventHandler(async (event) => {
         total: total || 0,
         status: 'pending'
       };
-      
+
       let savedOrder;
-      
+
       if (isMongoConnected) {
         try {
           const order = new Order(orderData);
@@ -788,7 +788,7 @@ app.use('/api/orders', eventHandler(async (event) => {
         inMemoryOrders.push(savedOrder);
         console.log(`💾 Order saved in-memory: ${reference}`);
       }
-      
+
       return {
         success: true,
         orderId: savedOrder._id,
@@ -799,7 +799,7 @@ app.use('/api/orders', eventHandler(async (event) => {
       return { success: false, error: 'Failed to process order' };
     }
   }
-  
+
   return {
     success: false,
     error: `Method ${event.method} not allowed for /api/orders`
@@ -815,31 +815,31 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
     try {
       const body = await readBody(event);
       const { reference, email } = body;
-      
+
       console.log(`💳 Payment initiated for: ${reference}`);
-      
+
       if (!reference || !email) {
         return {
           success: false,
           message: 'Reference and email are required'
         };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
-        quote = await Quote.findOne({ 
-          reference: reference.toUpperCase(), 
-          email: email.toLowerCase() 
+        quote = await Quote.findOne({
+          reference: reference.toUpperCase(),
+          email: email.toLowerCase()
         });
-        
+
         if (!quote) {
           return {
             success: false,
             message: 'Quote not found'
           };
         }
-        
+
         if (!quote.paymentRequired || !quote.paymentAmount) {
           const extractedAmount = extractPaymentAmount(quote.replyMessage || '');
           if (extractedAmount) {
@@ -853,15 +853,15 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
             };
           }
         }
-        
+
         const paymentRef = `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         quote.paymentReference = paymentRef;
         quote.paymentStatus = 'pending';
         quote.status = 'payment';
         await quote.save();
-        
+
         const paymentUrl = `${config.frontendUrl}/payment/${paymentRef}`;
-        
+
         return {
           success: true,
           message: 'Payment initiated',
@@ -889,7 +889,7 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
           }
         };
       }
-      
+
       return {
         success: false,
         message: 'Payment service unavailable'
@@ -902,7 +902,7 @@ app.use('/api/quotes/payment', eventHandler(async (event) => {
       };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -915,21 +915,21 @@ app.use('/api/payment/webhook', eventHandler(async (event) => {
     try {
       const body = await readBody(event);
       console.log('📥 Payment webhook received:', JSON.stringify(body, null, 2));
-      
+
       const { paymentReference, status } = body;
-      
+
       if (!paymentReference) {
         return {
           success: false,
           message: 'Payment reference is required'
         };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
         quote = await Quote.findOne({ paymentReference });
-        
+
         if (quote) {
           if (status === 'completed' || status === 'paid') {
             quote.paymentStatus = 'paid';
@@ -938,12 +938,12 @@ app.use('/api/payment/webhook', eventHandler(async (event) => {
             quote.paymentStatus = 'failed';
             quote.status = 'quoted';
           }
-          
+
           await quote.save();
           console.log(`✅ Payment status updated for ${quote.reference}: ${quote.paymentStatus}`);
         }
       }
-      
+
       return {
         success: true,
         message: 'Webhook processed successfully'
@@ -956,7 +956,7 @@ app.use('/api/payment/webhook', eventHandler(async (event) => {
       };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -968,35 +968,35 @@ app.use('/api/payment/simulate/:reference', eventHandler(async (event) => {
   if (event.method === 'POST') {
     try {
       const reference = event.context.params?.reference;
-      
+
       console.log(`🔄 Simulating payment completion for: ${reference}`);
-      
+
       if (!reference) {
         return {
           success: false,
           message: 'Reference is required'
         };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
         quote = await Quote.findOne({ reference: reference.toUpperCase() });
-        
+
         if (!quote) {
           return {
             success: false,
             message: 'Quote not found'
           };
         }
-        
+
         quote.paymentStatus = 'paid';
         quote.status = 'payment';
         await quote.save();
-        
+
         console.log(`✅ Payment simulated for ${reference}: PAID`);
       }
-      
+
       return {
         success: true,
         message: 'Payment simulated successfully',
@@ -1014,7 +1014,7 @@ app.use('/api/payment/simulate/:reference', eventHandler(async (event) => {
       };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -1027,26 +1027,26 @@ app.use('/api/quotes/feedback', eventHandler(async (event) => {
     try {
       const body = await readBody(event);
       const { reference, email, feedback } = body;
-      
+
       console.log(`📝 Feedback received for: ${reference}`);
       console.log(`📊 Rating: ${feedback.rating}`);
       console.log(`💬 Comment: ${feedback.comment}`);
-      
+
       if (!reference || !email || !feedback) {
         return {
           success: false,
           message: 'Missing required fields'
         };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
-        quote = await Quote.findOne({ 
-          reference: reference.toUpperCase(), 
-          email: email.toLowerCase() 
+        quote = await Quote.findOne({
+          reference: reference.toUpperCase(),
+          email: email.toLowerCase()
         });
-        
+
         if (quote) {
           quote.feedback = {
             rating: feedback.rating,
@@ -1054,25 +1054,25 @@ app.use('/api/quotes/feedback', eventHandler(async (event) => {
             submitted: true,
             submittedAt: new Date()
           };
-          
+
           if (feedback.rating >= 4) {
             quote.status = 'approved';
           } else {
             quote.status = 'waiting_feedback';
           }
-          
+
           await quote.save();
           console.log(`✅ Feedback saved for ${reference}`);
         }
       }
-      
+
       if (!quote) {
         return {
           success: false,
           message: 'Quote not found'
         };
       }
-      
+
       return {
         success: true,
         message: 'Feedback submitted successfully',
@@ -1106,7 +1106,7 @@ app.use('/api/quotes/feedback', eventHandler(async (event) => {
       };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -1794,27 +1794,27 @@ app.use('/api/admin/quotes/:reference', eventHandler(async (event) => {
     try {
       const reference = event.context.params?.reference;
       const body = await readBody(event);
-      
+
       console.log(`🔧 Updating quote: ${reference}`);
-      
+
       if (!reference) {
         return { success: false, message: 'Reference is required' };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
         quote = await Quote.findOne({ reference: reference.toUpperCase() });
-        
+
         if (!quote) {
           return { success: false, message: 'Quote not found' };
         }
-        
+
         if (body.status) quote.status = body.status;
         if (body.replyMessage) {
           quote.replyMessage = body.replyMessage;
           quote.repliedAt = new Date();
-          
+
           const extractedAmount = extractPaymentAmount(body.replyMessage);
           if (extractedAmount) {
             quote.paymentRequired = true;
@@ -1828,11 +1828,11 @@ app.use('/api/admin/quotes/:reference', eventHandler(async (event) => {
         if (body.paymentAmount !== undefined) quote.paymentAmount = body.paymentAmount;
         if (body.paymentStatus) quote.paymentStatus = body.paymentStatus;
         if (body.items) quote.items = body.items;
-        
+
         await quote.save();
         console.log(`✅ Quote updated: ${reference}`);
       }
-      
+
       return {
         success: true,
         message: 'Quote updated successfully',
@@ -1851,7 +1851,7 @@ app.use('/api/admin/quotes/:reference', eventHandler(async (event) => {
       return { success: false, message: 'Failed to update quote' };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -1864,36 +1864,36 @@ app.use('/api/admin/quotes/:reference/payment', eventHandler(async (event) => {
     try {
       const reference = event.context.params?.reference;
       const body = await readBody(event);
-      
+
       console.log(`💳 Setting payment for: ${reference}`);
-      
+
       if (!reference) {
         return { success: false, message: 'Reference is required' };
       }
-      
+
       const { amount } = body;
-      
+
       if (!amount || amount <= 0) {
         return { success: false, message: 'Valid payment amount is required' };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
         quote = await Quote.findOne({ reference: reference.toUpperCase() });
-        
+
         if (!quote) {
           return { success: false, message: 'Quote not found' };
         }
-        
+
         quote.paymentRequired = true;
         quote.paymentAmount = amount;
         quote.paymentStatus = 'pending';
-        
+
         await quote.save();
         console.log(`✅ Payment set for ${reference}: R${amount}`);
       }
-      
+
       return {
         success: true,
         message: `Payment of R${amount} set for quote ${reference}`,
@@ -1909,7 +1909,7 @@ app.use('/api/admin/quotes/:reference/payment', eventHandler(async (event) => {
       return { success: false, message: 'Failed to set payment' };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -1921,30 +1921,30 @@ app.use('/api/admin/quotes/:reference/extract-payment', eventHandler(async (even
   if (event.method === 'POST') {
     try {
       const reference = event.context.params?.reference;
-      
+
       console.log(`💰 Extracting payment for: ${reference}`);
-      
+
       if (!reference) {
         return { success: false, message: 'Reference is required' };
       }
-      
+
       let quote = null;
-      
+
       if (isMongoConnected) {
         quote = await Quote.findOne({ reference: reference.toUpperCase() });
-        
+
         if (!quote) {
           return { success: false, message: 'Quote not found' };
         }
-        
+
         const amount = extractPaymentAmount(quote.replyMessage || '');
-        
+
         if (amount) {
           quote.paymentRequired = true;
           quote.paymentAmount = amount;
           quote.paymentStatus = 'pending';
           await quote.save();
-          
+
           return {
             success: true,
             message: `Payment extracted: R${amount}`,
@@ -1956,17 +1956,17 @@ app.use('/api/admin/quotes/:reference/extract-payment', eventHandler(async (even
             }
           };
         }
-        
+
         return { success: false, message: 'No payment amount found in reply message' };
       }
-      
+
       return { success: false, message: 'Database not connected' };
     } catch (error) {
       console.error('❌ Error extracting payment:', error);
       return { success: false, message: 'Failed to extract payment' };
     }
   }
-  
+
   return { success: false, message: 'Method not allowed' };
 }));
 
@@ -2955,7 +2955,7 @@ app.use('/api/attendance/working-now', eventHandler(async (event) => {
 
 async function startServer() {
   await connectDB();
-  
+
   const server = createServer(toNodeListener(app));
 
 // ============================================================

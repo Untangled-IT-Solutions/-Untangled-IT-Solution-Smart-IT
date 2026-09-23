@@ -21,7 +21,7 @@ export default function RefurbishedPage({ onNavigate }: RefurbishedPageProps) {
     const q = search.trim().toLowerCase();
     return list.filter((p) => {
       const matchesCategory = category === "All" || p.category === category;
-      const matchesSearch = !q || 
+      const matchesSearch = !q ||
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         p.shortDescription.toLowerCase().includes(q);
@@ -115,7 +115,7 @@ export default function RefurbishedPage({ onNavigate }: RefurbishedPageProps) {
                 </div>
                 {product.grade && (
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    product.grade === "Grade A" 
+                    product.grade === "Grade A"
                       ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
                       : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
                   }`}>

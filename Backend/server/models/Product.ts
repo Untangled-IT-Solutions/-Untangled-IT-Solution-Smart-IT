@@ -25,18 +25,18 @@ const ProductSchema = new Schema<IProduct>(
     name: { type: String, required: true },
     brand: { type: String, required: true },
     category: { type: String, required: true },
-    segment: { 
-      type: String, 
-      enum: ['products', 'business', 'refurbished'], 
-      required: true 
+    segment: {
+      type: String,
+      enum: ['products', 'business', 'refurbished'],
+      required: true
     },
     shortDescription: { type: String, required: true },
     specs: [{ type: String }],
     price: { type: Number, default: null },
-    availability: { 
-      type: String, 
-      enum: ['in-stock', 'low-stock', 'on-order'], 
-      default: 'in-stock' 
+    availability: {
+      type: String,
+      enum: ['in-stock', 'low-stock', 'on-order'],
+      default: 'in-stock'
     },
     quoteOnly: { type: Boolean, default: false },
     condition: { type: String },

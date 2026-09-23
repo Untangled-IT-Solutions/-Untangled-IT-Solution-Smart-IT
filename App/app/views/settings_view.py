@@ -182,8 +182,8 @@ class SettingsView(ctk.CTkFrame):
 
     @ui_task
     def _create_account(self) -> None:
-        (yield from ui_steps(self._run_account_action, 
-            lambda: (yield RemoteCall(self._controller.create_account, 
+        (yield from ui_steps(self._run_account_action,
+            lambda: (yield RemoteCall(self._controller.create_account,
                 self.employee_menu.get(),
                 self.username_entry.get(),
                 self.password_entry.get(),
@@ -195,14 +195,14 @@ class SettingsView(ctk.CTkFrame):
 
     @ui_task
     def _reset_password(self) -> None:
-        (yield from ui_steps(self._run_account_action, 
+        (yield from ui_steps(self._run_account_action,
             lambda: (yield RemoteCall(self._controller.reset_password, self._selected_account_id(), self.password_entry.get())),
             "Password reset.",
         ))
 
     @ui_task
     def _change_role(self) -> None:
-        (yield from ui_steps(self._run_account_action, 
+        (yield from ui_steps(self._run_account_action,
             lambda: (yield RemoteCall(self._controller.change_role, self._selected_account_id(), self.role_menu.get())),
             "Role changed.",
         ))
@@ -213,7 +213,7 @@ class SettingsView(ctk.CTkFrame):
         account = next(
             account for account in (yield RemoteCall(self._controller.get_accounts)) if account.id == account_id
         )
-        (yield from ui_steps(self._run_account_action, 
+        (yield from ui_steps(self._run_account_action,
             lambda: (yield RemoteCall(self._controller.set_account_status, account_id, not account.is_active)),
             "Account status changed.",
         ))

@@ -646,7 +646,7 @@ class UserManagementView(ctk.CTkFrame):
         try:
             mode = self.filter_menu.get()
 
-            users = (yield RemoteCall(self._controller.get_all_users, 
+            users = (yield RemoteCall(self._controller.get_all_users,
                 include_inactive=mode != "Active Only",
             ))
 
@@ -1111,7 +1111,7 @@ class UserManagementView(ctk.CTkFrame):
 
             user = (
                 (yield RemoteCall(self._controller
-                .create_user_with_password, 
+                .create_user_with_password,
                     employee_id=employee_id,
                     username=username,
                     password=password,
@@ -1168,7 +1168,7 @@ class UserManagementView(ctk.CTkFrame):
                     password,
                 ) = (
                     (yield RemoteCall(self._controller
-                    .create_user_with_generated_password, 
+                    .create_user_with_generated_password,
                         employee_id=employee_id,
                         username=username,
                         role=role,
@@ -1181,7 +1181,7 @@ class UserManagementView(ctk.CTkFrame):
                     password,
                 ) = (
                     (yield RemoteCall(self._controller
-                    .create_user_from_employee, 
+                    .create_user_from_employee,
                         employee_id=employee_id,
                         role=role,
                         active=active,
@@ -1218,7 +1218,7 @@ class UserManagementView(ctk.CTkFrame):
         try:
             password = (
                 (yield RemoteCall(self._controller
-                .reset_user_password_generated, 
+                .reset_user_password_generated,
                     user_id
                 ))
             )
@@ -1250,7 +1250,7 @@ class UserManagementView(ctk.CTkFrame):
         active: bool,
     ) -> None:
         try:
-            (yield RemoteCall(self._controller.set_user_status, 
+            (yield RemoteCall(self._controller.set_user_status,
                 user_id,
                 active,
             ))
@@ -1345,7 +1345,7 @@ class UserManagementView(ctk.CTkFrame):
             dialog.destroy()
 
             try:
-                (yield RemoteCall(self._controller.delete_user, 
+                (yield RemoteCall(self._controller.delete_user,
                     user_id
                 ))
 

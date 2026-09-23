@@ -1,11 +1,11 @@
 // src/pages/home.tsx
 import { useEffect, useState, useMemo, useCallback, memo, useRef } from 'react';
-import { 
-  Monitor, 
-  Network, 
-  Shield, 
-  Code, 
-  Wrench, 
+import {
+  Monitor,
+  Network,
+  Shield,
+  Code,
+  Wrench,
   ShoppingCart,
   Laptop,
   ArrowRight,
@@ -48,8 +48,8 @@ const SERVICES = [
 ];
 
 const PARTNERS = [
-  "DELL", "HP", "LENOVO", "ASUS", "HUAWEI", 
-  "HIKVISION", "EATON", "BROTHER", "BIXOLON", 
+  "DELL", "HP", "LENOVO", "ASUS", "HUAWEI",
+  "HIKVISION", "EATON", "BROTHER", "BIXOLON",
   "DATALOGIC", "ATEN", "G&G"
 ];
 
@@ -141,7 +141,7 @@ const products: Product[] = [
 const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
   const getRadius = useCallback(() => {
     if (typeof window === 'undefined') return 155;
-    
+
     const width = window.innerWidth;
     if (width < 400) return 80;
     if (width < 480) return 95;
@@ -156,14 +156,14 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
 
   useEffect(() => {
     setIsMounted(true);
-    
+
     let timeoutId: ReturnType<typeof setTimeout>;
     let rafId: number;
-    
+
     const handleResize = () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
-      
+
       rafId = requestAnimationFrame(() => {
         timeoutId = setTimeout(() => {
           setRadius(getRadius());
@@ -173,7 +173,7 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
 
     handleResize();
     window.addEventListener('resize', handleResize, { passive: true });
-    
+
     return () => {
       cancelAnimationFrame(rafId);
       clearTimeout(timeoutId);
@@ -186,14 +186,14 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
     const maxContainer = Math.min(containerSize, 480);
     const isSmall = radius < 110;
 
-    const serviceAngles = SERVICES.map((_, i) => 
+    const serviceAngles = SERVICES.map((_, i) =>
       (i / SERVICES.length) * Math.PI * 2 - Math.PI / 2
     );
 
     return (
-      <div 
+      <div
         className="relative mx-auto w-full aspect-square orbit-container"
-        style={{ 
+        style={{
           maxWidth: maxContainer,
           maxHeight: maxContainer
         }}
@@ -214,7 +214,7 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
             strokeDasharray="6 10"
             className="animate-dash-flow"
           />
-          
+
           <circle
             cx={containerSize / 2}
             cy={containerSize / 2}
@@ -226,7 +226,7 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
             className="animate-dash-flow"
             style={{ animationDirection: "reverse", animationDuration: "9s" }}
           />
-          
+
           {serviceAngles.map((angle, i) => (
             <line
               key={i}
@@ -249,7 +249,7 @@ const ServiceOrbit = memo(({ theme }: { theme: "light" | "dark" }) => {
             const Icon = service.icon;
             const iconSize = isSmall ? 'size-10' : radius < 130 ? 'size-12' : 'size-13';
             const iconInnerSize = isSmall ? 'size-4.5' : radius < 130 ? 'size-5' : 'size-5.5';
-            
+
             return (
               <div
                 key={service.label}
@@ -330,9 +330,9 @@ ServiceOrbit.displayName = 'ServiceOrbit';
 // ============================================
 const ProductCard = memo(({ product, theme }: { product: Product; theme: "light" | "dark" }) => {
   const { cart, addToCart, setCartQty, removeFromCart } = useStore();
-  
-  const badgeColor = product.badgeTone === 'lime' 
-    ? 'bg-[#839705] text-white' 
+
+  const badgeColor = product.badgeTone === 'lime'
+    ? 'bg-[#839705] text-white'
     : 'bg-[#D97706] text-white';
 
   // Check if product is in cart
@@ -341,13 +341,13 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
 
   const handleAddToCart = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     console.log('🛒 Adding to cart:', product.name);
-    
+
     // Parse price
     const priceValue = parseFloat(product.price.replace(/[^0-9.]/g, ''));
     console.log('💰 Price:', priceValue);
-    
+
     // Create product data object (matches what store expects)
     const productData = {
       id: product.id,
@@ -362,9 +362,9 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
       quoteOnly: false,
       image: product.image,
     };
-    
+
     console.log('📦 Product data:', productData);
-    
+
     // Add to cart with product data
     addToCart(product.id, 1, productData);
   }, [product, addToCart]);
@@ -404,7 +404,7 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
           {product.badge}
         </span>
       )}
-      
+
       {/* Product Image */}
       <div className="flex items-center justify-center py-3 sm:py-4">
         <img
@@ -414,12 +414,12 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
           loading="lazy"
         />
       </div>
-      
+
       {/* Product Name */}
       <h3 className={`text-sm font-bold leading-tight ${theme === "light" ? "text-[#111111]" : "text-[#F9FAFB]"}`}>
         {product.name}
       </h3>
-      
+
       {/* Specs List - Using Check icon like your design */}
       <ul className="mt-2 space-y-1 flex-1">
         {product.specs.slice(0, 3).map((spec, i) => (
@@ -434,7 +434,7 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
           </li>
         )}
       </ul>
-      
+
       {/* Price Section */}
       <div className="mt-3 border-t border-border pt-3">
         {product.wasPrice && (
@@ -449,7 +449,7 @@ const ProductCard = memo(({ product, theme }: { product: Product; theme: "light"
           </span>
         </div>
       </div>
-      
+
       {/* Cart Controls */}
       {isInCart ? (
         <div className="mt-3 flex items-center gap-2">
@@ -496,16 +496,16 @@ ProductCard.displayName = 'ProductCard';
 // ============================================
 
 // Service Card Component
-const ServiceCard = memo(({ 
-  icon: Icon, 
-  title, 
-  body, 
-  theme 
-}: { 
-  icon: any; 
-  title: string; 
-  body: string; 
-  theme: "light" | "dark" 
+const ServiceCard = memo(({
+  icon: Icon,
+  title,
+  body,
+  theme
+}: {
+  icon: any;
+  title: string;
+  body: string;
+  theme: "light" | "dark"
 }) => (
   <article
     className={`group flex flex-col p-4 sm:p-5 md:p-7 transition-colors ${
@@ -548,16 +548,16 @@ const StatItem = memo(({ stat }: { stat: { value: string; label: string } }) => 
 StatItem.displayName = 'StatItem';
 
 // Contact Item Component
-const ContactItem = memo(({ 
-  icon: Icon, 
-  title, 
-  subtitle, 
+const ContactItem = memo(({
+  icon: Icon,
+  title,
+  subtitle,
   href,
   colSpan = false
-}: { 
-  icon: any; 
-  title: string; 
-  subtitle: string; 
+}: {
+  icon: any;
+  title: string;
+  subtitle: string;
   href: string;
   colSpan?: boolean;
 }) => (
@@ -649,7 +649,7 @@ export default function Home({ onNavigate }: HomeProps) {
   useEffect(() => {
     // Check if we've already shown the loading animation in this session
     const hasLoaded = sessionStorage.getItem('homeLoaded');
-    
+
     if (hasLoaded) {
       // Already loaded this session, skip animation
       setIsLoading(false);
@@ -679,7 +679,7 @@ export default function Home({ onNavigate }: HomeProps) {
     track.scrollBy({ left: dir * track.clientWidth * 0.8, behavior: "smooth" });
   }, []);
 
-  const heroCheckItems = useMemo(() => 
+  const heroCheckItems = useMemo(() =>
     ["IT Support", "Hardware", "Microsoft 365", "Network Solutions"].map((item) => (
       <li key={item} className="flex items-center gap-1 sm:gap-2">
         <CheckCircle2 className="h-2.5 w-2.5 sm:h-4 sm:w-4" /> {item}
@@ -687,14 +687,14 @@ export default function Home({ onNavigate }: HomeProps) {
     )),
   []);
 
-  const serviceCards = useMemo(() => 
+  const serviceCards = useMemo(() =>
     offers.map(({ icon, title, body }) => (
       <ServiceCard key={title} icon={icon} title={title} body={body} theme={theme} />
     )),
     [theme]
   );
 
-  const productCards = useMemo(() => 
+  const productCards = useMemo(() =>
     products.map((product) => (
       <div
         key={product.id}
@@ -706,12 +706,12 @@ export default function Home({ onNavigate }: HomeProps) {
     [theme]
   );
 
-  const statsElements = useMemo(() => 
+  const statsElements = useMemo(() =>
     stats.map((stat) => <StatItem key={stat.label} stat={stat} />),
     []
   );
 
-  const partnersList = useMemo(() => 
+  const partnersList = useMemo(() =>
     [...PARTNERS, ...PARTNERS].map((partner, i) => (
       <span
         key={`${partner}-${i}`}
@@ -725,7 +725,7 @@ export default function Home({ onNavigate }: HomeProps) {
     [theme]
   );
 
-  const pillarItems = useMemo(() => 
+  const pillarItems = useMemo(() =>
     pillars.map(({ icon: Icon, title, sub }) => (
       <div key={title} className="flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-6 py-3 sm:py-5">
         <Icon className="h-4 w-4 sm:h-6 sm:w-6 shrink-0 text-[#839705]" />
@@ -752,7 +752,7 @@ export default function Home({ onNavigate }: HomeProps) {
   return (
     <div className={`flex min-h-screen flex-col ${theme === "light" ? "bg-white" : "bg-black"}`}>
       <main className="min-h-screen">
-        
+
         {/* ============================================================
             HERO SECTION
             ============================================================ */}
@@ -773,12 +773,12 @@ export default function Home({ onNavigate }: HomeProps) {
 
           <div className="relative w-full py-0 sm:py-12 lg:py-20">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 sm:gap-6 lg:gap-10 items-start lg:items-center max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
-              
+
               {/* Left Content */}
               <div className={`pt-0 sm:pt-0 text-left transition-all duration-1000 ${
                 isInView ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
               }`}>
-                
+
                 <h1 className={`text-xl xs:text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold uppercase leading-[1.05] sm:leading-[1.02] text-left drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] ${
                   theme === "light" ? "text-white" : "text-[#F9FAFB]"
                 }`}>
@@ -786,18 +786,18 @@ export default function Home({ onNavigate }: HomeProps) {
                   <br />
                   for a <span className="text-[#C9E265]">smarter future</span>
                 </h1>
-                
+
                 <p className={`mt-1 sm:mt-5 max-w-lg text-[10px] xs:text-xs sm:text-sm md:text-base font-medium text-left opacity-80 ${
                   theme === "light" ? "text-white/80" : "text-[#9CA3AF]"
                 }`}>
                   We help businesses stay connected, secure and productive with reliable IT support,
                   hardware, licensing and cloud solutions.
                 </p>
-                
+
                 <ul className="mt-1.5 sm:mt-6 flex flex-wrap gap-x-2 sm:gap-x-6 gap-y-0.5 sm:gap-y-2 text-[10px] xs:text-xs sm:text-sm font-semibold text-white">
                   {heroCheckItems}
                 </ul>
-                
+
                 <div className="mt-2 sm:mt-8 flex flex-wrap gap-2 sm:gap-3 justify-start">
                   <a
                     href="#services"
@@ -805,7 +805,7 @@ export default function Home({ onNavigate }: HomeProps) {
                   >
                     Our services <ArrowRight className="ml-1 h-3 w-3 sm:h-4 sm:w-4 inline" />
                   </a>
-                  
+
                   <button
                     onClick={() => handleNavigation('products')}
                     className="inline-flex items-center gap-1.5 sm:gap-2 rounded-xl border border-white/30 bg-white/10 px-3 sm:px-6 py-1.5 sm:py-3 text-[10px] xs:text-xs sm:text-sm font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
@@ -823,7 +823,7 @@ export default function Home({ onNavigate }: HomeProps) {
                   <div className="w-full max-w-[190px] xs:max-w-[230px] sm:max-w-[340px] md:max-w-[400px] lg:max-w-[440px] mx-auto">
                     <ServiceOrbit theme={theme} />
                   </div>
-                  
+
                   <div className="mt-6 sm:mt-8 lg:mt-0 lg:absolute lg:top-[95%] lg:-translate-y-1/2 lg:right-[-100px] w-full lg:w-auto flex justify-center">
                     <div className={`rounded-xl p-2 xs:p-2.5 sm:p-3.5 text-center min-w-[110px] xs:min-w-[140px] sm:min-w-[180px] shadow-lg ${
                       theme === "light"
@@ -887,8 +887,8 @@ export default function Home({ onNavigate }: HomeProps) {
               <a
                 href="#solutions"
                 className={`inline-flex w-fit items-center gap-2 border ${
-                  theme === "light" 
-                    ? "border-[#111111]/40 text-[#111111] hover:border-[#839705] hover:text-[#839705]" 
+                  theme === "light"
+                    ? "border-[#111111]/40 text-[#111111] hover:border-[#839705] hover:text-[#839705]"
                     : "border-[#F9FAFB]/40 text-[#F9FAFB] hover:border-[#839705] hover:text-[#839705]"
                 } px-4 sm:px-6 py-2 sm:py-3 text-[10px] sm:text-xs font-semibold uppercase tracking-[0.18em] transition-colors`}
               >
@@ -939,7 +939,7 @@ export default function Home({ onNavigate }: HomeProps) {
                     <span>{cartCount} items</span>
                   </button>
                 )}
-                
+
                 <div className="flex gap-2">
                   <button
                     onClick={() => scrollBy(-1)}

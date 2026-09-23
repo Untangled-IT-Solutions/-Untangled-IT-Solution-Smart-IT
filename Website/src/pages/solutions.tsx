@@ -59,10 +59,10 @@ export default function SolutionsPage() {
       alert("Please select at least one solution.");
       return;
     }
-    
+
     const selectedServices = selected.map(id => SOLUTIONS_SERVICES.find(s => s.id === id)).filter(Boolean);
     const isLicensingSelected = selected.includes("licensing");
-    
+
     const subject = `Business Solutions Enquiry - ${formData.name}`;
     const body = [
       "New business solutions enquiry:",
@@ -128,16 +128,16 @@ export default function SolutionsPage() {
         </p>
         <button
           className="mt-6 rounded-xl bg-[#839705] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#98ab06] transition-colors"
-          onClick={() => { 
-            setDone(false); 
-            setSelected([]); 
-            setFormData({ 
+          onClick={() => {
+            setDone(false);
+            setSelected([]);
+            setFormData({
               name: "", company: "", email: "", phone: "", address: "", city: "", postalCode: "",
               projectName: "", timeline: "", budget: "", userCount: "", existingInfrastructure: "",
               currentSystems: "", complianceRequirements: "", softwareRequirements: "", osVersions: "",
               licenseType: "", licenseQuantity: "", currentLicenseStatus: "", windowsUpdateNeeds: "",
               microsoftProducts: "", thirdPartySoftware: "", businessGoals: "", message: ""
-            }); 
+            });
           }}
         >
           Start another enquiry
@@ -177,8 +177,8 @@ export default function SolutionsPage() {
                   type="button"
                   onClick={() => toggle(s.id)}
                   className={`rounded-2xl border p-4 text-left transition-colors ${
-                    active 
-                      ? "border-[#839705] bg-[#839705]/10" 
+                    active
+                      ? "border-[#839705] bg-[#839705]/10"
                       : theme === "light"
                         ? "border-[#D7E2C8] bg-white hover:bg-[#EEF3E7]"
                         : "border-[#3A4331] bg-[#1A1A1A] hover:bg-[#2A2E24]"
@@ -216,9 +216,9 @@ export default function SolutionsPage() {
                   {s?.name}
                 </span>
               ))}
-              <button 
-                type="button" 
-                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors ml-2" 
+              <button
+                type="button"
+                className="text-xs underline text-muted-foreground hover:text-foreground transition-colors ml-2"
                 onClick={() => setSelected([])}
               >
                 change
@@ -576,8 +576,8 @@ export default function SolutionsPage() {
               type="submit"
               disabled={selected.length === 0}
               className={`mt-5 w-full rounded-xl px-6 py-3 text-sm font-semibold text-white transition-colors inline-flex items-center justify-center gap-2 ${
-                selected.length > 0 
-                  ? "bg-[#839705] hover:bg-[#98ab06]" 
+                selected.length > 0
+                  ? "bg-[#839705] hover:bg-[#98ab06]"
                   : "bg-muted text-muted-foreground cursor-not-allowed"
               }`}
             >

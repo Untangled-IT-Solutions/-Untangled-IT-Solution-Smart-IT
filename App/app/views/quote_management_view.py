@@ -215,13 +215,13 @@ class QuoteManagementView(ctk.CTkFrame):
                 or getattr(session, "email", None)
                 or ""
             )
-            
+
             if not self._current_user_name and hasattr(session, "account"):
                 self._current_user_name = getattr(session.account, "full_name", "")
                 self._current_username = getattr(session.account, "username", "")
-            
+
             print(f"👤 User: {self._current_user_name} | Username: {self._current_username} | Role: {self._current_role}")
-            
+
             if self._current_role in self.MANAGER_ROLES:
                 self._is_staff = False
                 self._is_manager = True
@@ -230,15 +230,15 @@ class QuoteManagementView(ctk.CTkFrame):
                 self._is_staff = True
                 self._is_manager = False
                 return True
-            
+
             self._show_unauthorized_message()
             return False
-        
+
         if self._navigation_controller:
             self._current_role = getattr(self._navigation_controller, '_current_role', 'Staff')
             self._current_username = getattr(self._navigation_controller, '_current_username', '')
             self._current_user_name = getattr(self._navigation_controller, '_current_full_name', '')
-            
+
             if self._current_role in self.MANAGER_ROLES:
                 self._is_staff = False
                 self._is_manager = True
@@ -247,7 +247,7 @@ class QuoteManagementView(ctk.CTkFrame):
                 self._is_staff = True
                 self._is_manager = False
                 return True
-        
+
         return True
 
     def _show_unauthorized_message(self):
@@ -773,9 +773,9 @@ class QuoteManagementView(ctk.CTkFrame):
         if self._search_job:
             self.after_cancel(self._search_job)
             self._search_job = None
-            
+
         filter_text = self._search_entry.get().strip().lower() if hasattr(self, '_search_entry') else ""
-        
+
         for widget in self._quote_list.winfo_children():
             widget.destroy()
 
@@ -802,7 +802,7 @@ class QuoteManagementView(ctk.CTkFrame):
 
         for quote in quotes:
             self._create_quote_item(quote)
-            
+
         if hasattr(self, '_result_hint'):
             self._result_hint.configure(
                 text=f"Showing {len(quotes)} of {len(self._quotes)} jobs"
@@ -950,7 +950,7 @@ class QuoteManagementView(ctk.CTkFrame):
     def _show_quote_details(self, quote: Dict[str, Any]):
         if self._is_destroyed:
             return
-            
+
         self._empty_state.grid_remove()
         self._details_frame.grid()
 
@@ -1127,7 +1127,7 @@ class QuoteManagementView(ctk.CTkFrame):
                 font=ctk.CTkFont(size=12),
             )
             self._assign_menu.grid(row=0, column=1, sticky="ew")
-            
+
             # Try to find the current assignment in the dropdown options
             if current_name != "Nobody" and current_name in employee_options:
                 self._assign_menu.set(current_name)
@@ -1268,9 +1268,9 @@ class QuoteManagementView(ctk.CTkFrame):
             row += 1
 
             history_textbox = ctk.CTkTextbox(
-                history_frame, 
-                height=100, 
-                wrap="word", 
+                history_frame,
+                height=100,
+                wrap="word",
                 corner_radius=6,
                 font=ctk.CTkFont(size=11),
                 text_color=Theme.TEXT,
@@ -1280,21 +1280,21 @@ class QuoteManagementView(ctk.CTkFrame):
             history_textbox.grid(row=0, column=0, padx=12, pady=10, sticky="nsew")
 
             sorted_history = sorted(
-                history[-12:], 
-                key=lambda x: x.get("time", ""), 
+                history[-12:],
+                key=lambda x: x.get("time", ""),
                 reverse=True
             )
-            
+
             for h in sorted_history:
                 action = h.get("action", "update")
                 by = h.get("by") or h.get("username") or "System"
                 time_str = h.get("time", "")
                 note = h.get("note", "")
                 progress = h.get("progress")
-                
+
                 emoji = self._get_action_emoji(action)
                 action_text = self._format_action_text(action, progress)
-                
+
                 time_display = ""
                 if time_str:
                     try:
@@ -1305,7 +1305,7 @@ class QuoteManagementView(ctk.CTkFrame):
                             time_display = str(time_str)
                     except:
                         time_display = str(time_str)
-                
+
                 line = f"{emoji} {action_text}"
                 if by and by != "System" and by != "None":
                     line += f" by {by}"
@@ -1315,9 +1315,9 @@ class QuoteManagementView(ctk.CTkFrame):
                     if len(note) > 50:
                         note = note[:50] + "..."
                     line += f"\n   └ {note}"
-                
+
                 history_textbox.insert("end", line + "\n")
-            
+
             history_textbox.configure(state="disabled")
 
         # === CUSTOMER COMMUNICATION ===
@@ -1361,7 +1361,7 @@ class QuoteManagementView(ctk.CTkFrame):
         # 2. Employee is assigned to this quote
         # 3. Status is not Completed or Returned
         can_reply = (self._is_manager or is_assigned_to_me) and current_status not in ["Completed", "Returned"]
-        
+
         if can_reply:
             # Reply input
             reply_label = ctk.CTkLabel(
@@ -1375,13 +1375,13 @@ class QuoteManagementView(ctk.CTkFrame):
             row += 1
 
             self._reply_text = ctk.CTkTextbox(
-                self._details_frame, 
-                height=70, 
-                wrap="word", 
+                self._details_frame,
+                height=70,
+                wrap="word",
                 corner_radius=8
             )
             self._reply_text.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-            
+
             # Pre-fill with a helpful message
             if not existing_reply:
                 self._reply_text.insert("1.0", f"Hi {quote.get('customerName', 'Customer')},\n\nThank you for your inquiry. ")
@@ -1389,7 +1389,7 @@ class QuoteManagementView(ctk.CTkFrame):
             reply_row = ctk.CTkFrame(self._details_frame, fg_color="transparent")
             reply_row.grid(row=row + 1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
             reply_row.grid_columnconfigure(0, weight=1)
-            
+
             self._reply_hint = ctk.CTkLabel(
                 reply_row,
                 text="Your reply will be saved to this quote.",
@@ -1411,7 +1411,7 @@ class QuoteManagementView(ctk.CTkFrame):
             )
             self._save_reply_btn.grid(row=0, column=1, sticky="e")
             row += 2
-            
+
         elif current_status in ["Completed", "Returned"]:
             ctk.CTkLabel(
                 self._details_frame,
@@ -1458,7 +1458,7 @@ class QuoteManagementView(ctk.CTkFrame):
     def _format_action_text(self, action: str, progress: Optional[int] = None) -> str:
         """Format action text for display."""
         action_lower = action.lower()
-        
+
         if "progress_updated" in action_lower:
             if progress is not None:
                 return f"Progress updated to {progress}%"
@@ -1501,12 +1501,12 @@ class QuoteManagementView(ctk.CTkFrame):
         """Update status from dropdown."""
         if not quote:
             return
-            
+
         current_status = quote.get("status", "Pending")
         if current_status == new_status:
             self._toast("Status is already set to this.", "info")
             return
-            
+
         reference = quote.get("reference", "")
         if not reference:
             self._toast("No reference found.", "error")
@@ -1526,7 +1526,7 @@ class QuoteManagementView(ctk.CTkFrame):
 
             self._toast(f"Status updated to {new_status}", "success")
             self._filter_quotes()
-            
+
             colour = self.STATUS_COLORS.get(new_status, Theme.ACCENT)
             if self._status_dropdown:
                 self._status_dropdown.configure(
@@ -1603,7 +1603,7 @@ class QuoteManagementView(ctk.CTkFrame):
         if not identity:
             return
         customer = (quote or {}).get("customerName") or "customer"
-        (yield from ui_steps(self._send_notification, 
+        (yield from ui_steps(self._send_notification,
             identity,
             f"Quote {reference} ({customer}) was assigned to you.",
             "Quote Assigned",
@@ -1633,7 +1633,7 @@ class QuoteManagementView(ctk.CTkFrame):
             if self._notification_controller and hasattr(
                 self._notification_controller, "notify_executive"
             ):
-                (yield RemoteCall(self._notification_controller.notify_executive, 
+                (yield RemoteCall(self._notification_controller.notify_executive,
                     title=title,
                     message=f"{by} {action} {reference} ({customer}).",
                     category="Quote Director Review",
@@ -1650,7 +1650,7 @@ class QuoteManagementView(ctk.CTkFrame):
         if not identity:
             return
         customer = (quote or {}).get("customerName") or "customer"
-        (yield from ui_steps(self._send_notification, 
+        (yield from ui_steps(self._send_notification,
             identity,
             f"Director replied on availability for {reference} ({customer}). Open Quote Management to review.",
             "Director Availability Response",
@@ -1674,7 +1674,7 @@ class QuoteManagementView(ctk.CTkFrame):
             if self._notification_controller and hasattr(
                 self._notification_controller, "notify_user"
             ):
-                (yield RemoteCall(self._notification_controller.notify_user, 
+                (yield RemoteCall(self._notification_controller.notify_user,
                     recipient,
                     message,
                     category=category,
@@ -1690,11 +1690,11 @@ class QuoteManagementView(ctk.CTkFrame):
         """Send a reply to the customer."""
         if self._is_destroyed:
             return
-            
+
         if not self._reply_text:
             self._toast("Reply input not available.", "error")
             return
-            
+
         reply = self._reply_text.get("1.0", "end-1c").strip()
         if not reply:
             self._toast("Type a message before sending.", "error")
@@ -1744,36 +1744,36 @@ class QuoteManagementView(ctk.CTkFrame):
         if not reference:
             self._toast("No reference found.", "error")
             return
-        
+
         dialog = ctk.CTkToplevel(self)
         dialog.title("Return Quote")
         dialog.geometry("480x300")
         dialog.configure(fg_color=Theme.BG)
         dialog.transient(self)
         dialog.grab_set()
-        
+
         dialog.update_idletasks()
         x = (dialog.winfo_screenwidth() // 2) - 240
         y = (dialog.winfo_screenheight() // 2) - 150
         dialog.geometry(f"480x300+{x}+{y}")
-        
+
         main = ctk.CTkFrame(dialog, fg_color="transparent")
         main.pack(fill="both", expand=True, padx=20, pady=16)
-        
+
         ctk.CTkLabel(
             main,
             text="↩️ Return Quote to Manager",
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=Theme.TEXT,
         ).pack(pady=(0, 4))
-        
+
         ctk.CTkLabel(
             main,
             text=f"Return {reference} to manager for reassignment.",
             font=ctk.CTkFont(size=12),
             text_color=Theme.MUTED_TEXT,
         ).pack(pady=(0, 12))
-        
+
         # Return to
         ctk.CTkLabel(
             main,
@@ -1782,7 +1782,7 @@ class QuoteManagementView(ctk.CTkFrame):
             text_color=Theme.TEXT,
             anchor="w",
         ).pack(fill="x")
-        
+
         return_to_options = ["Director", "Business Lead", "Operations Manager"]
         return_var = ctk.StringVar(value="Director")
         return_menu = ctk.CTkOptionMenu(
@@ -1794,7 +1794,7 @@ class QuoteManagementView(ctk.CTkFrame):
             font=ctk.CTkFont(size=12),
         )
         return_menu.pack(pady=(2, 8))
-        
+
         # Reason
         ctk.CTkLabel(
             main,
@@ -1803,14 +1803,14 @@ class QuoteManagementView(ctk.CTkFrame):
             text_color=Theme.TEXT,
             anchor="w",
         ).pack(fill="x")
-        
+
         reason_text = ctk.CTkTextbox(main, height=50, wrap="word")
         reason_text.pack(fill="x", pady=(2, 10))
         reason_text.insert("1.0", "Client not responding / needs reassignment")
-        
+
         btn_frame = ctk.CTkFrame(main, fg_color="transparent")
         btn_frame.pack(fill="x")
-        
+
         @ui_callback(self)
         def on_return():
             reason = reason_text.get("1.0", "end-1c").strip()
@@ -1819,10 +1819,10 @@ class QuoteManagementView(ctk.CTkFrame):
                 return
             dialog.destroy()
             (yield from ui_steps(self._execute_return, quote, reason, return_var.get()))
-        
+
         def on_cancel():
             dialog.destroy()
-        
+
         ctk.CTkButton(
             btn_frame,
             text="Cancel",
@@ -1833,7 +1833,7 @@ class QuoteManagementView(ctk.CTkFrame):
             font=ctk.CTkFont(size=11),
             command=on_cancel,
         ).pack(side="left", padx=4)
-        
+
         ctk.CTkButton(
             btn_frame,
             text="↩️ Return",
@@ -1851,17 +1851,17 @@ class QuoteManagementView(ctk.CTkFrame):
         reference = quote.get("reference", "")
         if not reference:
             return
-        
+
         try:
             if not (yield from ui_steps(self._api_set_quote_status, reference, "returned")):
                 raise RuntimeError("The backend did not accept the return.")
             quote["status"] = "Returned"
             quote["return_reason"] = reason
             quote["returned_to"] = return_to
-            
+
             self._toast(f"Returned to {return_to}!", "success")
             self._filter_quotes()
-            
+
         except Exception as e:
             self._toast(f"Backend return failed: {e}", "error")
             import traceback
@@ -1935,7 +1935,7 @@ class QuoteManagementView(ctk.CTkFrame):
         reference = quote.get("reference", "")
         if not reference:
             return
-        
+
         try:
             if not (yield from ui_steps(self._api_set_quote_status, reference, "accepted")):
                 raise RuntimeError("The backend did not accept the assignment.")
@@ -1944,11 +1944,11 @@ class QuoteManagementView(ctk.CTkFrame):
                 if q.get("reference") == reference:
                     q["status"] = "Accepted"
                     break
-            
+
             self._toast("Accepted!", "success")
             self._filter_quotes()
             (yield from ui_steps(self._notify_managers, reference, f"Accepted by {self._current_user_name}"))
-            
+
         except Exception as e:
             self._toast(f"Backend acceptance failed: {e}", "error")
 
@@ -1958,7 +1958,7 @@ class QuoteManagementView(ctk.CTkFrame):
         reference = quote.get("reference", "")
         if not reference:
             return
-        
+
         try:
             if not (yield from ui_steps(self._api_set_quote_status, reference, "in_progress")):
                 raise RuntimeError("The backend did not start the work item.")
@@ -1967,10 +1967,10 @@ class QuoteManagementView(ctk.CTkFrame):
                 if q.get("reference") == reference:
                     q["status"] = "In Progress"
                     break
-            
+
             self._toast("Started work!", "success")
             self._filter_quotes()
-            
+
         except Exception as e:
             self._toast(f"Backend start failed: {e}", "error")
 
@@ -1980,7 +1980,7 @@ class QuoteManagementView(ctk.CTkFrame):
         if self._notification_controller:
             try:
                 if hasattr(self._notification_controller, 'notify_operational'):
-                    (yield RemoteCall(self._notification_controller.notify_operational, 
+                    (yield RemoteCall(self._notification_controller.notify_operational,
                         self.MANAGER_ROLES,
                         f"{title}: {reference}",
                         message,
@@ -1989,7 +1989,7 @@ class QuoteManagementView(ctk.CTkFrame):
                         reference
                     ))
                 elif hasattr(self._notification_controller, 'record_activity'):
-                    (yield RemoteCall(self._notification_controller.record_activity, 
+                    (yield RemoteCall(self._notification_controller.record_activity,
                         title,
                         message,
                         "Quote",
@@ -2056,7 +2056,7 @@ class QuoteManagementView(ctk.CTkFrame):
             return
 
         active = sum(
-            1 for q in self._quotes 
+            1 for q in self._quotes
             if q.get("status") in ("Pending", "Assigned", "Awaiting Details", "Quoted", "Awaiting Client Approval", "Awaiting Payment", "Paid", "In Progress", "Out for Delivery", "Accepted", "In Review", "Awaiting Client")
         )
         self._stats_label.configure(
@@ -2790,7 +2790,7 @@ class QuoteManagementView(ctk.CTkFrame):
         }
         try:
             if self._backend_api:
-                response = (yield RemoteCall(self._backend_api.request, 
+                response = (yield RemoteCall(self._backend_api.request,
                     "POST",
                     f"/api/admin/quotes/{reference}/director-review/request",
                     payload,
@@ -2859,7 +2859,7 @@ class QuoteManagementView(ctk.CTkFrame):
         }
         try:
             if self._backend_api:
-                response = (yield RemoteCall(self._backend_api.request, 
+                response = (yield RemoteCall(self._backend_api.request,
                     "PUT",
                     f"/api/admin/quotes/{reference}/director-review",
                     payload,
@@ -2895,7 +2895,7 @@ class QuoteManagementView(ctk.CTkFrame):
     def _toast(self, message: str, kind: str = "info"):
         if self._is_destroyed:
             return
-            
+
         colors = {
             "success": "#4CAF50",
             "error": Theme.DANGER,
@@ -2915,26 +2915,26 @@ class QuoteManagementView(ctk.CTkFrame):
 
     def destroy(self):
         self._is_destroyed = True
-        
+
         if self._search_job:
             try:
                 self.after_cancel(self._search_job)
             except:
                 pass
             self._search_job = None
-        
+
         if self._status_job:
             try:
                 self.after_cancel(self._status_job)
             except:
                 pass
             self._status_job = None
-        
+
         self._quotes = []
         self._selected_quote = None
         self._quote_cards = {}
         self._filter_buttons = {}
-        
+
         super().destroy()
 
     def refresh(self):
