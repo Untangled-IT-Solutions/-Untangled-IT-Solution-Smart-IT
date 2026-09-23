@@ -131,6 +131,7 @@ jobs:
 
       - name: Build Untangled Nexus with PyInstaller
         run: |
+          python scripts/write_version_info.py
           pyinstaller --noconfirm --clean UntangledNexus.spec
 
       - name: Verify EXE

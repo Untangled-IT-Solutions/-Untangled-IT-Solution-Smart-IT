@@ -13,35 +13,9 @@ class NotificationService:
     def __init__(self, backend: BackendAPIClient) -> None:
         self._backend = backend
 
-    @staticmethod
-    def _parse_is_read(raw: dict) -> bool:
-        """Treat missing read flags as unread. Support legacy field names."""
-        for key in ("is_read", "read", "isRead", "seen", "is_seen"):
-            if key not in raw:
-                continue
-            val = raw.get(key)
-            if isinstance(val, bool):
-                return val
-            if isinstance(val, (int, float)):
-                return bool(val)
-            s = str(val).strip().lower()
-            if s in ("true", "1", "yes", "read", "seen"):
-                return True
-            if s in ("false", "0", "no", "unread", "new", ""):
-                return False
-        status = str(raw.get("status") or "").strip().lower()
-        if status in ("read", "seen", "archived", "done"):
-            return True
-        if status in ("unread", "new", "pending", "open"):
-            return False
-        return False  # default: unread
-
     def _to_model(self, raw: dict) -> Notification:
-        nid = raw.get("id") or raw.get("_id")
-        if nid is not None:
-            nid = str(nid)
         return Notification(
-            id=nid,
+            id=raw.get("id") or raw.get("_id"),
             recipient_role=str(raw.get("recipient_role") or raw.get("role") or "All"),
             title=str(raw.get("title") or ""),
             message=str(raw.get("message") or raw.get("body") or ""),
@@ -49,7 +23,7 @@ class NotificationService:
             reference_type=str(raw.get("reference_type") or ""),
             reference_id=raw.get("reference_id"),
             is_executive=bool(raw.get("is_executive")),
-            is_read=self._parse_is_read(raw),
+            is_read=bool(raw.get("is_read") or raw.get("read") or raw.get("isRead")),
             created_at=raw.get("created_at") or raw.get("createdAt"),
         )
 
@@ -126,8 +100,11 @@ class NotificationService:
     def mark_all_read(self, role: str = "All") -> int:
         """Mark all unread notifications as read. Returns how many were marked."""
         print(f"📋 mark_all_read(role={role})")
+
         payload = {"role": role} if role and role != "All" else {}
 
+        # Prefer the real backend routes. mark-all-read is now an alias on the server.
+        # Do NOT treat a bare success with no count as "1 marked" – that hid the old bug.
         bulk_attempts = [
             ("POST", "/api/notifications/mark-all-read", payload),
             ("POST", "/api/notifications/read-all", payload),
@@ -141,33 +118,35 @@ class NotificationService:
                 if not isinstance(data, dict):
                     continue
                 count = int(
-                    data.get("modified")
-                    or data.get("count")
+                    data.get("count")
+                    or data.get("marked")
                     or data.get("updated")
-                    or data.get("nModified")
+                    or data.get("modifiedCount")
+                    or data.get("modified")
                     or 0
                 )
-                if count > 0 or data.get("success") is True:
-                    # If backend says success but count is 0, still try per-item below
-                    if count > 0:
-                        print(f"✅ mark_all_read via {method} {path} → {count}")
-                        return count
+                matched = int(data.get("matched") or data.get("matchedCount") or 0)
+                print(f"✅ mark_all_read via {method} {path} → count={count} matched={matched}")
+                # Real update happened
+                if count > 0 or matched > 0:
+                    return max(count, matched)
+                # Explicit success with 0 is still a valid "nothing left to mark"
+                if data.get("success") is True or data.get("ok") is True:
+                    return count
             except BackendAPIError as exc:
                 print(f"⚠️ {method} {path} failed: {exc}")
                 continue
 
-        # Fallback: mark each unread notification individually
-        items = self.get_notifications(role=role, unread_only=True) or []
-        updated = 0
+        # Fallback: mark one-by-one
+        items = self.get_notifications(role=role, unread_only=True)
+        print(f"📋 Fallback: marking {len(items)} unread notification(s) one by one")
+        count = 0
         for n in items:
-            nid = str(n.id) if n.id is not None else ""
-            if not nid:
-                continue
-            if self.mark_read(nid):
-                updated += 1
-        print(f"✅ mark_all_read fallback marked {updated}/{len(items)}")
-        return updated
-
+            nid = getattr(n, "id", None)
+            if nid and self.mark_read(str(nid)):
+                count += 1
+        print(f"✅ Marked {count} notification(s) as read (one-by-one)")
+        return count
 
     @staticmethod
     def _dedupe(items: List[Notification]) -> List[Notification]:
@@ -256,18 +235,9 @@ class NotificationService:
         )
 
     def count_unread(self, role: str = "All") -> int:
-        """Prefer dedicated unread-count endpoint (fast); fall back to list."""
-        try:
-            data = self._backend.request("GET", "/api/notifications/unread-count")
-            if isinstance(data, dict):
-                for key in ("count", "unread", "unread_count"):
-                    if key in data and data[key] is not None:
-                        return int(data[key])
-        except Exception as exc:
-            print(f"⚠️ unread-count endpoint failed: {exc}")
         try:
             items = self.get_notifications(role=role, unread_only=True)
-            return len(items or [])
+            return len(items)
         except Exception:
             try:
                 return len([n for n in self.get_notifications(role=role) if not n.is_read])

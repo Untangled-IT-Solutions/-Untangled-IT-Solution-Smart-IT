@@ -9,6 +9,7 @@ Production HTTP client for Untangled Nexus Backend API.
 from __future__ import annotations
 
 import logging
+import threading
 import os
 import sys
 import time
@@ -90,6 +91,8 @@ class BackendAPIClient:
         self.base_url = chosen.rstrip("/")
         self.timeout = timeout
         self._allow_dev_fallback = is_dev
+        self.on_session_expired = None
+        self.on_request_error = None
         self.token: Optional[str] = None
         self.session_data: Optional[dict[str, Any]] = None
 
@@ -154,7 +157,21 @@ class BackendAPIClient:
     def clear_cache(self) -> None:
         self._cache.clear()
 
-    def request(
+    def request(self, method, path, payload=None, *, use_cache=False, cache_key=None):
+        """Fail fast if a future screen accidentally attempts I/O on Tk."""
+        tk_module = sys.modules.get('tkinter')
+        if (threading.current_thread() is threading.main_thread()
+                and tk_module is not None and getattr(tk_module, '_default_root', None) is not None):
+            raise BackendAPIError('This request must run in a background worker.')
+        token = self.token
+        try:
+            return self._request(method, path, payload, use_cache=use_cache, cache_key=cache_key)
+        except BackendAPIError as exc:
+            if self.on_request_error and token and token == self.token and exc.status_code != 401:
+                self.on_request_error(str(exc), token)
+            raise
+
+    def _request(
         self,
         method: str,
         path: str,
@@ -172,6 +189,7 @@ class BackendAPIClient:
             if cached is not None:
                 return cached
 
+        request_token = self.token
         headers = self._headers()
         url = self._url(path)
 
@@ -191,15 +209,20 @@ class BackendAPIClient:
             except ValueError:
                 data = {}
 
+            if resp.status_code == 401 and path != '/api/auth/login' and request_token and request_token == self.token:
+                callback = self.on_session_expired
+                if callback:
+                    callback(request_token)
             if not resp.ok:
                 message = (
                     data.get("error")
                     or data.get("message")
+                    or data.get("detail")
                     or f"Backend returned HTTP {resp.status_code}"
                 )
                 raise BackendAPIError(str(message), resp.status_code)
 
-            if use_cache and method == "GET":
+            if use_cache and method == "GET" and request_token == self.token:
                 self._set_cache(cache_key, data)
 
             return data
@@ -287,6 +310,17 @@ class BackendAPIClient:
     def me(self) -> dict[str, Any]:
         return self.request("GET", "/api/auth/me", use_cache=True, cache_key="me")
 
+    def change_password(self, current_password: str, new_password: str) -> dict[str, Any]:
+        """Change the authenticated user's password through the Nexus API."""
+        return self.request(
+            "POST",
+            "/api/auth/change-password",
+            {
+                "current_password": current_password,
+                "new_password": new_password,
+            },
+        )
+
     def logout(self) -> None:
         try:
             if self.token:
@@ -305,11 +339,18 @@ class BackendAPIClient:
     def attendance_status(self) -> dict[str, Any]:
         return self.request("GET", "/api/attendance/status")
 
-    def attendance_today(self, date: str | None = None) -> dict[str, Any]:
+    def attendance_today(
+        self, date: str | None = None, employee_id: Any = None
+    ) -> dict[str, Any]:
         """Today's attendance records (team scope when role allows)."""
         path = "/api/attendance/today"
+        params = []
         if date:
-            path = f"{path}?date={date}"
+            params.append(f"date={date}")
+        if employee_id is not None:
+            params.append(f"employee_id={employee_id}")
+        if params:
+            path = f"{path}?{'&'.join(params)}"
         return self.request("GET", path, use_cache=False)
 
     def attendance_history(self, days: int = 1, employee_id: Any = None) -> dict[str, Any]:
@@ -317,6 +358,79 @@ class BackendAPIClient:
         if employee_id is not None:
             path = f"{path}&employee_id={employee_id}"
         return self.request("GET", path, use_cache=False)
+
+    # ------------------------------------------------------------------
+    # Leave and private documents
+    # ------------------------------------------------------------------
+
+    def upload_document(
+        self,
+        file_path: str,
+        document_type: str,
+        expiry_date: str | None = None,
+    ) -> dict[str, Any]:
+        """Upload actual bytes with the current bearer session."""
+        tk_module = sys.modules.get("tkinter")
+        if (
+            threading.current_thread() is threading.main_thread()
+            and tk_module is not None
+            and getattr(tk_module, "_default_root", None) is not None
+        ):
+            raise BackendAPIError("This request must run in a background worker.")
+        path = Path(file_path)
+        if not path.is_file():
+            raise BackendAPIError("The selected document no longer exists.")
+        try:
+            request_token = self.token
+            with path.open("rb") as handle:
+                response = self._session.post(
+                    self._url("/api/documents"),
+                    headers=self._headers(),
+                    files={"file": (path.name, handle)},
+                    data={
+                        "document_type": document_type,
+                        "expiry_date": expiry_date or "",
+                    },
+                    timeout=(20, self.timeout),
+                )
+        except requests.exceptions.RequestException as exc:
+            raise BackendAPIError(f"Document upload failed: {exc}") from exc
+        try:
+            data = response.json() if response.content else {}
+        except ValueError:
+            data = {}
+        if response.status_code == 401 and request_token and request_token == self.token:
+            callback = self.on_session_expired
+            if callback:
+                callback(request_token)
+        if not response.ok:
+            raise BackendAPIError(
+                str(data.get("detail") or data.get("message") or "Document upload failed."),
+                response.status_code,
+            )
+        return data
+
+    def download_document(self, document_id: str) -> dict[str, Any]:
+        metadata = self.request("GET", f"/api/documents/{document_id}").get("document") or {}
+        try:
+            response = self._session.get(
+                self._url(f"/api/documents/{document_id}/download"),
+                headers=self._headers(),
+                timeout=(20, self.timeout),
+            )
+        except requests.exceptions.RequestException as exc:
+            raise BackendAPIError(f"Document download failed: {exc}") from exc
+        if not response.ok:
+            try:
+                detail = response.json().get("detail")
+            except (ValueError, AttributeError):
+                detail = None
+            raise BackendAPIError(detail or "Document download failed.", response.status_code)
+        return {
+            "name": metadata.get("name") or f"document-{document_id}",
+            "mime": metadata.get("mime") or response.headers.get("Content-Type"),
+            "content": response.content,
+        }
 
     def clock_in(self, employee_id: Optional[int] = None) -> dict[str, Any]:
         payload = {"employee_id": employee_id} if employee_id is not None else {}
@@ -449,11 +563,19 @@ class BackendAPIClient:
                 return self.request("PUT", f"/api/tasks/{task_id}", data)
             raise
 
-    def task_action(self, task_id: str | int, action: str, note: str = "") -> dict[str, Any]:
+    def task_action(
+        self,
+        task_id: str | int,
+        action: str,
+        note: str = "",
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload = dict(data or {})
+        payload.setdefault("note", note or "")
         return self.request(
             "POST",
             f"/api/tasks/{task_id}/{action}",
-            {"note": note or ""},
+            payload,
         )
 
     def get_workload(self) -> dict[str, Any]:

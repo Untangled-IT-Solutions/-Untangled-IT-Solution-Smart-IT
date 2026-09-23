@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from app.utils.async_tasks import _schedule_on_ui, start_ui_dispatcher
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -176,16 +177,18 @@ class UpdateDialog(ctk.CTkToplevel):
         self._progress.pack(fill="x", padx=Theme.SPACING, pady=(0, Theme.SPACING))
         self._progress.set(0)
 
+        start_ui_dispatcher(self.winfo_toplevel())
+
         def worker() -> None:
             try:
                 path = self._service.download_installer(
                     self._update, progress_callback=self._on_progress,
                 )
-                self.after(0, lambda: self._download_success(path))
+                _schedule_on_ui(self, lambda: self._download_success(path))
             except Exception as exc:
                 logger.exception("Update download failed")
                 message = str(exc) or "Download failed."
-                self.after(0, lambda: self._download_failed(message))
+                _schedule_on_ui(self, lambda: self._download_failed(message))
 
         threading.Thread(target=worker, name="nexus-update-download", daemon=True).start()
 
@@ -210,7 +213,7 @@ class UpdateDialog(ctk.CTkToplevel):
                 pass
 
         try:
-            self.after(0, apply)
+            _schedule_on_ui(self, apply)
         except Exception:
             pass
 

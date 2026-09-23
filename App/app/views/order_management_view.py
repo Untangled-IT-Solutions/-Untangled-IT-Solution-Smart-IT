@@ -35,6 +35,7 @@ import customtkinter as ctk
 from app.services.backend_api_client import BackendAPIClient
 from app.utils.theme import Theme
 from app.utils.async_tasks import run_in_background
+from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, ui_callback
 
 
 class OrderManagementView(ctk.CTkFrame):
@@ -132,7 +133,6 @@ class OrderManagementView(ctk.CTkFrame):
     def __init__(
         self,
         master,
-        mongodb_service=None,  # deprecated – ignored in production (Backend API only)
         people_controller=None,
         notification_controller=None,
         auth_service=None,
@@ -145,7 +145,6 @@ class OrderManagementView(ctk.CTkFrame):
             corner_radius=0,
         )
 
-        self._mongodb = None  # never use direct Mongo from desktop
         self._people_controller = people_controller
         self._notification_controller = notification_controller
         self._auth_service = auth_service
@@ -819,9 +818,6 @@ class OrderManagementView(ctk.CTkFrame):
             api_orders = self._get_orders_from_api()
             if api_orders is not None:
                 return self._normalize_orders(api_orders)
-
-            if self._mongodb and getattr(self._mongodb, "is_connected", False):
-                return self._normalize_orders(self._mongodb.get_orders(limit=500))
 
             raise RuntimeError("Could not load orders from the backend.")
 
@@ -2179,26 +2175,29 @@ class OrderManagementView(ctk.CTkFrame):
     # STATUS ACTIONS
     # ==================================================================
 
+    @ui_task
     def _quick_status(
         self,
         order: Dict[str, Any],
         display_status: str,
     ):
-        self._update_order_status(
+        (yield from ui_steps(self._update_order_status, 
             order,
             display_status,
-        )
+        ))
 
+    @ui_task
     def _update_status_from_dropdown(
         self,
         order: Dict[str, Any],
         display_status: str,
     ):
-        self._update_order_status(
+        (yield from ui_steps(self._update_order_status, 
             order,
             display_status,
-        )
+        ))
 
+    @ui_task
     def _update_order_status(
         self,
         order: Dict[str, Any],
@@ -2220,38 +2219,16 @@ class OrderManagementView(ctk.CTkFrame):
         )
 
         try:
-            # Prefer Backend API (desktop should not require direct Mongo)
-            api_ok = False
-            if self._backend_api:
-                try:
-                    response = self._backend_api.request(
-                        "PATCH",
-                        "/api/orders/status",
-                        {
-                            "reference": reference,
-                            "status": mongo_status,
-                        },
-                    )
-                    api_ok = bool(response and response.get("success", True))
-                except Exception as api_exc:
-                    print(f"⚠️ Order status API update failed: {api_exc}")
-
-            if not api_ok:
-                if not self._mongodb or not self._mongodb.is_connected:
-                    self._status_bar.configure(
-                        text=f"❌ Failed to update {reference} (API + Mongo unavailable)"
-                    )
-                    return
-                success = self._mongodb.update_order_status(
-                    reference,
-                    mongo_status,
+            response = (yield RemoteCall(
+                self._backend_api.request,
+                "PATCH",
+                "/api/orders/status",
+                {"reference": reference, "status": mongo_status},
+            ))
+            if not response or not response.get("success", True):
+                raise RuntimeError(
+                    (response or {}).get("error") or "The backend rejected the update."
                 )
-                if not success:
-                    print(f"❌ Failed to update order {reference}")
-                    self._status_bar.configure(
-                        text=f"❌ Failed to update {reference}"
-                    )
-                    return
 
             print(
                 f"✅ Order {reference} "
@@ -2272,9 +2249,7 @@ class OrderManagementView(ctk.CTkFrame):
                 f"❌ Order status update error: {exc}"
             )
 
-            self._status_bar.configure(
-                text=f"❌ {exc}",
-            )
+            self._status_bar.configure(text=f"❌ Backend update failed for {reference}: {exc}")
 
     # ==================================================================
     # ASSIGNMENT
@@ -2311,6 +2286,7 @@ class OrderManagementView(ctk.CTkFrame):
             assigned
         )
 
+    @ui_task
     def _assign_order(self):
         """Assign the current order through the authenticated backend API."""
         if not self._selected_order or not self._assign_menu:
@@ -2332,7 +2308,7 @@ class OrderManagementView(ctk.CTkFrame):
                     or employee.get("id")
                     or employee.get("_id")
                 )
-            response = self._backend_api.request(
+            response = (yield RemoteCall(self._backend_api.request, 
                 "PUT",
                 f"/api/admin/orders/{reference}/assignment",
                 {
@@ -2340,7 +2316,7 @@ class OrderManagementView(ctk.CTkFrame):
                     "employeeId": emp_payload,
                     "assigned_to": emp_payload,
                 },
-            )
+            ))
             if not response.get("success"):
                 raise RuntimeError(response.get("error") or "Assignment failed")
             order_data = response.get("order") or {}

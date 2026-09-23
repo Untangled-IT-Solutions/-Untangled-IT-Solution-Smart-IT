@@ -10,6 +10,7 @@ import hashlib
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -17,6 +18,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 import requests
 
@@ -81,6 +83,19 @@ def _find_asset(assets: list, name_predicate) -> Optional[dict]:
         if name_predicate(name):
             return asset
     return None
+
+
+def _trusted_github_url(value: str) -> bool:
+    """Accept only HTTPS links served by GitHub's own hostnames."""
+    try:
+        parsed = urlparse(value)
+        host = (parsed.hostname or "").lower()
+        return parsed.scheme == "https" and (
+            host == "github.com" or host.endswith(".github.com")
+            or host == "githubusercontent.com" or host.endswith(".githubusercontent.com")
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 class UpdateService:
@@ -161,10 +176,6 @@ class UpdateService:
             assets, lambda n: n.lower() == installer_name.lower()
         )
         if installer is None:
-            installer = _find_asset(
-                assets, lambda n: bool(INSTALLER_NAME_PATTERN.match(n))
-            )
-        if installer is None:
             logger.warning("Release %s has no installer asset", tag_name)
             return None
 
@@ -180,6 +191,9 @@ class UpdateService:
         checksum_url = (
             checksum_asset.get("browser_download_url") if checksum_asset else None
         )
+        if not checksum_url:
+            logger.warning("Release %s has no checksum for its installer", tag_name)
+            return None
 
         return UpdateInfo(
             version=remote_version,
@@ -219,11 +233,10 @@ class UpdateService:
         installer_name = f"Untangled-Nexus-Setup-{update.version}.exe"
         target = dest_root / installer_name
 
-        if (
-            "github.com" not in update.download_url
-            and "githubusercontent.com" not in update.download_url
-        ):
+        if not _trusted_github_url(update.download_url):
             raise ValueError("Refusing to download installer from untrusted host.")
+        if not update.checksum_url or not _trusted_github_url(update.checksum_url):
+            raise ValueError("Refusing an update without a trusted checksum.")
 
         logger.info("Downloading update %s → %s", update.version, target)
         try:
@@ -261,20 +274,17 @@ class UpdateService:
             raise RuntimeError("Downloaded installer is suspiciously small.")
 
         expected_hash = self._fetch_expected_checksum(update)
-        if expected_hash:
-            actual = hasher.hexdigest().lower()
-            if actual != expected_hash.lower():
-                target.unlink(missing_ok=True)
-                raise RuntimeError(
-                    "Update verification failed. "
-                    "The downloaded installer may be corrupted."
-                )
-            logger.info("SHA256 verified for %s", installer_name)
-        else:
-            logger.warning(
-                "No checksum published for %s – skipping verification",
-                installer_name,
+        if not expected_hash:
+            target.unlink(missing_ok=True)
+            raise RuntimeError("Update verification failed. A valid SHA256 checksum is required.")
+        actual = hasher.hexdigest().lower()
+        if actual != expected_hash.lower():
+            target.unlink(missing_ok=True)
+            raise RuntimeError(
+                "Update verification failed. "
+                "The downloaded installer may be corrupted."
             )
+        logger.info("SHA256 verified for %s", installer_name)
 
         return target
 
@@ -302,21 +312,29 @@ class UpdateService:
         if not installer_path.is_file():
             raise FileNotFoundError(f"Installer not found: {installer_path}")
 
-        updater = self._locate_updater()
-        if updater is None:
+        installed_updater = self._locate_updater()
+        if installed_updater is None:
             raise FileNotFoundError(
                 "updater.exe was not found next to UntangledNexus.exe. "
                 "Reinstall Nexus from the official installer."
             )
 
         pid = os.getpid()
+        staging_dir = Path(tempfile.gettempdir()) / "UntangledNexusUpdates"
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        updater = staging_dir / f"updater-{pid}.exe"
+        shutil.copy2(installed_updater, updater)
+        if getattr(sys, "frozen", False):
+            nexus_executable = Path(sys.executable).resolve()
+        else:
+            nexus_executable = installed_updater.resolve().parent / "UntangledNexus.exe"
         creationflags = 0
         if sys.platform == "win32":
             creationflags = 0x00000008 | 0x00000200  # DETACHED | NEW_GROUP
 
         logger.info("Launching updater: %s %s %s", updater, installer_path, pid)
         subprocess.Popen(
-            [str(updater), str(installer_path), str(pid)],
+            [str(updater), str(installer_path), str(pid), str(nexus_executable)],
             cwd=str(updater.parent),
             creationflags=creationflags,
             close_fds=True,

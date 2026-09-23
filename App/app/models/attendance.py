@@ -27,7 +27,9 @@ class AttendanceRecord:
         if not self.clock_in_at:
             return "absent"
         try:
-            clocked = datetime.strptime(self.clock_in_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo("UTC"))
+            clocked = datetime.fromisoformat(str(self.clock_in_at).replace("Z", "+00:00"))
+            if clocked.tzinfo is None:
+                clocked = clocked.replace(tzinfo=ZoneInfo("UTC"))
             local = clocked.astimezone(ZoneInfo("Africa/Johannesburg"))
             if local.time() < datetime.strptime("08:00:00", "%H:%M:%S").time():
                 return "early"

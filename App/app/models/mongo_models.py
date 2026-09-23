@@ -1,10 +1,12 @@
-# app/models/mongo_models.py
-"""MongoDB models for new authentication system."""
+"""Legacy API payload models kept for import compatibility.
+
+Backend identifiers arrive at the desktop as strings; database driver types do
+not belong in the packaged client.
+"""
 
 from datetime import datetime, timezone
 from typing import Optional, List
 from dataclasses import dataclass, field
-from bson import ObjectId
 from enum import Enum
 
 
@@ -25,8 +27,8 @@ class ActivityType(str, Enum):
 
 @dataclass
 class MongoUser:
-    _id: Optional[ObjectId] = None
-    employee_id: Optional[ObjectId] = None
+    _id: Optional[str] = None
+    employee_id: Optional[str] = None
     username: str = ""
     email: str = ""
     password_hash: str = ""
@@ -57,8 +59,8 @@ class MongoUser:
 
 @dataclass
 class MongoAttendanceRecord:
-    _id: Optional[ObjectId] = None
-    employee_id: ObjectId = None
+    _id: Optional[str] = None
+    employee_id: Optional[str] = None
     employee_name: str = ""
     work_date: str = ""
     clock_in_at: Optional[datetime] = None
@@ -75,8 +77,8 @@ class MongoAttendanceRecord:
 
 @dataclass
 class MongoDailyActivity:
-    _id: Optional[ObjectId] = None
-    employee_id: ObjectId = None
+    _id: Optional[str] = None
+    employee_id: Optional[str] = None
     employee_name: str = ""
     date: str = ""
     activities: List[dict] = field(default_factory=list)

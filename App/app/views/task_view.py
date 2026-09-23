@@ -1,1469 +1,1621 @@
-"""Tasks workspace with reusable templates and admin assignment controls."""
+"""Tasks workspace – modern SaaS split view (list + detail).
 
-from datetime import datetime
-from tkinter import messagebox
-from typing import TYPE_CHECKING
+Preserves all TaskController methods, CreateTaskModal, attachments,
+and work-progress / manager decision actions.
+"""
+
+from __future__ import annotations
+
+from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, action_steps, ui_callback
+
+from collections.abc import Callable
+from typing import Any, Optional
+import base64
+import mimetypes
+from pathlib import Path as FsPath
+from tkinter import filedialog
 
 import customtkinter as ctk
 
 from app.controllers.task_controller import TaskController
-from app.models.task_catalog import CATEGORY_DEPARTMENTS, TASK_CATALOG
+from app.models.task import Task
 from app.utils.theme import Theme
-from app.widgets.work_item_card import WorkItemCard
-from app.utils.async_tasks import run_in_background, bump_generation
-from app.utils.task_ids import task_id_key as _task_id_key, format_ticket as _format_ticket
 
-if TYPE_CHECKING:
-    from app.models.account import UserAccount
-    from app.models.task import Task
+
+# ── Design tokens (match Operations Workspace mockup) ──────────────────────
+BG = "#F5F7FA"
+CARD = "#FFFFFF"
+BORDER = "#E5E7EB"
+TEXT = "#0F172A"
+MUTED = "#64748B"
+GREEN = "#16A34A"
+GREEN_HOVER = "#15803D"
+BLUE = "#2563EB"
+ORANGE = "#F59E0B"
+RED = "#DC2626"
+PURPLE = "#7C3AED"
+SOFT_GREEN = "#DCFCE7"
+SOFT_BLUE = "#DBEAFE"
+SOFT_ORANGE = "#FEF3C7"
+SOFT_RED = "#FEE2E2"
+SOFT_PURPLE = "#EDE9FE"
+SOFT_GRAY = "#F1F5F9"
+
+TASK_CATEGORIES = [
+    "Administration",
+    "Software Development",
+    "Technical Support",
+    "IT Infrastructure",
+    "Network & Security",
+    "Project Management",
+    "Human Resources",
+    "Finance & Billing",
+    "Sales & CRM",
+    "Customer Success",
+    "Quality Assurance",
+    "Training & Onboarding",
+    "Facilities",
+    "Executive / Strategy",
+    "Other",
+]
+
+
+def _fmt_due(value: Any) -> str:
+    if value is None or value == "":
+        return "No due date"
+    text = str(value)
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    return text
+
+
+def _priority_style(priority: str) -> tuple[str, str]:
+    p = (priority or "Normal").strip().lower()
+    if p in ("urgent", "critical"):
+        return RED, SOFT_RED
+    if p == "high":
+        return ORANGE, SOFT_ORANGE
+    if p == "low":
+        return MUTED, SOFT_GRAY
+    return BLUE, SOFT_BLUE
+
+
+def _status_color(status: str) -> str:
+    colors = {
+        "New": BLUE,
+        "Assigned": PURPLE,
+        "In Progress": ORANGE,
+        "Paused": ORANGE,
+        "Waiting Review": BLUE,
+        "Returned": RED,
+        "Escalated": PURPLE,
+        "Completed": GREEN,
+        "Cancelled": RED,
+        "Pending": MUTED,
+    }
+    return colors.get(status or "", MUTED)
+
+
+def _status_soft(status: str) -> str:
+    colors = {
+        "New": SOFT_BLUE,
+        "Assigned": SOFT_PURPLE,
+        "In Progress": SOFT_ORANGE,
+        "Paused": SOFT_ORANGE,
+        "Waiting Review": SOFT_BLUE,
+        "Returned": SOFT_RED,
+        "Escalated": SOFT_PURPLE,
+        "Completed": SOFT_GREEN,
+        "Cancelled": SOFT_RED,
+        "Pending": SOFT_GRAY,
+    }
+    return colors.get(status or "", SOFT_GRAY)
+
+
+def available_employee_actions(task: Task) -> tuple[str, ...]:
+    """Return only workflow actions valid for the task's current timer state."""
+    status = (task.status or "Pending").strip()
+    active = bool(task.active_timer_started_at)
+    if status in {"Assigned", "Returned"} and not active:
+        return ("Start",)
+    if status == "In Progress" and active:
+        return ("Pause", "Submit review")
+    if status == "Paused" and not active:
+        return ("Resume", "Log time", "Submit review")
+    return ()
+
+
+def _left_border_color(task: Task) -> str:
+    status = (task.status or "").lower()
+    priority = (task.priority or "").lower()
+    if status == "completed":
+        return GREEN
+    if priority in ("urgent", "critical"):
+        return RED
+    if priority == "high":
+        return ORANGE
+    if priority == "low":
+        return MUTED
+    return BLUE
+
+
+def _progress_pct(task: Task) -> int:
+    """Best-effort progress 0–100 from task fields."""
+    try:
+        raw = getattr(task, "raw", None) or {}
+        if isinstance(raw, dict):
+            for key in ("progress", "progress_pct", "percent_complete", "completion"):
+                if key in raw and raw[key] is not None:
+                    return max(0, min(100, int(float(raw[key]))))
+        est = float(task.estimated_hours or 0)
+        act = float(task.actual_hours or 0)
+        if est > 0:
+            return max(0, min(100, int(round(100 * act / est))))
+        status = (task.status or "").lower()
+        if status == "completed":
+            return 100
+        if status in ("in progress", "waiting review"):
+            return 45
+        if status == "assigned":
+            return 10
+        return 0
+    except Exception:
+        return 0
+
+
+def _initials(name: str) -> str:
+    parts = [p for p in (name or "").split() if p]
+    if not parts:
+        return "?"
+    if len(parts) == 1:
+        return parts[0][:2].upper()
+    return (parts[0][0] + parts[-1][0]).upper()
 
 
 class TaskView(ctk.CTkFrame):
-    """Search, filter, create, assign, and review operational tasks."""
+    """Modern enterprise Tasks workspace – list + detail split."""
 
+    @ui_task
     def __init__(
         self,
         master: object,
         controller: TaskController,
         filters: dict[str, object] | None = None,
-        current_account: "UserAccount | None" = None,
     ) -> None:
-        super().__init__(master, fg_color=Theme.BG, corner_radius=0)
+        super().__init__(master, fg_color=BG, corner_radius=0)
         self._controller = controller
         self._filters = filters or {}
-        self._account = current_account
-        self._current_user = str(
-            getattr(current_account, "full_name", "")
-            or getattr(current_account, "username", "")
-            or ""
-        )
-        self._department = self._controller.get_employee_department(self._current_user)
-        self._role = str(getattr(current_account, "role", "Staff") or "Staff")
-        self._can_assign = self._controller.can_assign_tasks(
-            self._role, self._current_user
-        )
-        self._can_submit_planning = self._controller.can_submit_planning_tasks(
-            self._role, self._current_user
-        )
-        self._refresh_job: str | None = None
-        self._selected_task_id: str | None = None
+        self._is_manager = bool(getattr(controller, "is_manager", lambda: True)())
+        self._role = getattr(controller, "current_role", lambda: "Staff")()
+        self._tasks: list[Task] = []
+        self._filtered: list[Task] = []
+        self._selected: Optional[Task] = None
+        self._status_msg: Optional[ctk.CTkLabel] = None
+        self._scope_counts: dict[str, int] = {}
+        self._search_var = ctk.StringVar(value="")
+        self._priority_filter = "All Priorities"
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(5, weight=1)
+        self.grid_rowconfigure(2, weight=1)  # KPI
+        self.grid_rowconfigure(3, weight=6)  # main body
+
         self._build_header()
-        self._build_summary()
-        self._build_filters()
-        self._build_workstream_bar()
-        self._build_scope_bar()
+        self._build_kpis()
+        self._build_body()
+        (yield from ui_steps(self.refresh))
 
-        self.list_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.list_frame.grid(row=5, column=0, sticky="nsew")
-        self.list_frame.grid_columnconfigure(0, weight=1)
-        self.list_frame.grid_rowconfigure(0, weight=1)
-        self.refresh()
-
+    # ------------------------------------------------------------------ header
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew")
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(16, 8))
         header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
 
-        title_group = ctk.CTkFrame(header, fg_color="transparent")
-        title_group.grid(row=0, column=0, sticky="w")
+        left = ctk.CTkFrame(header, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="w")
+
+        icon = ctk.CTkFrame(left, width=48, height=48, corner_radius=24, fg_color=GREEN)
+        icon.pack(side="left")
+        icon.pack_propagate(False)
+        ctk.CTkLabel(icon, text="✓", font=ctk.CTkFont(size=22, weight="bold"), text_color="#FFFFFF").place(
+            relx=0.5, rely=0.5, anchor="center"
+        )
+
+        titles = ctk.CTkFrame(left, fg_color="transparent")
+        titles.pack(side="left", padx=(14, 0))
         ctk.CTkLabel(
-            title_group,
-            text="TASK MANAGEMENT",
-            text_color=Theme.ACCENT,
-            font=("Segoe UI", 12, "bold"),
+            titles, text="Tasks", font=ctk.CTkFont(size=28, weight="bold"), text_color=TEXT
         ).pack(anchor="w")
         ctk.CTkLabel(
-            title_group,
-            text="Your team's work, untangled.",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_TITLE,
-        ).pack(anchor="w", pady=(2, 0))
+            titles,
+            text="Manage team work, priorities and deadlines.",
+            font=ctk.CTkFont(size=13),
+            text_color=MUTED,
+        ).pack(anchor="w")
+
+        right = ctk.CTkFrame(header, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="e")
+
+        # Scope pills
+        if self._role in {"Operations Manager", "Super Admin"}:
+            scopes = ["Inbox", "Reviews", "Overdue", "My Tasks", "Team", "Completed"]
+            default = "Inbox"
+        elif self._role == "Director":
+            scopes = ["Reviews", "Overdue", "My Tasks", "Team", "Completed"]
+            default = "Reviews"
+        elif self._role == "Business Lead":
+            scopes = ["My Tasks", "Team", "Completed"]
+            default = "Team"
+        else:
+            scopes = ["My Tasks"]
+            default = "My Tasks"
+
+        self._pill_frame = ctk.CTkFrame(right, fg_color="transparent")
+        self._pill_frame.pack(side="left", padx=(0, 10))
+        self._scope_buttons: dict[str, ctk.CTkButton] = {}
+        self._active_scope = default
+
+        for scope in scopes:
+            btn = ctk.CTkButton(
+                self._pill_frame,
+                text=scope,
+                height=34,
+                corner_radius=18,
+                fg_color=GREEN if scope == default else CARD,
+                hover_color=GREEN_HOVER if scope == default else SOFT_GRAY,
+                text_color="#FFFFFF" if scope == default else TEXT,
+                border_width=1 if scope != default else 0,
+                border_color=BORDER,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda s=scope: self._set_scope(s),
+            )
+            btn.pack(side="left", padx=3)
+            self._scope_buttons[scope] = btn
+
+        if self._is_manager:
+            ctk.CTkButton(
+                right,
+                text="+  New Task",
+                width=120,
+                height=36,
+                corner_radius=12,
+                fg_color=GREEN,
+                hover_color=GREEN_HOVER,
+                text_color="#FFFFFF",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=self._open_create,
+            ).pack(side="left", padx=(6, 0))
+
+    @ui_task
+    def _set_scope(self, scope: str) -> None:
+        self._active_scope = scope
+        for name, btn in self._scope_buttons.items():
+            active = name == scope
+            btn.configure(
+                fg_color=GREEN if active else CARD,
+                hover_color=GREEN_HOVER if active else SOFT_GRAY,
+                text_color="#FFFFFF" if active else TEXT,
+                border_width=0 if active else 1,
+            )
+        (yield from ui_steps(self.refresh))
+
+    def _update_pill_badges(self) -> None:
+        """Refresh pill labels with counts when available."""
+        for name, btn in self._scope_buttons.items():
+            count = self._scope_counts.get(name)
+            label = name if count is None else f"{name}  {count}"
+            try:
+                btn.configure(text=label)
+            except Exception:
+                pass
+
+    # -------------------------------------------------------------------- KPIs
+    def _build_kpis(self) -> None:
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.grid(row=1, column=0, sticky="ew", padx=24, pady=(4, 12))
+        for i in range(4):
+            row.grid_columnconfigure(i, weight=1, uniform="kpi")
+
+        self._kpi_total = self._kpi_card(row, 0, "📋", BLUE, SOFT_BLUE, "Total Tasks", "0", "")
+        self._kpi_progress = self._kpi_card(row, 1, "⏱", ORANGE, SOFT_ORANGE, "In Progress", "0", "")
+        self._kpi_due = self._kpi_card(row, 2, "📅", RED, SOFT_RED, "Due Today", "0", "")
+        self._kpi_done = self._kpi_card(row, 3, "✓", GREEN, SOFT_GREEN, "Completed This Week", "0", "")
+
+    def _kpi_card(self, parent, col, icon, color, soft, title, value, sub):
+        card = ctk.CTkFrame(
+            parent, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
+        )
+        card.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 8, 0 if col == 3 else 8))
+        card.grid_columnconfigure(1, weight=1)
+
+        badge = ctk.CTkFrame(card, width=40, height=40, corner_radius=12, fg_color=soft)
+        badge.grid(row=0, column=0, rowspan=2, padx=(16, 10), pady=16)
+        badge.pack_propagate(False)
+        ctk.CTkLabel(badge, text=icon, font=ctk.CTkFont(size=16), text_color=color).place(
+            relx=0.5, rely=0.5, anchor="center"
+        )
+
         ctk.CTkLabel(
-            title_group,
-            text="Manage priorities, assignments and deadlines from one focused workspace.",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_BODY,
-        ).pack(anchor="w", pady=(4, 0))
+            card, text=title, font=ctk.CTkFont(size=12), text_color=MUTED, anchor="w"
+        ).grid(row=0, column=1, sticky="sw", pady=(14, 0))
 
-        ctk.CTkButton(
-            header,
-            text=(
-                "+  Add Task"
-                if self._can_assign
-                else (
-                    "+  Add Task"
-                    if self._can_submit_planning
-                    else "+  Add My Task"
-                )
-            ),
-            command=self._open_task_dialog,
-            fg_color=Theme.ACCENT,
-            hover_color=Theme.ACCENT_HOVER,
-            text_color="#FFFFFF",
-            font=Theme.FONT_BUTTON,
-            height=42,
-            width=145,
-            corner_radius=Theme.RADIUS,
-        ).grid(row=0, column=1, sticky="e")
-
-    def _build_summary(self) -> None:
-        """Build the four live overview cards used by the task workspace."""
-        summary = ctk.CTkFrame(self, fg_color="transparent")
-        summary.grid(row=1, column=0, pady=(20, 14), sticky="ew")
-        summary.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="task_summary")
-        details = (
-            ("Total Tasks", "▣", "#DCEEFF", "#1677D2"),
-            ("In Progress", "◷", "#FFF0CF", "#D97706"),
-            ("Due Today", "▦", "#FFE1E1", "#DC2626"),
-            ("Completed", "✓", "#DCF7E2", "#15803D"),
+        val = ctk.CTkLabel(
+            card, text=value, font=ctk.CTkFont(size=26, weight="bold"), text_color=TEXT, anchor="w"
         )
-        self._summary_values: list[ctk.CTkLabel] = []
-        for column, (label, icon, icon_bg, icon_color) in enumerate(details):
-            card = ctk.CTkFrame(
-                summary, fg_color=Theme.PANEL, border_color=Theme.BORDER,
-                border_width=1, corner_radius=14,
-            )
-            card.grid(
-                row=0, column=column,
-                padx=(0 if column == 0 else 6, 0 if column == 3 else 6),
-                sticky="ew",
-            )
-            icon_label = ctk.CTkLabel(
-                card, text=icon, width=46, height=46, corner_radius=14,
-                fg_color=icon_bg, text_color=icon_color,
-                font=("Segoe UI Symbol", 21, "bold"),
-            )
-            icon_label.pack(side="left", padx=(16, 12), pady=16)
-            values = ctk.CTkFrame(card, fg_color="transparent")
-            values.pack(side="left", pady=13)
-            ctk.CTkLabel(
-                values, text=label, text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_SMALL,
-            ).pack(anchor="w")
-            number = ctk.CTkLabel(
-                values, text="0", text_color=Theme.TEXT,
-                font=("Segoe UI", 24, "bold"),
-            )
-            number.pack(anchor="w", pady=(1, 0))
-            self._summary_values.append(number)
+        val.grid(row=1, column=1, sticky="nw", pady=(0, 14))
 
-    def _build_filters(self) -> None:
-        filters = ctk.CTkFrame(self, fg_color="transparent")
-        filters.grid(row=2, column=0, pady=(0, 10), sticky="ew")
-        filters.grid_columnconfigure(0, weight=1)
-
-        self.search_var = ctk.StringVar(value=str(self._filters.get("search") or ""))
-        self.search_entry = ctk.CTkEntry(
-            filters,
-            textvariable=self.search_var,
-            placeholder_text="Search tasks, people or categories...",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.PANEL,
-            text_color=Theme.TEXT,
+        sub_lbl = ctk.CTkLabel(
+            card, text=sub, font=ctk.CTkFont(size=11), text_color=GREEN, anchor="e"
         )
-        self.search_entry.grid(row=0, column=0, padx=(0, 8), sticky="ew")
-        self.search_entry.bind("<KeyRelease>", self._schedule_refresh)
-        self.search_entry.bind("<Return>", lambda _event: self._run_search())
+        sub_lbl.grid(row=0, column=2, rowspan=2, padx=16, sticky="e")
+        return val, sub_lbl
 
-        ctk.CTkButton(
-            filters,
-            text="Search",
-            command=self._run_search,
-            width=76,
-            height=40,
-            fg_color=Theme.ACCENT,
-            hover_color=Theme.ACCENT_HOVER,
-            text_color="#FFFFFF",
-        ).grid(row=0, column=1, padx=(0, 8))
+    def _refresh_kpis(self, tasks: list[Task]) -> None:
+        total = len(tasks)
+        in_prog = sum(1 for t in tasks if (t.status or "").lower() == "in progress")
+        from datetime import date
 
-        self.category = ctk.CTkComboBox(
-            filters,
-            values=["All", *TASK_CATALOG.keys()],
-            command=self._category_filter_changed,
-            state="readonly",
-            width=260,
-            height=40,
-            fg_color=Theme.PANEL,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
+        today = date.today().isoformat()
+        due_today = 0
+        completed = 0
+        for t in tasks:
+            due = str(t.due_date or "")
+            if "T" in due:
+                due = due.split("T", 1)[0]
+            if due == today:
+                due_today += 1
+            if (t.status or "").lower() == "completed":
+                completed += 1
+
+        try:
+            self._kpi_total[0].configure(text=str(total))
+            self._kpi_progress[0].configure(text=str(in_prog))
+            self._kpi_due[0].configure(text=str(due_today))
+            self._kpi_done[0].configure(text=str(completed))
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------------- body
+    def _build_body(self) -> None:
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.grid(row=2, column=0, sticky="nsew", padx=24, pady=(0, 20))
+        body.grid_columnconfigure(0, weight=55)
+        body.grid_columnconfigure(1, weight=45)
+        body.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
+
+        # ── Left: My Tasks ──────────────────────────────────────────────
+        left = ctk.CTkFrame(
+            body, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
         )
-        self.category.grid(row=0, column=2, padx=(0, 8), sticky="e")
-        self.category.set("All")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left.grid_columnconfigure(0, weight=1)
+        left.grid_rowconfigure(2, weight=1)
 
-        ctk.CTkButton(
-            filters,
-            text="Clear",
-            command=self._clear_filters,
-            width=72,
-            height=40,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        ).grid(row=0, column=3, sticky="e")
+        ctk.CTkLabel(
+            left,
+            text="My Tasks",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=20, pady=(18, 8))
 
-    def _build_scope_bar(self) -> None:
-        scope_row = ctk.CTkFrame(self, fg_color="transparent")
-        scope_row.grid(row=4, column=0, pady=(0, 14), sticky="ew")
-        scope_row.grid_columnconfigure(1, weight=1)
+        controls = ctk.CTkFrame(left, fg_color="transparent")
+        controls.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
+        controls.grid_columnconfigure(0, weight=1)
 
-        # Sprint planning lives in its own restricted workspace.  Keeping it out
-        # of the general Tasks screen prevents role-based managers from seeing a
-        # second, less controlled planning board.
-        scope_values = ["All", "My tasks", "Department"] if self._can_assign else ["My tasks"]
-        self.scope = ctk.CTkSegmentedButton(
-            scope_row,
-            values=scope_values,
-            command=lambda _value: self.refresh(),
-            selected_color=Theme.ACCENT,
-            selected_hover_color=Theme.ACCENT_HOVER,
-            unselected_color=Theme.PANEL_ALT,
-            unselected_hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
+        search = ctk.CTkEntry(
+            controls,
+            height=38,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER,
+            fg_color=SOFT_GRAY,
+            text_color=TEXT,
+            placeholder_text="🔍  Search tasks...",
+            placeholder_text_color=MUTED,
+            font=ctk.CTkFont(size=13),
+            textvariable=self._search_var,
         )
-        self.scope.grid(row=0, column=0, sticky="w")
-        self.scope.set(
-            "All" if self._can_assign else "My tasks"
+        search.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        search.bind("<KeyRelease>", lambda _e: self._apply_filters())
+
+        self._priority_menu = ctk.CTkOptionMenu(
+            controls,
+            values=["All Priorities", "Urgent", "High", "Normal", "Low"],
+            height=38,
+            corner_radius=10,
+            fg_color=SOFT_GRAY,
+            text_color=TEXT,
+            button_color=BLUE,
+            button_hover_color="#1D4ED8",
+            dropdown_fg_color=CARD,
+            dropdown_text_color=TEXT,
+            dropdown_hover_color=SOFT_GRAY,
+            font=ctk.CTkFont(size=12),
+            command=lambda v: self._on_priority_filter(v),
         )
+        self._priority_menu.set("All Priorities")
+        self._priority_menu.grid(row=0, column=1)
 
-        self.result_label = ctk.CTkLabel(
-            scope_row,
-            text="",
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
+        self.list_frame = ctk.CTkScrollableFrame(left, fg_color="transparent", corner_radius=0)
+        self.list_frame.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 14))
+        self.list_frame.grid_columnconfigure(0, weight=1)
+
+        # ── Right: detail ───────────────────────────────────────────────
+        self.detail = ctk.CTkFrame(
+            body, fg_color=CARD, corner_radius=16, border_width=1, border_color=BORDER
         )
-        self.result_label.grid(row=0, column=1, padx=(14, 0), sticky="e")
+        self.detail.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        self.detail.grid_columnconfigure(0, weight=1)
+        self.detail.grid_rowconfigure(0, weight=1)
 
-    def _build_workstream_bar(self) -> None:
-        self.workstream = ctk.CTkSegmentedButton(
-            self,
-            values=["All work", "Website Merge", "Hardware Refurbishment", "Service & Operations"],
-            command=self._workstream_changed,
-            selected_color=Theme.ACCENT,
-            selected_hover_color=Theme.ACCENT_HOVER,
-            unselected_color=Theme.PANEL_ALT,
-            unselected_hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        )
-        self.workstream.grid(row=3, column=0, pady=(0, 10), sticky="w")
-        self.workstream.set("All work")
+        self._show_empty_detail()
 
-    def _category_filter_changed(self, _value: str) -> None:
-        self.workstream.set("All work")
-        self.refresh()
+    @ui_task
+    def _on_priority_filter(self, value: str) -> None:
+        self._priority_filter = value
+        (yield from ui_steps(self._apply_filters))
 
-    def _run_search(self) -> None:
-        if self._refresh_job is not None:
-            self.after_cancel(self._refresh_job)
-            self._refresh_job = None
-        self.refresh()
+    def _show_empty_detail(self) -> None:
+        for child in self.detail.winfo_children():
+            child.destroy()
+        ctk.CTkLabel(
+            self.detail,
+            text="Select a task from the list\nto see details and actions.",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=15),
+            justify="center",
+        ).place(relx=0.5, rely=0.45, anchor="center")
 
-    def _clear_filters(self) -> None:
-        self.search_var.set("")
-        self.category.set("All")
-        self.workstream.set("All work")
-        self.scope.set(
-            "All" if self._can_assign else "My tasks"
-        )
-        self.refresh()
-
-    def _workstream_changed(self, _value: str) -> None:
-        self.category.set("All")
-        self.refresh()
-
-    def _schedule_refresh(self, _event: object) -> None:
-        if self._refresh_job is not None:
-            self.after_cancel(self._refresh_job)
-        self._refresh_job = self.after(250, self.refresh)
-
+    # ----------------------------------------------------------------- refresh
+    @ui_task
     def refresh(self) -> None:
-        """Load tasks from Backend API off the UI thread."""
-        self._refresh_job = None
-        scope = self.scope.get()
-        search = self.search_var.get().strip()
-        category = self.category.get()
-        workstream = self.workstream.get()
-        current_user = self._current_user
-        department = self._department
-        gen = bump_generation(self)
+        scope = self._active_scope
+        # Map UI scopes to controller scopes
+        scope_map = {
+            "Inbox": "Inbox",
+            "Reviews": "Reviews",
+            "Overdue": "Overdue",
+            "My Tasks": "Personal",
+            "Team": "Department",
+            "Completed": "All",
+            "All": "All",
+            "Personal": "Personal",
+            "Department": "Department",
+        }
+        api_scope = scope_map.get(scope, "Inbox")
+        try:
+            self._tasks = (yield RemoteCall(self._controller.get_tasks, api_scope)) or []
+        except Exception as exc:
+            print(f"⚠️ get_tasks failed: {exc}")
+            self._tasks = []
 
-        def fetch():
-            return self._controller.get_tasks(
-                scope=scope,
-                search=search,
-                category=category,
-                current_user=current_user,
-                department=department,
-                workstream=workstream,
-            )
+        # For "Completed" filter client-side
+        if scope == "Completed":
+            self._tasks = [t for t in self._tasks if (t.status or "").lower() == "completed"]
 
-        def apply(tasks):
-            try:
-                if not self.winfo_exists():
-                    return
-            except Exception:
-                return
-            for child in self.list_frame.winfo_children():
-                child.destroy()
-            tasks = tasks or []
-            today = datetime.now().strftime("%Y-%m-%d")
-            overview = (
-                len(tasks),
-                sum(task.status in {"In Progress", "In Development", "In Review"} for task in tasks),
-                sum(
-                    task.due_date == today
-                    and task.status not in {"Completed", "Archived", "Cancelled"}
-                    for task in tasks
-                ),
-                sum(task.status == "Completed" for task in tasks),
-            )
-            for label, value in zip(self._summary_values, overview):
-                label.configure(text=str(value))
-            noun = "task" if len(tasks) == 1 else "tasks"
-            self.result_label.configure(text=f"{len(tasks)} {noun}")
-            if not tasks:
-                empty = ctk.CTkFrame(
-                    self.list_frame, fg_color=Theme.PANEL, border_color=Theme.BORDER,
-                    border_width=1, corner_radius=14,
-                )
-                empty.grid(row=0, column=0, pady=(0, 16), sticky="nsew")
-                ctk.CTkLabel(
-                    empty, text="No tasks match this view", text_color=Theme.TEXT,
-                    font=Theme.FONT_HEADING,
-                ).pack(pady=(70, 6))
-                ctk.CTkLabel(
-                    empty,
-                    text="Try clearing the filters or add a new task.",
-                    text_color=Theme.MUTED_TEXT, font=Theme.FONT_BODY,
-                ).pack(pady=(0, 70))
-                return
-            task_ids = {_task_id_key(task.id) for task in tasks if task.id is not None}
-            if _task_id_key(self._selected_task_id) not in task_ids:
-                first_id = tasks[0].id
-                self._selected_task_id = _task_id_key(first_id) or None
-            self._render_pipeline(tasks)
+        self._refresh_kpis(self._tasks)
+        self._scope_counts[scope] = len(self._tasks)
+        self._update_pill_badges()
+        (yield from ui_steps(self._apply_filters))
 
-        def failed(exc):
-            try:
-                if not self.winfo_exists():
-                    return
-            except Exception:
-                return
-            for child in self.list_frame.winfo_children():
-                child.destroy()
-            self.result_label.configure(text="Could not load tasks")
+    @ui_task
+    def _apply_filters(self) -> None:
+        q = (self._search_var.get() or "").strip().lower()
+        pri = (self._priority_filter or "All Priorities").lower()
+        filtered: list[Task] = []
+        for t in self._tasks:
+            if q:
+                blob = f"{t.title or ''} {t.description or ''} {t.assigned_employee or ''}".lower()
+                if q not in blob:
+                    continue
+            if pri != "all priorities":
+                if (t.priority or "normal").lower() != pri:
+                    continue
+            filtered.append(t)
+        self._filtered = filtered
+        (yield from ui_steps(self._render_list))
+
+    @ui_task
+    def _render_list(self) -> None:
+        for child in self.list_frame.winfo_children():
+            child.destroy()
+
+        if not self._filtered:
             ctk.CTkLabel(
                 self.list_frame,
-                text=f"Tasks could not be loaded.\n{exc}",
-                text_color=Theme.DANGER,
-                justify="left",
-            ).grid(row=0, column=0, pady=16, sticky="w")
-
-        run_in_background(self, fetch, apply, failed, name="tasks-refresh", generation=gen)
-
-    def _render_pipeline(self, tasks: list["Task"]) -> None:
-        """Render a Lovable-inspired list and task preview without changing data."""
-        workspace = ctk.CTkFrame(self.list_frame, fg_color="transparent")
-        workspace.grid(row=0, column=0, sticky="nsew")
-        workspace.grid_columnconfigure(0, weight=4, uniform="task_workspace")
-        workspace.grid_columnconfigure(1, weight=6, uniform="task_workspace")
-        workspace.grid_rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            workspace, text="Task pipeline", text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
-        ).grid(row=0, column=0, pady=(0, 8), sticky="w")
-        ctk.CTkLabel(
-            workspace, text="Selected task details", text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
-        ).grid(row=0, column=1, padx=(14, 0), pady=(0, 8), sticky="w")
-
-        pipeline = ctk.CTkScrollableFrame(
-            workspace, fg_color="transparent", corner_radius=0,
-            scrollbar_button_color=Theme.BORDER,
-        )
-        pipeline.grid(row=1, column=0, sticky="nsew")
-        pipeline.grid_columnconfigure(0, weight=1)
-        for row, task in enumerate(tasks):
-            self._build_pipeline_card(pipeline, task, row)
-
-        selected = next(
-            (task for task in tasks if _task_id_key(task.id) == _task_id_key(self._selected_task_id)), tasks[0]
-        )
-        self._render_task_detail(workspace, selected)
-
-    def _build_pipeline_card(self, master: object, task: "Task", row: int) -> None:
-        selected = _task_id_key(task.id) == _task_id_key(self._selected_task_id)
-        card = ctk.CTkFrame(
-            master,
-            fg_color=Theme.PANEL,
-            border_color=Theme.ACCENT if selected else Theme.BORDER,
-            border_width=2 if selected else 1,
-            corner_radius=14,
-            cursor="hand2",
-        )
-        card.grid(row=row, column=0, padx=(0, 4), pady=(0, 12), sticky="ew")
-        card.grid_columnconfigure(0, weight=1)
-
-        title = ctk.CTkLabel(
-            card, text=task.title, text_color=Theme.TEXT,
-            font=("Segoe UI", 16, "bold"), anchor="w", justify="left",
-            wraplength=360, cursor="hand2",
-        )
-        title.grid(row=0, column=0, padx=16, pady=(14, 5), sticky="ew")
-        arrow = ctk.CTkLabel(
-            card, text="›", text_color=Theme.ACCENT if selected else Theme.MUTED_TEXT,
-            font=("Segoe UI", 25, "bold"), cursor="hand2",
-        )
-        arrow.grid(row=0, column=1, padx=(4, 16), pady=(10, 0), sticky="e")
-
-        category = ctk.CTkLabel(
-            card, text=task.category or "General Operations",
-            text_color="#166534", fg_color="#E7F5E8",
-            corner_radius=12, height=25, font=("Segoe UI", 11, "bold"),
-            cursor="hand2",
-        )
-        category.grid(row=1, column=0, padx=16, pady=(0, 10), sticky="w")
-
-        divider = ctk.CTkFrame(card, fg_color=Theme.BORDER, height=1)
-        divider.grid(row=2, column=0, columnspan=2, padx=16, sticky="ew")
-        meta = ctk.CTkFrame(card, fg_color="transparent", cursor="hand2")
-        meta.grid(row=3, column=0, columnspan=2, padx=16, pady=12, sticky="ew")
-        meta.grid_columnconfigure((0, 1), weight=1, uniform="pipeline_meta")
-        self._detail_value(meta, "Assignee", task.assigned_employee or "Awaiting assignment", 0, 0)
-        self._detail_value(meta, "Due date", task.due_date or "No due date", 0, 1)
-        self._detail_value(meta, "Priority", task.priority, 1, 0, self._priority_color(task.priority))
-        self._detail_value(meta, "Status", task.status, 1, 1, self._status_color(task.status))
-
-        task_id = _task_id_key(task.id) or None
-        if task_id is not None:
-            callback = lambda _event, value=task_id: self._select_task(value)
-            for widget in (card, title, arrow, category, divider, meta):
-                widget.bind("<Button-1>", callback)
-
-    def _select_task(self, task_id) -> None:
-        self._selected_task_id = task_id
-        self.refresh()
-
-    def _render_task_detail(self, workspace: object, task: "Task") -> None:
-        detail = ctk.CTkScrollableFrame(
-            workspace, fg_color=Theme.PANEL, border_color=Theme.BORDER,
-            border_width=1, corner_radius=14,
-            scrollbar_button_color=Theme.BORDER,
-        )
-        detail.grid(row=1, column=1, padx=(14, 0), sticky="nsew")
-        detail.grid_columnconfigure(0, weight=1)
-
-        header = ctk.CTkFrame(detail, fg_color=Theme.PANEL_ALT, corner_radius=10)
-        header.grid(row=0, column=0, padx=8, pady=(8, 16), sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            header, text=f"TASK {_format_ticket(task.id)}", text_color=Theme.ACCENT,
-            font=("Segoe UI", 11, "bold"),
-        ).grid(row=0, column=0, padx=18, pady=(16, 4), sticky="w")
-        ctk.CTkLabel(
-            header, text=task.title, text_color=Theme.TEXT,
-            font=("Segoe UI", 23, "bold"), anchor="w", justify="left",
-            wraplength=610,
-        ).grid(row=1, column=0, padx=18, pady=(0, 17), sticky="ew")
-        ctk.CTkLabel(
-            header, text=task.status, text_color="#FFFFFF",
-            fg_color=self._status_color(task.status), corner_radius=14,
-            height=28, font=("Segoe UI", 11, "bold"),
-        ).grid(row=0, column=1, rowspan=2, padx=18, pady=16, sticky="ne")
-
-        body = ctk.CTkFrame(detail, fg_color="transparent")
-        body.grid(row=1, column=0, padx=22, pady=(0, 18), sticky="ew")
-        body.grid_columnconfigure((0, 1), weight=1, uniform="detail_fields")
-        ctk.CTkLabel(
-            body, text="Task information", text_color=Theme.TEXT,
-            font=("Segoe UI", 15, "bold"),
-        ).grid(row=0, column=0, columnspan=2, pady=(0, 13), sticky="w")
-        self._detail_value(body, "Assigned employee", task.assigned_employee or "Awaiting assignment", 1, 0)
-        self._detail_value(body, "Category", task.category, 1, 1)
-        self._detail_value(body, "Priority", task.priority, 2, 0, self._priority_color(task.priority))
-        self._detail_value(body, "Due date", task.due_date or "No due date", 2, 1)
-        self._detail_value(body, "Department", task.department or "Not specified", 3, 0)
-        self._detail_value(body, "Sprint", task.sprint_bucket, 3, 1)
-        self._detail_value(body, "Created by", task.assigned_by or "Not recorded", 4, 0)
-        self._detail_value(body, "Estimate", f"{task.story_points} story points", 4, 1)
-
-        row = 5
-        if task.description:
-            ctk.CTkLabel(
-                body, text="Description", text_color=Theme.MUTED_TEXT,
-                font=Theme.FONT_SMALL,
-            ).grid(row=row, column=0, columnspan=2, pady=(10, 3), sticky="w")
-            ctk.CTkLabel(
-                body, text=task.description, text_color=Theme.TEXT,
-                font=Theme.FONT_BODY, anchor="w", justify="left", wraplength=650,
-            ).grid(row=row + 1, column=0, columnspan=2, sticky="ew")
-            row += 2
-
-        if task.hardware_serial or task.external_reference:
-            separator = ctk.CTkFrame(body, fg_color=Theme.BORDER, height=1)
-            separator.grid(row=row, column=0, columnspan=2, pady=(18, 14), sticky="ew")
-            row += 1
-            ctk.CTkLabel(
-                body, text="Internal operations metadata", text_color=Theme.TEXT,
-                font=("Segoe UI", 15, "bold"),
-            ).grid(row=row, column=0, columnspan=2, sticky="w")
-            row += 1
-            first_label = "Affected URL" if task.category == "Website Merge" else "Serial number"
-            second_label = (
-                "Repository branch" if task.category == "Website Merge"
-                else "Device model" if task.category == "Hardware Refurbishment"
-                else "Reference code"
-            )
-            self._detail_value(body, first_label, task.hardware_serial or "Not provided", row, 0)
-            self._detail_value(body, second_label, task.external_reference or "Not provided", row, 1)
-            row += 1
-
-        actions = ctk.CTkFrame(body, fg_color="transparent")
-        actions.grid(row=row, column=0, columnspan=2, pady=(20, 0), sticky="ew")
-        actions.grid_columnconfigure(0, weight=1)
-        can_edit = self._can_assign or (
-            task.assigned_employee.strip().casefold() == self._current_user.strip().casefold()
-        )
-        if can_edit and task.id is not None:
-            ctk.CTkButton(
-                actions, text="Edit task", width=105, height=38,
-                command=lambda: self._open_edit_dialog(_task_id_key(task.id)),
-                fg_color=Theme.PANEL_ALT, hover_color=Theme.BORDER,
-                text_color=Theme.TEXT, font=Theme.FONT_BUTTON,
-            ).grid(row=0, column=1, padx=(0, 8), sticky="e")
-        if task.id is not None:
-            status_values = self._status_values(task)
-            status = ctk.CTkComboBox(
-                actions, values=status_values,
-                command=lambda value: self._change_status(_task_id_key(task.id), value),
-                state="readonly" if can_edit else "disabled",
-                width=160, height=38, fg_color=self._status_color(task.status),
-                border_width=0, button_color=self._status_color(task.status),
-                button_hover_color=self._status_color(task.status),
-                text_color="#FFFFFF", font=("Segoe UI", 12, "bold"),
-            )
-            status.grid(row=0, column=2, sticky="e")
-            status.set(task.status if task.status in status_values else status_values[0])
-
-    @staticmethod
-    def _detail_value(
-        master: object, label: str, value: str, row: int, column: int,
-        pill_color: str | None = None,
-    ) -> None:
-        field = ctk.CTkFrame(master, fg_color="transparent")
-        field.grid(row=row, column=column, padx=(0, 12), pady=(0, 13), sticky="nw")
-        ctk.CTkLabel(
-            field, text=label, text_color=Theme.MUTED_TEXT,
-            font=("Segoe UI", 11),
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            field, text=value or "-", text_color="#FFFFFF" if pill_color else Theme.TEXT,
-            fg_color=pill_color or "transparent", corner_radius=11 if pill_color else 0,
-            height=24 if pill_color else 20, font=("Segoe UI", 12, "bold"),
-        ).pack(anchor="w", pady=(3, 0))
-
-    def _status_values(self, task: "Task") -> list[str]:
-        if self._can_assign:
-            return list(self._controller.WORKFLOW_STATUSES)
-        if task.status == "Inbox":
-            return ["Inbox", "Cancelled", "Archived"]
-        return [
-            "To Do", "In Progress", "In Development", "In Review",
-            "Completed", "Cancelled", "Archived",
-        ]
-
-    @staticmethod
-    def _status_color(status: str) -> str:
-        return {
-            "Inbox": Theme.PURPLE, "To Do": "#64748B",
-            "In Progress": "#1677D2", "In Development": "#D97706",
-            "In Review": Theme.PURPLE, "Completed": "#15803D",
-            "Cancelled": Theme.DANGER, "Archived": "#64748B",
-        }.get(status, "#64748B")
-
-    @staticmethod
-    def _priority_color(priority: str) -> str:
-        return {
-            "Low": "#64748B", "Medium": "#D97706", "High": "#DC2626",
-            "Critical": "#B91C1C", "Urgent": "#B91C1C",
-        }.get(priority, "#64748B")
-
-    def _render_sprint_board(self, tasks: list["Task"]) -> None:
-        """Render the Lovable-inspired Current, Next, and Backlog columns."""
-        active = [task for task in tasks if task.status not in {"Archived", "Cancelled"}]
-        current = [task for task in active if task.sprint_bucket == "Current Sprint"]
-        done_points = sum(
-            task.story_points for task in current if task.status in {"Completed", "Done"}
-        )
-        total_points = sum(task.story_points for task in current)
-        percent = round((done_points / total_points) * 100) if total_points else 0
-
-        summary = ctk.CTkFrame(
-            self.list_frame, fg_color=Theme.PANEL, border_color=Theme.BORDER,
-            border_width=1, corner_radius=Theme.RADIUS,
-        )
-        summary.grid(row=0, column=0, padx=2, pady=(0, 14), sticky="ew")
-        summary.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            summary, text="Current Sprint progress", text_color=Theme.TEXT,
-            font=("Segoe UI", 15, "bold"),
-        ).grid(row=0, column=0, padx=16, pady=(12, 2), sticky="w")
-        ctk.CTkLabel(
-            summary,
-            text=f"{done_points}/{total_points} points completed · {percent}%",
-            text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL,
-        ).grid(row=1, column=0, padx=16, pady=(0, 12), sticky="w")
-        progress = ctk.CTkProgressBar(
-            summary,
-            height=8,
-            corner_radius=4,
-            fg_color=Theme.PANEL_ALT,
-            progress_color=Theme.ACCENT,
-        )
-        progress.grid(row=2, column=0, padx=16, pady=(0, 14), sticky="ew")
-        progress.set(percent / 100)
-        ctk.CTkButton(
-            summary, text="Close Sprint", width=110, height=34,
-            fg_color=Theme.PANEL_ALT, hover_color=Theme.BORDER,
-            text_color=Theme.TEXT, command=self._close_sprint,
-        ).grid(row=0, column=1, rowspan=3, padx=14, pady=10, sticky="e")
-
-        board = ctk.CTkFrame(self.list_frame, fg_color="transparent")
-        board.grid(row=1, column=0, sticky="ew")
-        board.grid_columnconfigure((0, 1, 2), weight=1, uniform="sprint_column")
-        column_details = (
-            ("Current Sprint", "In flight"),
-            ("Next Sprint", "Committed ahead"),
-            ("Backlog", "Parked for later"),
-        )
-        for column_index, (bucket, subtitle) in enumerate(column_details):
-            items = [task for task in active if task.sprint_bucket == bucket]
-            column = ctk.CTkFrame(
-                board, fg_color=Theme.PANEL_ALT, corner_radius=Theme.RADIUS,
-            )
-            column.grid(
-                row=0, column=column_index, padx=(0 if column_index == 0 else 6, 0),
-                sticky="nsew",
-            )
-            column.grid_columnconfigure(0, weight=1)
-            points = sum(task.story_points for task in items)
-            ctk.CTkLabel(
-                column, text=bucket, text_color=Theme.TEXT,
-                font=("Segoe UI", 15, "bold"),
-            ).grid(row=0, column=0, padx=12, pady=(12, 2), sticky="w")
-            ctk.CTkLabel(
-                column, text=f"{subtitle} · {len(items)} tasks · {points} pts",
-                text_color=Theme.MUTED_TEXT, font=Theme.FONT_SMALL,
-            ).grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
-            if not items:
-                ctk.CTkLabel(
-                    column, text="Nothing here yet", text_color=Theme.MUTED_TEXT,
-                    font=Theme.FONT_SMALL,
-                ).grid(row=2, column=0, padx=12, pady=28)
-            for item_row, task in enumerate(items, start=2):
-                WorkItemCard(
-                    column,
-                    task,
-                    on_click=self._open_edit_dialog,
-                    on_status_change=self._change_status,
-                    status_values=list(self._controller.WORKFLOW_STATUSES),
-                    on_sprint_move=self._move_sprint_task,
-                    compact=True,
-                ).grid(row=item_row, column=0, padx=8, pady=(0, 10), sticky="ew")
-
-    def _move_sprint_task(self, task_id, bucket: str) -> None:
-        try:
-            self._controller.move_task_to_sprint(task_id, bucket)
-        except Exception as exc:
-            messagebox.showerror("Task not moved", str(exc), parent=self)
-        self.refresh()
-
-    def _close_sprint(self) -> None:
-        confirmed = messagebox.askyesno(
-            "Close current sprint?",
-            "Completed work will be archived, unfinished work deferred, and Next Sprint will become current.",
-            parent=self,
-        )
-        if not confirmed:
+                text="No tasks match this filter.",
+                text_color=MUTED,
+                font=ctk.CTkFont(size=13),
+            ).grid(row=0, column=0, sticky="w", padx=12, pady=16)
+            self._selected = None
+            self._show_empty_detail()
             return
-        try:
-            changed = self._controller.close_sprint()
-        except Exception as exc:
-            messagebox.showerror("Sprint not closed", str(exc), parent=self)
-            return
-        messagebox.showinfo("Sprint closed", f"{changed} task(s) rolled forward.", parent=self)
-        self.refresh()
 
-    def _open_task_dialog(self) -> None:
-        TaskAssignmentDialog(
-            self,
-            controller=self._controller,
-            assigned_by=self._current_user or "Administrator",
-            on_created=self.refresh,
-            allow_assignment=self._can_assign,
-            planning_submission=self._can_submit_planning and not self._can_assign,
-            creator_role=self._role,
-            default_assignee=self._current_user,
-            default_department=self._department,
-            allowed_categories=(
-                list(TASK_CATALOG.keys())
-                if self._can_assign or self._can_submit_planning
-                else self._controller.get_self_task_categories(self._department)
-            ),
+        selected_id = str(getattr(self._selected, "id", "") or "")
+        keep: Optional[Task] = None
+        for row, task in enumerate(self._filtered):
+            if selected_id and str(task.id) == selected_id:
+                keep = task
+            self._add_list_row(row, task)
+
+        if keep is not None:
+            (yield from ui_steps(self._select_task, keep))
+        else:
+            (yield from ui_steps(self._select_task, self._filtered[0]))
+
+    def _add_list_row(self, row: int, task: Task) -> None:
+        is_sel = self._selected is not None and str(self._selected.id) == str(task.id)
+        border_c = _left_border_color(task)
+
+        outer = ctk.CTkFrame(
+            self.list_frame,
+            fg_color=SOFT_GREEN if is_sel else CARD,
+            corner_radius=12,
+            border_width=1,
+            border_color=GREEN if is_sel else BORDER,
+        )
+        outer.grid(row=row, column=0, sticky="ew", pady=(0, 8), padx=4)
+        outer.grid_columnconfigure(1, weight=1)
+
+        # Colored left accent
+        accent = ctk.CTkFrame(outer, width=4, corner_radius=2, fg_color=border_c)
+        accent.grid(row=0, column=0, sticky="ns", padx=(0, 0), pady=0)
+        accent.grid_propagate(False)
+
+        body = ctk.CTkFrame(outer, fg_color="transparent")
+        body.grid(row=0, column=1, sticky="ew", padx=12, pady=10)
+        body.grid_columnconfigure(1, weight=1)
+
+        # Icon by category-ish
+        icon_bg = ctk.CTkFrame(body, width=36, height=36, corner_radius=10, fg_color=SOFT_BLUE)
+        icon_bg.grid(row=0, column=0, rowspan=3, padx=(0, 10), sticky="n")
+        icon_bg.pack_propagate(False)
+        ctk.CTkLabel(icon_bg, text="📄", font=ctk.CTkFont(size=14)).place(
+            relx=0.5, rely=0.5, anchor="center"
         )
 
-    def _open_edit_dialog(self, task_id) -> None:
-        task = self._controller.get_task(task_id)
-        if task is None:
-            messagebox.showerror("Task not found", "This task could not be opened.", parent=self)
-            return
-        TaskQuickEditDialog(
-            self,
-            controller=self._controller,
-            task=task,
-            on_saved=self.refresh,
-            allow_management=self._can_assign,
-            employee_name=self._current_user,
-        )
+        # Title row
+        title_row = ctk.CTkFrame(body, fg_color="transparent")
+        title_row.grid(row=0, column=1, sticky="ew")
+        title_row.grid_columnconfigure(0, weight=1)
 
-    def _change_status(self, task_id, status: str) -> None:
-        try:
-            if self._can_assign:
-                self._controller.update_status(task_id, status)
-            else:
-                self._controller.update_self_status(task_id, status, self._current_user)
-        except Exception as exc:
-            messagebox.showerror("Status not updated", str(exc), parent=self)
-        self.refresh()
-
-
-class TaskAssignmentDialog(ctk.CTkToplevel):
-    """Create a self-assigned task or an admin-assigned task."""
-
-    def __init__(
-        self,
-        master: object,
-        controller: TaskController,
-        assigned_by: str,
-        on_created: object,
-        allow_assignment: bool = True,
-        planning_submission: bool = False,
-        creator_role: str = "Staff",
-        default_assignee: str = "",
-        default_department: str = "",
-        allowed_categories: list[str] | None = None,
-    ) -> None:
-        super().__init__(master)
-        self._controller = controller
-        self._assigned_by = assigned_by
-        self._on_created = on_created
-        self._allow_assignment = allow_assignment
-        self._planning_submission = planning_submission
-        self._creator_role = creator_role
-        self._default_assignee = default_assignee
-        self._default_department = default_department
-        self._allowed_categories = allowed_categories
-        self.title(
-            "Add and Assign Task"
-            if allow_assignment
-            else ("Add Sprint Planning Task" if planning_submission else "Add My Task")
-        )
-        self.configure(fg_color=Theme.BG)
-        self.transient(master.winfo_toplevel())
-        self.grab_set()
-
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        width = min(720, max(400, screen_width - 80))
-        height = min(840, max(460, screen_height - 120))
-        left = max(20, (screen_width - width) // 2)
-        top = max(20, (screen_height - height) // 2 - 20)
-        self.geometry(f"{width}x{height}+{left}+{top}")
-        self.minsize(min(460, width), min(460, height))
-
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-        self._build_header()
-        self._build_form()
-        self._build_footer()
-        self.after(80, self.focus_force)
-
-    def _build_header(self) -> None:
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, padx=24, pady=(22, 12), sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            header,
-            text=(
-                "Add and assign task"
-                if self._allow_assignment
-                else ("Add sprint planning task" if self._planning_submission else "Add my task")
-            ),
-            text_color=Theme.TEXT,
-            font=Theme.FONT_HEADING,
+            title_row,
+            text=task.title or "Untitled",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
         ).grid(row=0, column=0, sticky="w")
+
+        p_fg, p_bg = _priority_style(task.priority or "Normal")
         ctk.CTkLabel(
-            header,
-            text=(
-                "Select a standard task, then choose who is responsible."
-                if self._allow_assignment
-                else (
-                    "Submit this work for Ubuntu to prioritise and assign."
-                    if self._planning_submission
-                    else "Create a task for yourself and track it through completion."
+            title_row,
+            text=task.priority or "Normal",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=p_fg,
+            fg_color=p_bg,
+            corner_radius=8,
+            padx=8,
+            pady=2,
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        # Description
+        desc = (task.description or "").strip()
+        if len(desc) > 90:
+            desc = desc[:87] + "…"
+        ctk.CTkLabel(
+            body,
+            text=desc or "No description",
+            font=ctk.CTkFont(size=12),
+            text_color=MUTED,
+            anchor="w",
+        ).grid(row=1, column=1, sticky="w", pady=(2, 4))
+
+        # Meta row: avatar · due · progress
+        meta = ctk.CTkFrame(body, fg_color="transparent")
+        meta.grid(row=2, column=1, sticky="ew")
+        meta.grid_columnconfigure(2, weight=1)
+
+        # Avatar initials
+        av = ctk.CTkFrame(meta, width=24, height=24, corner_radius=12, fg_color=SOFT_BLUE)
+        av.grid(row=0, column=0, padx=(0, 6))
+        av.pack_propagate(False)
+        ctk.CTkLabel(
+            av,
+            text=_initials(task.assigned_employee or "?"),
+            font=ctk.CTkFont(size=9, weight="bold"),
+            text_color=BLUE,
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        ctk.CTkLabel(
+            meta,
+            text=task.assigned_employee or "Unassigned",
+            font=ctk.CTkFont(size=11),
+            text_color=MUTED,
+        ).grid(row=0, column=1, padx=(0, 10))
+
+        ctk.CTkLabel(
+            meta,
+            text=f"📅  {_fmt_due(task.due_date)}",
+            font=ctk.CTkFont(size=11),
+            text_color=MUTED,
+        ).grid(row=0, column=2, sticky="w")
+
+        pct = _progress_pct(task)
+        prog_wrap = ctk.CTkFrame(meta, fg_color="transparent", width=90)
+        prog_wrap.grid(row=0, column=3, sticky="e", padx=(8, 0))
+        bar = ctk.CTkProgressBar(
+            prog_wrap, width=70, height=6, progress_color=GREEN if pct >= 70 else ORANGE if pct >= 30 else RED,
+            fg_color=SOFT_GRAY,
+        )
+        bar.set(pct / 100.0)
+        bar.pack(side="left")
+        ctk.CTkLabel(
+            prog_wrap, text=f"{pct}%", font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT
+        ).pack(side="left", padx=(6, 0))
+
+        @ui_callback(self)
+        def on_click(_e=None, t=task):
+            (yield from ui_steps(self._select_task, t))
+
+        outer.bind("<Button-1>", on_click)
+        for child in outer.winfo_children():
+            try:
+                child.bind("<Button-1>", on_click)
+            except Exception:
+                pass
+        for child in body.winfo_children():
+            try:
+                child.bind("<Button-1>", on_click)
+            except Exception:
+                pass
+
+    # --------------------------------------------------------------- detail
+    @staticmethod
+    def _parse_attachments(task: Task) -> list[dict]:
+        import json as _json
+
+        candidates = [
+            getattr(task, "attachments", None),
+            (task.raw or {}).get("attachments") if getattr(task, "raw", None) else None,
+            (task.raw or {}).get("attachments_json") if getattr(task, "raw", None) else None,
+        ]
+        items = []
+        for raw in candidates:
+            if raw is None or raw == "":
+                continue
+            try:
+                if isinstance(raw, list):
+                    items = raw
+                    break
+                if isinstance(raw, str):
+                    s = raw.strip()
+                    if not s:
+                        continue
+                    parsed = _json.loads(s)
+                    if isinstance(parsed, list):
+                        items = parsed
+                        break
+            except Exception:
+                continue
+        out = []
+        for a in items:
+            if isinstance(a, dict):
+                out.append(
+                    {
+                        "name": str(a.get("name") or a.get("filename") or "file"),
+                        "mime": str(a.get("mime") or a.get("content_type") or ""),
+                        "size": a.get("size"),
+                        "content_base64": a.get("content_base64") or a.get("data") or "",
+                        "url": a.get("url") or a.get("path") or "",
+                    }
                 )
-            ),
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_BODY,
-        ).grid(row=1, column=0, pady=(4, 0), sticky="w")
-        ctk.CTkButton(
-            header,
-            text="Close",
-            command=self.destroy,
-            width=70,
-            height=34,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
-
-    def _build_form(self) -> None:
-        form = ctk.CTkScrollableFrame(
-            self,
-            fg_color=Theme.PANEL,
-            border_color=Theme.BORDER,
-            border_width=1,
-            corner_radius=Theme.RADIUS,
-        )
-        form.grid(row=1, column=0, padx=24, pady=(0, 24), sticky="nsew")
-        form.grid_columnconfigure(0, weight=1)
-
-        categories = self._allowed_categories or list(TASK_CATALOG.keys())
-        self.category_var = ctk.StringVar(value=categories[0])
-        self.template_var = ctk.StringVar(value=TASK_CATALOG[categories[0]][0])
-        self.assignee_var = ctk.StringVar()
-        self.department_var = ctk.StringVar(value=CATEGORY_DEPARTMENTS[categories[0]])
-        self.priority_var = ctk.StringVar(value="Medium")
-        self.sprint_bucket_var = ctk.StringVar(
-            value="Backlog" if self._planning_submission else "Current Sprint"
-        )
-        self.story_points_var = ctk.StringVar(value="3")
-        self.due_date_var = ctk.StringVar()
-        self.serial_var = ctk.StringVar()
-        self.reference_var = ctk.StringVar()
-
-        self._label(form, "Category", 0)
-        self.category_input = ctk.CTkComboBox(
-            form,
-            values=categories,
-            variable=self.category_var,
-            command=self._category_changed,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        )
-        self.category_input.grid(row=1, column=0, padx=18, sticky="ew")
-
-        self._label(form, "Standard task", 2)
-        self.template_input = ctk.CTkComboBox(
-            form,
-            values=list(TASK_CATALOG[categories[0]]),
-            variable=self.template_var,
-            command=self._template_changed,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        )
-        self.template_input.grid(row=3, column=0, padx=18, sticky="ew")
-
-        self._label(form, "Task name", 4)
-        self.title_input = ctk.CTkEntry(
-            form,
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        )
-        self.title_input.grid(row=5, column=0, padx=18, sticky="ew")
-        self.title_input.insert(0, self.template_var.get())
-
-        self.description_label = ctk.CTkLabel(
-            form,
-            text="Description or instructions",
-            text_color=Theme.TEXT,
-            font=Theme.FONT_SMALL,
-        )
-        self.description_label.grid(row=6, column=0, padx=18, pady=(14, 5), sticky="w")
-        self.description_input = ctk.CTkTextbox(
-            form,
-            height=90,
-            border_color=Theme.BORDER,
-            border_width=1,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        )
-        self.description_input.grid(row=7, column=0, padx=18, sticky="ew")
-
-        references = ctk.CTkFrame(form, fg_color="transparent")
-        references.grid(row=8, column=0, padx=18, pady=(14, 0), sticky="ew")
-        references.grid_columnconfigure((0, 1), weight=1)
-        self.detail_one_label = ctk.CTkLabel(references, text="Related asset or URL (optional)", text_color=Theme.TEXT, font=Theme.FONT_SMALL)
-        self.detail_one_label.grid(row=0, column=0, sticky="w")
-        self.detail_two_label = ctk.CTkLabel(references, text="Ticket/reference (optional)", text_color=Theme.TEXT, font=Theme.FONT_SMALL)
-        self.detail_two_label.grid(row=0, column=1, padx=(10, 0), sticky="w")
-        self.detail_one_input = ctk.CTkEntry(
-            references,
-            textvariable=self.serial_var,
-            placeholder_text="e.g. PF4X92K1",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        )
-        self.detail_one_input.grid(row=1, column=0, sticky="ew")
-        self.detail_two_input = ctk.CTkEntry(
-            references,
-            textvariable=self.reference_var,
-            placeholder_text="e.g. PR-142 or TKT-0081",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        )
-        self.detail_two_input.grid(row=1, column=1, padx=(10, 0), sticky="ew")
-
-        employees = self._controller.get_employee_names() if self._allow_assignment else []
-        if self._allow_assignment:
-            employee_values = employees or ["No employees available"]
-        elif self._planning_submission:
-            employee_values = ["Unassigned — Sprint Planning"]
-        else:
-            employee_values = [self._default_assignee or "Current employee unavailable"]
-        self.assignee_var.set(employee_values[0])
-        self._label(
-            form,
-            "Assign to"
-            if self._allow_assignment
-            else ("Planning queue" if self._planning_submission else "Assigned to me"),
-            9,
-        )
-        self.assignee_input = ctk.CTkComboBox(
-            form,
-            values=employee_values,
-            variable=self.assignee_var,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        )
-        self.assignee_input.grid(row=10, column=0, padx=18, sticky="ew")
-        if not self._allow_assignment:
-            self.assignee_input.configure(state="disabled")
-
-        departments = self._controller.get_departments()
-        department_values = sorted(set(departments) | set(CATEGORY_DEPARTMENTS.values()), key=str.lower)
-        self._label(form, "Department", 11)
-        self.department_input = ctk.CTkComboBox(
-            form,
-            values=department_values,
-            variable=self.department_var,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        )
-        self.department_input.grid(row=12, column=0, padx=18, sticky="ew")
-        if (
-            self._default_department
-            and not self._allow_assignment
-            and not self._planning_submission
-        ):
-            self.department_var.set(self._default_department)
-
-        two_columns = ctk.CTkFrame(form, fg_color="transparent")
-        two_columns.grid(row=13, column=0, padx=18, pady=(14, 0), sticky="ew")
-        two_columns.grid_columnconfigure((0, 1), weight=1)
-        ctk.CTkLabel(two_columns, text="Due date (YYYY-MM-DD)", text_color=Theme.TEXT, font=Theme.FONT_SMALL).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(two_columns, text="Priority", text_color=Theme.TEXT, font=Theme.FONT_SMALL).grid(row=0, column=1, padx=(10, 0), sticky="w")
-        ctk.CTkEntry(
-            two_columns,
-            textvariable=self.due_date_var,
-            placeholder_text="2026-08-30",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        ).grid(row=1, column=0, sticky="ew")
-        ctk.CTkComboBox(
-            two_columns,
-            values=["Low", "Medium", "High", "Critical", "Urgent"],
-            variable=self.priority_var,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        ).grid(row=1, column=1, padx=(10, 0), sticky="ew")
-
-        ctk.CTkLabel(
-            two_columns, text="Plan into", text_color=Theme.TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=2, column=0, pady=(12, 0), sticky="w")
-        ctk.CTkLabel(
-            two_columns, text="Estimate (story points)", text_color=Theme.TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=2, column=1, padx=(10, 0), pady=(12, 0), sticky="w")
-        ctk.CTkComboBox(
-            two_columns,
-            values=list(self._controller.SPRINT_BUCKETS),
-            variable=self.sprint_bucket_var,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        ).grid(row=3, column=0, pady=(4, 0), sticky="ew")
-        ctk.CTkComboBox(
-            two_columns,
-            values=["1", "2", "3", "5", "8", "13"],
-            variable=self.story_points_var,
-            state="readonly",
-            height=40,
-            fg_color=Theme.BG,
-            border_color=Theme.BORDER,
-            button_color=Theme.ACCENT,
-            button_hover_color=Theme.ACCENT_HOVER,
-            text_color=Theme.TEXT,
-        ).grid(row=3, column=1, padx=(10, 0), pady=(4, 0), sticky="ew")
-
-        self._can_create = self._planning_submission or employee_values[0] not in {
-            "No employees available",
-            "Current employee unavailable",
-        }
-        self._configure_category_fields(categories[0])
-
-    def _build_footer(self) -> None:
-        footer = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-        footer.grid(row=2, column=0, padx=24, pady=(0, 20), sticky="ew")
-        footer.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            footer,
-            text=(
-                "Required: category and task name; Ubuntu assigns the employee later"
-                if self._planning_submission
-                else "Required: category, task name and assignee"
-            ),
-            text_color=Theme.MUTED_TEXT,
-            font=Theme.FONT_SMALL,
-        ).grid(row=0, column=0, padx=16, pady=14, sticky="w")
-        actions = ctk.CTkFrame(footer, fg_color="transparent")
-        actions.grid(row=0, column=1, padx=14, pady=8, sticky="e")
-        ctk.CTkButton(
-            actions,
-            text="Cancel",
-            command=self.destroy,
-            width=90,
-            height=40,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        ).pack(side="left", padx=(0, 8))
-        self.create_button = ctk.CTkButton(
-            actions,
-            text=(
-                "Create task"
-                if self._allow_assignment
-                else ("Send to planning" if self._planning_submission else "Create my task")
-            ),
-            command=self._create_task,
-            width=125,
-            height=40,
-            fg_color=Theme.ACCENT,
-            hover_color=Theme.ACCENT_HOVER,
-            text_color="#FFFFFF",
-            font=Theme.FONT_BUTTON,
-        )
-        self.create_button.pack(side="left")
-        if not self._can_create:
-            self.create_button.configure(state="disabled")
+            else:
+                out.append({"name": str(a), "mime": "", "size": None, "content_base64": "", "url": ""})
+        return out
 
     @staticmethod
-    def _label(master: object, text: str, row: int) -> None:
-        ctk.CTkLabel(master, text=text, text_color=Theme.TEXT, font=Theme.FONT_SMALL).grid(
-            row=row,
-            column=0,
-            padx=18,
-            pady=(14, 5),
-            sticky="w",
-        )
+    def _attachment_names(task: Task) -> list[str]:
+        return [a["name"] for a in TaskView._parse_attachments(task)]
 
-    def _category_changed(self, category: str) -> None:
-        templates = list(TASK_CATALOG[category])
-        self.template_input.configure(values=templates)
-        self.template_var.set(templates[0])
-        self.department_var.set(CATEGORY_DEPARTMENTS[category])
-        self._set_title(templates[0])
-        self._configure_category_fields(category)
+    def _open_attachment(self, att: dict) -> None:
+        import os
+        import tempfile
+        import webbrowser
+        from tkinter import messagebox
 
-    def _configure_category_fields(self, category: str) -> None:
-        if category == "Hardware Refurbishment":
-            self.description_label.configure(text="Hardware component issues")
-            self.detail_one_label.configure(text="Serial number")
-            self.detail_two_label.configure(text="Laptop model")
-            self.detail_one_input.configure(placeholder_text="e.g. PF4X92K1")
-            self.detail_two_input.configure(placeholder_text="e.g. Lenovo ThinkPad T14")
-        elif category == "Website Merge":
-            self.description_label.configure(text="Bug description")
-            self.detail_one_label.configure(text="Affected URL")
-            self.detail_two_label.configure(text="Repository branch")
-            self.detail_one_input.configure(placeholder_text="e.g. /checkout or full URL")
-            self.detail_two_input.configure(placeholder_text="e.g. feature/catalog-merge")
-        else:
-            self.description_label.configure(text="Description or instructions")
-            self.detail_one_label.configure(text="Related asset or URL (optional)")
-            self.detail_two_label.configure(text="Ticket/reference (optional)")
-            self.detail_one_input.configure(placeholder_text="Optional")
-            self.detail_two_input.configure(placeholder_text="e.g. TKT-0081")
-
-    def _template_changed(self, task_name: str) -> None:
-        self._set_title(task_name)
-
-    def _set_title(self, value: str) -> None:
-        self.title_input.delete(0, "end")
-        self.title_input.insert(0, value)
-
-    def _create_task(self) -> None:
-        due_date = self.due_date_var.get().strip()
-        if due_date:
-            try:
-                datetime.strptime(due_date, "%Y-%m-%d")
-            except ValueError:
-                messagebox.showerror("Invalid due date", "Enter the due date as YYYY-MM-DD.", parent=self)
-                return
-
-        assignee = self.assignee_var.get().strip()
-        if (
-            not self._planning_submission
-            and (not assignee or assignee == "No employees available")
-        ):
-            messagebox.showerror("Employee required", "Add an employee before assigning this task.", parent=self)
-            return
-
+        name = att.get("name") or "attachment.bin"
+        data_b64 = att.get("content_base64") or ""
+        url = att.get("url") or ""
         try:
-            payload = {
-                "title": self.title_input.get().strip(),
-                "description": self.description_input.get("1.0", "end").strip(),
-                "assigned_employee": assignee,
-                "assigned_by": self._assigned_by,
-                "priority": self.priority_var.get(),
-                "department": self.department_var.get(),
-                "due_date": due_date,
-                "category": self.category_var.get(),
-                "hardware_serial": self.serial_var.get().strip(),
-                "external_reference": self.reference_var.get().strip(),
-                "sprint_bucket": self.sprint_bucket_var.get(),
-                "story_points": int(self.story_points_var.get()),
-            }
-            if self._allow_assignment:
-                self._controller.create_task(payload)
-            elif self._planning_submission:
-                self._controller.create_planning_task(
-                    payload,
-                    creator_name=self._assigned_by,
-                    creator_role=self._creator_role,
+            if data_b64:
+                raw = base64.b64decode(data_b64)
+                path = filedialog.asksaveasfilename(
+                    parent=self,
+                    title="Save attachment",
+                    initialfile=name,
                 )
-            else:
-                self._controller.create_self_task(
-                    payload,
-                    employee_name=self._default_assignee,
-                    department=self._default_department,
-                )
+                if not path:
+                    path = os.path.join(tempfile.gettempdir(), name)
+                    with open(path, "wb") as f:
+                        f.write(raw)
+                    os.startfile(path) if os.name == "nt" else webbrowser.open(path)
+                    return
+                with open(path, "wb") as f:
+                    f.write(raw)
+                try:
+                    if os.name == "nt":
+                        os.startfile(path)
+                    else:
+                        webbrowser.open(path)
+                except Exception:
+                    messagebox.showinfo("Saved", f"File saved to:\n{path}", parent=self)
+                return
+            if url:
+                webbrowser.open(str(url))
+                return
+            messagebox.showwarning(
+                "Attachment",
+                "This file has no downloadable content stored on the server.\n"
+                "Ask the manager to re-attach and save the task.",
+                parent=self,
+            )
         except Exception as exc:
-            messagebox.showerror("Task not created", f"The task could not be created.\n\n{exc}", parent=self)
+            messagebox.showerror("Attachment", str(exc), parent=self)
+
+    @ui_task
+    def _select_task(self, task: Task) -> None:
+        self._selected = task
+        for child in self.list_frame.winfo_children():
+            child.destroy()
+        for row, t in enumerate(self._filtered):
+            self._add_list_row(row, t)
+        (yield from ui_steps(self._render_detail, task))
+
+    @ui_task
+    def _render_detail(self, task: Task) -> None:
+        for child in self.detail.winfo_children():
+            child.destroy()
+
+        shell = ctk.CTkScrollableFrame(self.detail, fg_color="transparent")
+        shell.pack(fill="both", expand=True, padx=16, pady=14)
+        shell.grid_columnconfigure(0, weight=1)
+
+        # Title + priority badge
+        top = ctk.CTkFrame(shell, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(4, 6))
+        top.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            top,
+            text=task.title or "Untitled",
+            text_color=TEXT,
+            font=ctk.CTkFont(size=20, weight="bold"),
+            anchor="w",
+            wraplength=380,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w")
+
+        p_fg, p_bg = _priority_style(task.priority or "Normal")
+        ctk.CTkLabel(
+            top,
+            text=f"★  {task.priority or 'Normal'} Priority",
+            text_color=p_fg,
+            fg_color=p_bg,
+            corner_radius=10,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            padx=10,
+            pady=4,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 0))
+
+        # Description
+        ctk.CTkLabel(
+            shell,
+            text=(task.description or "No description provided.").strip(),
+            text_color=MUTED,
+            font=ctk.CTkFont(size=13),
+            anchor="w",
+            justify="left",
+            wraplength=420,
+        ).grid(row=1, column=0, sticky="ew", pady=(0, 12))
+
+        # Meta chips: assignee · due · status
+        chips = ctk.CTkFrame(shell, fg_color="transparent")
+        chips.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        chips.grid_columnconfigure(2, weight=1)
+
+        av = ctk.CTkFrame(chips, width=32, height=32, corner_radius=16, fg_color=SOFT_BLUE)
+        av.grid(row=0, column=0, padx=(0, 8))
+        av.pack_propagate(False)
+        ctk.CTkLabel(
+            av,
+            text=_initials(task.assigned_employee or "?"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=BLUE,
+        ).place(relx=0.5, rely=0.5, anchor="center")
+
+        who = ctk.CTkFrame(chips, fg_color="transparent")
+        who.grid(row=0, column=1, sticky="w")
+        ctk.CTkLabel(
+            who, text=task.assigned_employee or "Unassigned", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT
+        ).pack(anchor="w")
+        ctk.CTkLabel(who, text="Assigned To", font=ctk.CTkFont(size=10), text_color=MUTED).pack(anchor="w")
+
+        due_box = ctk.CTkFrame(chips, fg_color="transparent")
+        due_box.grid(row=0, column=2, sticky="w", padx=(16, 0))
+        ctk.CTkLabel(
+            due_box, text=f"📅  {_fmt_due(task.due_date)}", font=ctk.CTkFont(size=12), text_color=TEXT
+        ).pack(anchor="w")
+        ctk.CTkLabel(due_box, text="Due Date", font=ctk.CTkFont(size=10), text_color=MUTED).pack(anchor="w")
+
+        # State changes happen only through the workflow buttons below.
+        status_badge = ctk.CTkLabel(
+            chips,
+            text=task.status or "Pending",
+            height=32,
+            corner_radius=10,
+            fg_color=_status_soft(task.status or ""),
+            text_color=_status_color(task.status or ""),
+            font=ctk.CTkFont(size=12, weight="bold"),
+            padx=12,
+        )
+        status_badge.grid(row=0, column=3, sticky="e")
+
+        elapsed = float(getattr(task, "elapsed_hours", task.actual_hours) or 0)
+        timer_text = f"Work time: {elapsed:.2f} h"
+        if task.active_timer_started_at:
+            timer_text += "  •  timer running"
+        ctk.CTkLabel(
+            shell,
+            text=timer_text,
+            text_color=GREEN if task.active_timer_started_at else MUTED,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            anchor="w",
+        ).grid(row=3, column=0, sticky="w", pady=(0, 6))
+
+        # Progress
+        pct = _progress_pct(task)
+        ctk.CTkLabel(
+            shell, text="Overall Progress", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT, anchor="w"
+        ).grid(row=4, column=0, sticky="w")
+        prog_row = ctk.CTkFrame(shell, fg_color="transparent")
+        prog_row.grid(row=5, column=0, sticky="ew", pady=(4, 14))
+        prog_row.grid_columnconfigure(0, weight=1)
+        bar = ctk.CTkProgressBar(
+            prog_row,
+            height=10,
+            corner_radius=6,
+            progress_color=GREEN,
+            fg_color=SOFT_GRAY,
+        )
+        bar.set(pct / 100.0)
+        bar.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        ctk.CTkLabel(
+            prog_row, text=f"{pct}%", font=ctk.CTkFont(size=13, weight="bold"), text_color=TEXT
+        ).grid(row=0, column=1)
+
+        # Checklist (from raw if present)
+        checklist = self._parse_checklist(task)
+        if checklist:
+            done = sum(1 for c in checklist if c.get("done"))
+            ctk.CTkLabel(
+                shell,
+                text=f"☑  Checklist    {done} of {len(checklist)} completed",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=TEXT,
+                anchor="w",
+            ).grid(row=6, column=0, sticky="w", pady=(4, 6))
+            cl_box = ctk.CTkFrame(shell, fg_color=SOFT_GRAY, corner_radius=12)
+            cl_box.grid(row=7, column=0, sticky="ew", pady=(0, 12))
+            for i, item in enumerate(checklist):
+                row_f = ctk.CTkFrame(cl_box, fg_color="transparent")
+                row_f.pack(fill="x", padx=12, pady=6)
+                mark = "✓" if item.get("done") else "○"
+                color = GREEN if item.get("done") else MUTED
+                ctk.CTkLabel(
+                    row_f,
+                    text=f"{mark}  {item.get('text', 'Item')}",
+                    font=ctk.CTkFont(size=12),
+                    text_color=color,
+                    anchor="w",
+                ).pack(anchor="w")
+            next_row = 8
+        else:
+            next_row = 6
+
+        # Attachments
+        attachments = self._parse_attachments(task)
+        if attachments:
+            ctk.CTkLabel(
+                shell,
+                text=f"📎  Attachments    {len(attachments)}",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=TEXT,
+                anchor="w",
+            ).grid(row=next_row, column=0, sticky="w", pady=(4, 6))
+            att_box = ctk.CTkFrame(shell, fg_color="transparent")
+            att_box.grid(row=next_row + 1, column=0, sticky="ew", pady=(0, 12))
+            att_box.grid_columnconfigure(0, weight=1)
+            for i, att in enumerate(attachments):
+                name = att.get("name") or "file"
+                size = att.get("size")
+                size_txt = f" {int(size) / 1024:.1f} MB" if size and int(size) > 1024 * 100 else (
+                    f" {int(size) / 1024:.0f} KB" if size else ""
+                )
+                ext = name.rsplit(".", 1)[-1].upper() if "." in name else "FILE"
+                icon = "PDF" if ext == "PDF" else "XLS" if ext in ("XLS", "XLSX", "CSV") else "DOC"
+
+                card = ctk.CTkFrame(
+                    att_box, fg_color=SOFT_GRAY, corner_radius=10, border_width=1, border_color=BORDER
+                )
+                card.grid(row=i, column=0, sticky="ew", pady=4)
+                card.grid_columnconfigure(1, weight=1)
+                ctk.CTkLabel(
+                    card,
+                    text=icon,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=RED if icon == "PDF" else GREEN,
+                    fg_color=SOFT_RED if icon == "PDF" else SOFT_GREEN,
+                    corner_radius=6,
+                    width=40,
+                    height=28,
+                ).grid(row=0, column=0, padx=10, pady=10)
+                ctk.CTkLabel(
+                    card,
+                    text=f"{name}{size_txt}",
+                    font=ctk.CTkFont(size=12),
+                    text_color=TEXT,
+                    anchor="w",
+                ).grid(row=0, column=1, sticky="w")
+                ctk.CTkButton(
+                    card,
+                    text="↓",
+                    width=36,
+                    height=32,
+                    corner_radius=8,
+                    fg_color=CARD,
+                    hover_color=SOFT_GRAY,
+                    text_color=TEXT,
+                    border_width=1,
+                    border_color=BORDER,
+                    command=lambda a=att: self._open_attachment(a),
+                ).grid(row=0, column=2, padx=10, pady=8)
+            next_row = next_row + 2
+        else:
+            pass
+
+        # Comments / activity (from raw)
+        ctk.CTkLabel(
+            shell,
+            text="💬  Comments & Activity",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=next_row, column=0, sticky="w", pady=(8, 6))
+        activity = self._parse_activity(task)
+        act_box = ctk.CTkFrame(shell, fg_color="transparent")
+        act_box.grid(row=next_row + 1, column=0, sticky="ew", pady=(0, 8))
+        if not activity:
+            ctk.CTkLabel(
+                act_box, text="No activity yet.", font=ctk.CTkFont(size=12), text_color=MUTED
+            ).pack(anchor="w")
+        else:
+            for ev in activity[:8]:
+                line = ctk.CTkFrame(act_box, fg_color="transparent")
+                line.pack(fill="x", pady=4)
+                av2 = ctk.CTkFrame(line, width=28, height=28, corner_radius=14, fg_color=SOFT_BLUE)
+                av2.pack(side="left", padx=(0, 8))
+                av2.pack_propagate(False)
+                ctk.CTkLabel(
+                    av2,
+                    text=_initials(ev.get("who", "?")),
+                    font=ctk.CTkFont(size=9, weight="bold"),
+                    text_color=BLUE,
+                ).place(relx=0.5, rely=0.5, anchor="center")
+                mid = ctk.CTkFrame(line, fg_color="transparent")
+                mid.pack(side="left", fill="x", expand=True)
+                ctk.CTkLabel(
+                    mid,
+                    text=ev.get("who", "Someone"),
+                    font=ctk.CTkFont(size=12, weight="bold"),
+                    text_color=TEXT,
+                    anchor="w",
+                ).pack(anchor="w")
+                ctk.CTkLabel(
+                    mid,
+                    text=ev.get("text", ""),
+                    font=ctk.CTkFont(size=11),
+                    text_color=MUTED,
+                    anchor="w",
+                ).pack(anchor="w")
+                ctk.CTkLabel(
+                    line,
+                    text=ev.get("when", ""),
+                    font=ctk.CTkFont(size=10),
+                    text_color=MUTED,
+                ).pack(side="right")
+
+        # Comment input
+        comment_row = ctk.CTkFrame(shell, fg_color="transparent")
+        comment_row.grid(row=next_row + 2, column=0, sticky="ew", pady=(4, 8))
+        comment_row.grid_columnconfigure(0, weight=1)
+        self.note_box = ctk.CTkEntry(
+            comment_row,
+            height=40,
+            corner_radius=10,
+            border_width=1,
+            border_color=BORDER,
+            fg_color=SOFT_GRAY,
+            text_color=TEXT,
+            placeholder_text="Add a comment...",
+            placeholder_text_color=MUTED,
+            font=ctk.CTkFont(size=13),
+        )
+        self.note_box.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        # Hidden textbox compat for _note() used by actions
+        self._note_text_fallback = ""
+
+        ctk.CTkButton(
+            comment_row,
+            text="➤",
+            width=44,
+            height=40,
+            corner_radius=10,
+            fg_color=GREEN,
+            hover_color=GREEN_HOVER,
+            text_color="#FFFFFF",
+            font=ctk.CTkFont(size=16),
+            command=lambda: self._set_status("Comment noted (use action buttons to save with work)", ok=True),
+        ).grid(row=0, column=1)
+
+        self.status_label = ctk.CTkLabel(
+            shell, text="", text_color=MUTED, font=ctk.CTkFont(size=12), anchor="w"
+        )
+        self.status_label.grid(row=next_row + 3, column=0, sticky="ew", pady=(4, 4))
+        self._action_base_row = next_row + 4
+
+        # Actions
+        if self._role in {"Operations Manager", "Super Admin", "Director"}:
+            (yield from ui_steps(self._build_manager_actions, shell, task))
+        elif not self._is_manager:
+            self._build_employee_actions(shell, task)
+        else:
+            self._build_read_only_actions(shell)
+
+    @ui_task
+    def _change_status(self, task: Task, status: str) -> None:
+        """Best-effort status change via controller if available."""
+        try:
+            if hasattr(self._controller, "update_status"):
+                (yield RemoteCall(self._controller.update_status, task.id, status))
+            elif hasattr(self._controller, "set_status"):
+                (yield RemoteCall(self._controller.set_status, task.id, status))
+            else:
+                # Fall back to work actions
+                mapping = {
+                    "In Progress": lambda: (yield RemoteCall(self._controller.start_work, task.id, self._note())),
+                    "Completed": lambda: (yield RemoteCall(self._controller.complete_work, task.id, self._note())),
+                    "Waiting Review": lambda: (yield RemoteCall(self._controller.submit_for_review, task.id, self._note())),
+                }
+                fn = mapping.get(status)
+                if fn:
+                    (yield from action_steps(fn))
+            self._set_status(f"Status → {status}", ok=True)
+            (yield from ui_steps(self.refresh))
+        except Exception as exc:
+            self._set_status(str(exc), ok=False)
+
+    @staticmethod
+    def _parse_checklist(task: Task) -> list[dict]:
+        raw = getattr(task, "raw", None) or {}
+        if not isinstance(raw, dict):
+            return []
+        items = raw.get("checklist") or raw.get("todos") or raw.get("items") or []
+        out = []
+        for it in items:
+            if isinstance(it, dict):
+                out.append(
+                    {
+                        "text": it.get("text") or it.get("title") or it.get("label") or "Item",
+                        "done": bool(it.get("done") or it.get("completed") or it.get("checked")),
+                    }
+                )
+            elif isinstance(it, str):
+                out.append({"text": it, "done": False})
+        return out
+
+    @staticmethod
+    def _parse_activity(task: Task) -> list[dict]:
+        raw = getattr(task, "raw", None) or {}
+        if not isinstance(raw, dict):
+            return []
+        items = raw.get("activity") or raw.get("comments") or raw.get("history") or []
+        out = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            out.append(
+                {
+                    "who": it.get("user") or it.get("author") or it.get("name") or "User",
+                    "text": it.get("text") or it.get("message") or it.get("action") or "",
+                    "when": str(it.get("at") or it.get("time") or it.get("created_at") or "")[:16],
+                }
+            )
+        return out
+
+    def _note(self) -> str:
+        try:
+            # Prefer entry (new UI)
+            if hasattr(self, "note_box") and self.note_box is not None:
+                if isinstance(self.note_box, ctk.CTkEntry):
+                    return self.note_box.get().strip()
+                return self.note_box.get("1.0", "end").strip()
+        except Exception:
+            pass
+        return ""
+
+    def _set_status(self, text: str, ok: bool = True) -> None:
+        try:
+            self.status_label.configure(text=text, text_color=GREEN if ok else RED)
+        except Exception:
+            pass
+
+    @ui_task
+    def _run(self, action: str, fn: Callable[[], None]) -> None:
+        try:
+            (yield from action_steps(fn))
+            self._set_status(f"Done: {action}", ok=True)
+            (yield from ui_steps(self.refresh))
+        except Exception as exc:
+            self._set_status(str(exc), ok=False)
+            print(f"❌ Task action failed ({action}): {exc}")
+
+    def _build_employee_actions(self, shell: ctk.CTkFrame, task: Task) -> None:
+        base = getattr(self, "_action_base_row", 10)
+        actions = available_employee_actions(task)
+        ctk.CTkLabel(
+            shell,
+            text="Work progress" if actions else "No action is needed in this state.",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+        ).grid(row=base, column=0, sticky="w", pady=(8, 4))
+
+        if not actions:
             return
 
-        messagebox.showinfo(
-            "Task assigned" if self._allow_assignment else "Task sent to Sprint Planning",
-            (
-                f"{self.title_input.get().strip()} was assigned to {assignee}."
-                if self._allow_assignment
-                else (
-                    "The task is now waiting in Sprint Planning for Ubuntu to assign."
-                    if self._planning_submission
-                    else "Your task was saved in Sprint Planning for manager review."
-                )
+        progress = ctk.CTkFrame(shell, fg_color="transparent")
+        progress.grid(row=base + 1, column=0, sticky="ew", pady=(0, 8))
+        for i in range(len(actions)):
+            progress.grid_columnconfigure(i, weight=1, uniform="act")
+
+        action_map = {
+            "Start": (GREEN, GREEN_HOVER, lambda: (yield RemoteCall(self._controller.start_work, task.id, self._note()))),
+            "Pause": (ORANGE, "#D97706", lambda: (yield RemoteCall(self._controller.pause_work, task.id, self._note()))),
+            "Resume": (GREEN, GREEN_HOVER, lambda: (yield RemoteCall(self._controller.resume_work, task.id, self._note()))),
+            "Submit review": (BLUE, "#1D4ED8", lambda: (yield RemoteCall(self._controller.submit_for_review, task.id, self._note()))),
+        }
+        for i, label in enumerate(actions):
+            if label == "Log time":
+                self._build_time_entry(progress, task, i)
+                continue
+            fg, hover, fn = action_map[label]
+            ctk.CTkButton(
+                progress,
+                text=label,
+                height=40,
+                corner_radius=10,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="#FFFFFF",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda a=label, f=fn: self._run(a, f),
+            ).grid(row=0, column=i, padx=3, sticky="ew")
+
+    def _build_time_entry(self, parent: ctk.CTkFrame, task: Task, column: int) -> None:
+        box = ctk.CTkFrame(parent, fg_color="transparent")
+        box.grid(row=0, column=column, padx=3, sticky="ew")
+        box.grid_columnconfigure(0, weight=1)
+        entry = ctk.CTkEntry(box, height=40, placeholder_text="Hours")
+        entry.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(
+            box,
+            text="Log",
+            width=48,
+            height=40,
+            fg_color=BLUE,
+            hover_color="#1D4ED8",
+            command=lambda: self._run(
+                "Time logged",
+                lambda: (yield RemoteCall(self._controller.log_time, task.id, float(entry.get() or 0), self._note())),
             ),
-            parent=self,
-        )
-        if callable(self._on_created):
-            self._on_created()
-        self.destroy()
+        ).grid(row=0, column=1, padx=(4, 0))
+
+    def _build_read_only_actions(self, shell: ctk.CTkFrame) -> None:
+        base = getattr(self, "_action_base_row", 10)
+        ctk.CTkLabel(
+            shell,
+            text="This task is visible for oversight. Operations manages assignment and review.",
+            text_color=MUTED,
+            font=ctk.CTkFont(size=12),
+            anchor="w",
+            wraplength=420,
+        ).grid(row=base, column=0, sticky="ew", pady=(8, 12))
+
+    @ui_task
+    def _build_manager_actions(self, shell: ctk.CTkFrame, task: Task) -> None:
+        base = getattr(self, "_action_base_row", 10)
+        status = (task.status or "Pending").strip()
+        is_operations = self._role in {"Operations Manager", "Super Admin"}
+        is_own_work = self._controller.is_current_assignee(task)
+        showed_management = False
+
+        if is_operations and status not in {"Waiting Review", "Escalated", "Completed", "Cancelled"}:
+            showed_management = True
+            people = (yield RemoteCall(self._controller.get_people_names)) or ["Unassigned"]
+            manage = ctk.CTkFrame(shell, fg_color="transparent")
+            manage.grid(row=base, column=0, sticky="ew", pady=(8, 10))
+            manage.grid_columnconfigure((0, 1), weight=1)
+            self.priority_menu = ctk.CTkOptionMenu(manage, values=["Low", "Normal", "High", "Urgent"])
+            self.priority_menu.set(task.priority or "Normal")
+            self.priority_menu.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+            ctk.CTkButton(
+                manage, text="Save priority", fg_color=BLUE, hover_color="#1D4ED8",
+                command=lambda: self._run("Priority saved", lambda: (yield RemoteCall(self._controller.prioritize_task, task.id, self.priority_menu.get()))),
+            ).grid(row=1, column=0, padx=(0, 4), pady=(4, 0), sticky="ew")
+            self.assignee_menu = ctk.CTkOptionMenu(manage, values=people)
+            self.assignee_menu.set(task.assigned_employee if task.assigned_employee in people else people[0])
+            self.assignee_menu.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+            ctk.CTkButton(
+                manage, text="Assign", fg_color=GREEN, hover_color=GREEN_HOVER,
+                command=lambda: self._run("Assigned", lambda: (yield RemoteCall(self._controller.assign_task, task.id, self.assignee_menu.get()))),
+            ).grid(row=1, column=1, padx=(4, 0), pady=(4, 0), sticky="ew")
+
+        decision_specs = []
+        if is_operations and status == "Waiting Review" and not is_own_work:
+            decision_specs = [
+                ("Complete", GREEN, GREEN_HOVER, self._controller.approve_review),
+                ("Return", ORANGE, "#D97706", self._controller.return_to_work),
+                ("Ask director", BLUE, "#1D4ED8", self._controller.escalate_to_director),
+            ]
+        elif self._role == "Director" and status == "Escalated" and not is_own_work:
+            decision_specs = [
+                ("Complete", GREEN, GREEN_HOVER, self._controller.approve_review),
+                ("Return", ORANGE, "#D97706", self._controller.return_to_work),
+            ]
+
+        if not decision_specs:
+            if not showed_management:
+                self._build_read_only_actions(shell)
+            return
+        ctk.CTkLabel(shell, text="Review decision", text_color=MUTED, font=ctk.CTkFont(size=12)).grid(row=base + 2, column=0, sticky="w", pady=(8, 4))
+        decisions = ctk.CTkFrame(shell, fg_color="transparent")
+        decisions.grid(row=base + 3, column=0, sticky="ew", pady=(0, 12))
+        for i in range(len(decision_specs)):
+            decisions.grid_columnconfigure(i, weight=1, uniform="mdec")
+        for i, (label, fg, hover, method) in enumerate(decision_specs):
+            ctk.CTkButton(
+                decisions,
+                text=label,
+                height=36,
+                corner_radius=10,
+                fg_color=fg,
+                hover_color=hover,
+                text_color="#FFFFFF",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                command=lambda a=label, m=method: self._run(a, lambda: (yield RemoteCall(m, task.id, self._note()))),
+            ).grid(row=0, column=i, padx=3, sticky="ew")
+
+    def _open_create(self) -> None:
+        if not self._is_manager:
+            return
+        CreateTaskModal(self, self._controller, self.refresh)
 
 
-class TaskQuickEditDialog(ctk.CTkToplevel):
-    """Compact editor opened by clicking a task row."""
+class CreateTaskModal(ctk.CTkToplevel):
+    """Create & assign task – wide professional form with fixed footer."""
 
-    def __init__(
-        self,
-        master: object,
-        controller: TaskController,
-        task: "Task",
-        on_saved: object,
-        allow_management: bool = True,
-        employee_name: str = "",
-    ) -> None:
+    _ENTRY_KW = {
+        "height": 40,
+        "corner_radius": 8,
+        "border_width": 1,
+        "border_color": BORDER,
+        "fg_color": CARD,
+        "text_color": TEXT,
+        "placeholder_text_color": MUTED,
+        "font": ("Segoe UI", 13),
+    }
+    _MENU_KW = {
+        "height": 40,
+        "corner_radius": 8,
+        "fg_color": CARD,
+        "text_color": TEXT,
+        "button_color": GREEN,
+        "button_hover_color": GREEN_HOVER,
+        "dropdown_fg_color": CARD,
+        "dropdown_hover_color": SOFT_GRAY,
+        "dropdown_text_color": TEXT,
+        "font": ("Segoe UI", 13),
+    }
+
+    @ui_task
+    def __init__(self, master, controller: TaskController, on_created) -> None:
         super().__init__(master)
         self._controller = controller
-        self._task = task
-        self._on_saved = on_saved
-        self._allow_management = allow_management
-        self._employee_name = employee_name
-        self.title("Quick Edit Task")
-        self.configure(fg_color=Theme.BG)
-        self.transient(master.winfo_toplevel())
+        self._on_created = on_created
+        self._busy = False
+        self._attachments: list[dict] = []
+        self._can_assign = controller.can_assign_tasks()
+        self.title("New Task")
+        self.configure(fg_color=BG)
+        self.resizable(True, True)
+        self.minsize(640, 560)
+        self.geometry("720x640")
+        self.transient(master)
         self.grab_set()
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        width = min(620, max(400, screen_width - 80))
-        height = min(760, max(460, screen_height - 120))
-        left = max(20, (screen_width - width) // 2)
-        top = max(20, (screen_height - height) // 2 - 20)
-        self.geometry(f"{width}x{height}+{left}+{top}")
-        self.minsize(min(440, width), min(460, height))
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
-
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, padx=24, pady=(22, 12), sticky="ew")
-        header.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(header, text="Quick edit", text_color=Theme.TEXT, font=Theme.FONT_HEADING).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(header, text=task.title, text_color=Theme.MUTED_TEXT, font=Theme.FONT_BODY, anchor="w").grid(row=1, column=0, pady=(4, 0), sticky="ew")
-        ctk.CTkButton(
-            header,
-            text="Close",
-            command=self.destroy,
-            width=70,
-            height=34,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        ).grid(row=0, column=1, rowspan=2, sticky="e")
-
-        form = ctk.CTkScrollableFrame(
-            self,
-            fg_color=Theme.PANEL,
-            border_color=Theme.BORDER,
-            border_width=1,
-            corner_radius=Theme.RADIUS,
-        )
-        form.grid(row=1, column=0, padx=24, pady=(0, 24), sticky="nsew")
-        form.grid_columnconfigure(0, weight=1)
-
-        employees = self._controller.get_employee_names() if self._allow_management else []
-        employee_values = sorted(set(employees + [task.assigned_employee]), key=str.lower)
-        departments = self._controller.get_departments() if self._allow_management else []
-        department_values = sorted(set(departments + [task.department]) | set(CATEGORY_DEPARTMENTS.values()), key=str.lower)
-
-        self.assignee_var = ctk.StringVar(value=task.assigned_employee)
-        self.department_var = ctk.StringVar(value=task.department)
-        self.due_date_var = ctk.StringVar(value=task.due_date)
-        self.priority_var = ctk.StringVar(value=task.priority)
-        self.sprint_bucket_var = ctk.StringVar(value=task.sprint_bucket)
-        self.story_points_var = ctk.StringVar(value=str(task.story_points))
-        current_status = task.status if task.status in self._controller.WORKFLOW_STATUSES else "To Do"
-        self.status_var = ctk.StringVar(value=current_status)
-        self.serial_var = ctk.StringVar(value=task.hardware_serial)
-        self.reference_var = ctk.StringVar(value=task.external_reference)
-
-        if self._allow_management:
-            status_values = list(self._controller.WORKFLOW_STATUSES)
-        elif task.status == "Inbox":
-            status_values = ["Inbox", "Cancelled", "Archived"]
-        else:
-            status_values = ["To Do", "In Progress", "In Development", "In Review", "Completed", "Cancelled", "Archived"]
-        fields = (
-            ("Assignee", self.assignee_var, employee_values or [task.assigned_employee or "Unassigned"]),
-            ("Department", self.department_var, department_values),
-            ("Priority", self.priority_var, ["Low", "Medium", "High", "Critical", "Urgent"]),
-            ("Status", self.status_var, status_values),
-            ("Sprint", self.sprint_bucket_var, list(self._controller.SPRINT_BUCKETS)),
-            ("Story points", self.story_points_var, ["1", "2", "3", "5", "8", "13"]),
-        )
-        row = 0
-        for label, variable, values in fields:
-            TaskAssignmentDialog._label(form, label, row)
-            combo = ctk.CTkComboBox(
-                form,
-                values=values,
-                variable=variable,
-                state="readonly",
-                height=40,
-                fg_color=Theme.BG,
-                border_color=Theme.BORDER,
-                button_color=Theme.ACCENT,
-                button_hover_color=Theme.ACCENT_HOVER,
-                text_color=Theme.TEXT,
-            )
-            combo.grid(row=row + 1, column=0, padx=18, sticky="ew")
-            if not self._allow_management and label in {
-                "Assignee", "Department", "Sprint", "Story points"
-            }:
-                combo.configure(state="disabled")
-            row += 2
-
-        TaskAssignmentDialog._label(form, "Due date (YYYY-MM-DD)", row)
-        ctk.CTkEntry(
-            form,
-            textvariable=self.due_date_var,
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        ).grid(row=row + 1, column=0, padx=18, sticky="ew")
-        row += 2
-
-        first_detail_label = "Affected URL" if task.category == "Website Merge" else "Hardware serial"
-        second_detail_label = (
-            "Repository branch" if task.category == "Website Merge"
-            else "Laptop model" if task.category == "Hardware Refurbishment"
-            else "Ticket or external reference"
-        )
-        TaskAssignmentDialog._label(form, first_detail_label, row)
-        ctk.CTkEntry(
-            form,
-            textvariable=self.serial_var,
-            placeholder_text="Optional for hardware tasks",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        ).grid(row=row + 1, column=0, padx=18, sticky="ew")
-        row += 2
-
-        TaskAssignmentDialog._label(form, second_detail_label, row)
-        ctk.CTkEntry(
-            form,
-            textvariable=self.reference_var,
-            placeholder_text="e.g. PR-142 or TKT-0081",
-            height=40,
-            border_color=Theme.BORDER,
-            fg_color=Theme.BG,
-            text_color=Theme.TEXT,
-        ).grid(row=row + 1, column=0, padx=18, sticky="ew")
-
-        actions = ctk.CTkFrame(self, fg_color=Theme.PANEL, corner_radius=Theme.RADIUS)
-        actions.grid(row=2, column=0, padx=24, pady=(0, 20), sticky="e")
-        if self._allow_management:
-            ctk.CTkButton(
-                actions,
-                text="Delete task",
-                command=self._delete,
-                width=100,
-                height=40,
-                fg_color=Theme.DANGER,
-                hover_color=Theme.DANGER_HOVER,
-                text_color="#FFFFFF",
-            ).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(
-            actions,
-            text="Cancel",
-            command=self.destroy,
-            width=90,
-            height=40,
-            fg_color=Theme.PANEL_ALT,
-            hover_color=Theme.BORDER,
-            text_color=Theme.TEXT,
-        ).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(
-            actions,
-            text="Save changes",
-            command=self._save,
-            width=130,
-            height=40,
-            fg_color=Theme.ACCENT,
-            hover_color=Theme.ACCENT_HOVER,
-            text_color="#FFFFFF",
-            font=Theme.FONT_BUTTON,
-        ).pack(side="left")
-
-    def _save(self) -> None:
-        due_date = self.due_date_var.get().strip()
-        if due_date:
-            try:
-                datetime.strptime(due_date, "%Y-%m-%d")
-            except ValueError:
-                messagebox.showerror("Invalid due date", "Enter the due date as YYYY-MM-DD.", parent=self)
-                return
+        self._center_on_parent(master)
         try:
-            task_id = _task_id_key(self._task.id)
-            payload = {
-                "assigned_employee": self.assignee_var.get().strip(),
-                "department": self.department_var.get().strip(),
-                "due_date": due_date,
-                "priority": self.priority_var.get(),
-                "status": self.status_var.get(),
-                "hardware_serial": self.serial_var.get().strip(),
-                "external_reference": self.reference_var.get().strip(),
-                "sprint_bucket": self.sprint_bucket_var.get(),
-                "story_points": int(self.story_points_var.get()),
-            }
-            if self._allow_management:
-                self._controller.update_task(task_id, payload)
+            self.lift()
+            self.focus_force()
+        except Exception:
+            pass
+        (yield from ui_steps(self._build))
+
+    def _center_on_parent(self, master) -> None:
+        try:
+            self.update_idletasks()
+            w, h = 720, 640
+            if master is not None:
+                mx = master.winfo_rootx()
+                my = master.winfo_rooty()
+                mw = master.winfo_width()
+                mh = master.winfo_height()
+                x = mx + max(0, (mw - w) // 2)
+                y = my + max(0, (mh - h) // 2)
             else:
-                self._controller.update_self_task(task_id, payload, self._employee_name)
-                if self.status_var.get() != self._task.status:
-                    self._controller.update_self_status(task_id, self.status_var.get(), self._employee_name)
-        except Exception as exc:
-            messagebox.showerror("Task not updated", str(exc), parent=self)
-            return
-        if callable(self._on_saved):
-            self._on_saved()
-        self.destroy()
+                sw = self.winfo_screenwidth()
+                sh = self.winfo_screenheight()
+                x = max(0, (sw - w) // 2)
+                y = max(0, (sh - h) // 2)
+            self.geometry(f"{w}x{h}+{x}+{y}")
+        except Exception:
+            self.geometry("720x640")
 
-    def _delete(self) -> None:
-        if not self._allow_management:
-            return
-        confirmed = messagebox.askyesno(
-            "Delete task permanently?",
-            (
-                f"Delete '{self._task.title}'?\n\n"
-                "This removes the task from the workspace. Use Archived instead "
-                "when the record should remain available for audit purposes."
-            ),
-            icon="warning",
-            parent=self,
+    def _label(self, parent, text: str, row: int, col: int = 0, **grid) -> None:
+        ctk.CTkLabel(
+            parent, text=text, text_color=MUTED, font=("Segoe UI", 12), anchor="w"
+        ).grid(row=row, column=col, sticky="w", **grid)
+
+    @ui_task
+    def _build(self) -> None:
+        shell = ctk.CTkFrame(self, fg_color=CARD, corner_radius=16)
+        shell.pack(fill="both", expand=True, padx=18, pady=18)
+        shell.grid_columnconfigure(0, weight=1)
+        shell.grid_rowconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            shell,
+            text="Create & assign a task" if self._can_assign else "Send task to Operations inbox",
+            font=("Segoe UI", 22, "bold"),
+            text_color=TEXT,
+            anchor="w",
+        ).grid(row=0, column=0, padx=24, pady=(18, 10), sticky="ew")
+
+        body = ctk.CTkScrollableFrame(shell, fg_color="transparent")
+        body.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 4))
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_columnconfigure(1, weight=1)
+
+        self._label(body, "Title *", 0, 0, padx=16, pady=(8, 0))
+        self.title_entry = ctk.CTkEntry(
+            body, placeholder_text="e.g. Prepare client quote", **self._ENTRY_KW
         )
-        if not confirmed:
+        self.title_entry.grid(row=1, column=0, columnspan=2, padx=16, pady=(4, 12), sticky="ew")
+
+        self._label(body, "Description", 2, 0, padx=16, pady=(4, 0))
+        self.desc_entry = ctk.CTkTextbox(
+            body,
+            height=96,
+            corner_radius=8,
+            border_width=1,
+            border_color=BORDER,
+            fg_color=CARD,
+            text_color=TEXT,
+            font=("Segoe UI", 13),
+        )
+        self.desc_entry.grid(row=3, column=0, columnspan=2, padx=16, pady=(4, 12), sticky="ew")
+
+        self._label(body, "Assign to", 4, 0, padx=16, pady=(4, 0))
+        self._label(body, "Priority", 4, 1, padx=16, pady=(4, 0))
+
+        people = (yield RemoteCall(self._controller.get_people_names)) or ["Unassigned"]
+        self.assignee = ctk.CTkOptionMenu(body, values=people, **self._MENU_KW)
+        default_person = (
+            people[1]
+            if self._can_assign and len(people) > 1 and people[0] == "Unassigned"
+            else people[0]
+        )
+        self.assignee.set(default_person)
+        if not self._can_assign:
+            self.assignee.configure(state="disabled")
+        self.assignee.grid(row=5, column=0, padx=(16, 8), pady=(4, 12), sticky="ew")
+
+        self.priority = ctk.CTkOptionMenu(
+            body, values=["Low", "Normal", "High", "Urgent"], **self._MENU_KW
+        )
+        self.priority.set("Normal")
+        self.priority.grid(row=5, column=1, padx=(8, 16), pady=(4, 12), sticky="ew")
+
+        self._label(body, "Category", 6, 0, padx=16, pady=(4, 0))
+        self._label(body, "Due date (YYYY-MM-DD)", 6, 1, padx=16, pady=(4, 0))
+
+        self.category = ctk.CTkOptionMenu(body, values=TASK_CATEGORIES, **self._MENU_KW)
+        self.category.set("Administration")
+        self.category.grid(row=7, column=0, padx=(16, 8), pady=(4, 12), sticky="ew")
+
+        self.due_entry = ctk.CTkEntry(body, placeholder_text="2026-09-15", **self._ENTRY_KW)
+        self.due_entry.grid(row=7, column=1, padx=(8, 16), pady=(4, 12), sticky="ew")
+
+        self._label(body, "Estimated hours", 8, 0, padx=16, pady=(4, 0))
+        self.hours_entry = ctk.CTkEntry(body, placeholder_text="e.g. 2", **self._ENTRY_KW)
+        self.hours_entry.grid(row=9, column=0, padx=(16, 8), pady=(4, 12), sticky="ew")
+
+        self._label(body, "Attachments (PDF, Office, images)", 10, 0, padx=16, pady=(4, 0))
+        att_row = ctk.CTkFrame(body, fg_color="transparent")
+        att_row.grid(row=11, column=0, columnspan=2, padx=16, pady=(4, 16), sticky="ew")
+        att_row.grid_columnconfigure(0, weight=1)
+        self._att_label = ctk.CTkLabel(
+            att_row, text="No files attached", text_color=MUTED, font=("Segoe UI", 12), anchor="w"
+        )
+        self._att_label.grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(
+            att_row,
+            text="Add files…",
+            width=110,
+            height=36,
+            fg_color=SOFT_GRAY,
+            text_color=TEXT,
+            hover_color=BORDER,
+            command=self._pick_attachments,
+        ).grid(row=0, column=1, padx=(8, 0))
+
+        footer = ctk.CTkFrame(shell, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky="ew", padx=16, pady=(8, 16))
+        footer.grid_columnconfigure(0, weight=1)
+        footer.grid_columnconfigure(1, weight=1)
+
+        self.error = ctk.CTkLabel(footer, text="", text_color=RED, font=("Segoe UI", 12), anchor="w")
+        self.error.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+
+        self._cancel_btn = ctk.CTkButton(
+            footer,
+            text="Cancel",
+            height=44,
+            corner_radius=8,
+            fg_color=SOFT_GRAY,
+            text_color=TEXT,
+            hover_color=BORDER,
+            font=("Segoe UI", 14),
+            command=self.destroy,
+        )
+        self._cancel_btn.grid(row=1, column=0, padx=(0, 8), sticky="ew")
+
+        self._save_btn = ctk.CTkButton(
+            footer,
+            text="Create & Assign" if self._can_assign else "Send to Operations",
+            height=44,
+            corner_radius=8,
+            fg_color=GREEN,
+            hover_color=GREEN_HOVER,
+            text_color="#FFFFFF",
+            font=("Segoe UI", 14, "bold"),
+            command=self._submit,
+        )
+        self._save_btn.grid(row=1, column=1, padx=(8, 0), sticky="ew")
+
+        self.bind("<Return>", lambda _e: self._submit())
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.after(50, lambda: self.title_entry.focus_set())
+
+    def _pick_attachments(self) -> None:
+        paths = filedialog.askopenfilenames(
+            parent=self,
+            title="Attach files to task",
+            filetypes=[
+                (
+                    "Documents & images",
+                    "*.pdf *.doc *.docx *.xls *.xlsx *.csv *.png *.jpg *.jpeg *.gif *.webp *.txt",
+                ),
+                ("PDF", "*.pdf"),
+                ("Word", "*.doc *.docx"),
+                ("Excel", "*.xls *.xlsx *.csv"),
+                ("Images", "*.png *.jpg *.jpeg *.gif *.webp"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not paths:
+            return
+        max_each = 4 * 1024 * 1024
+        for p in paths:
+            try:
+                fp = FsPath(p)
+                data = fp.read_bytes()
+                if len(data) > max_each:
+                    self.error.configure(
+                        text=f"{fp.name} is larger than 4 MB – skipped.", text_color=RED
+                    )
+                    continue
+                mime = mimetypes.guess_type(fp.name)[0] or "application/octet-stream"
+                self._attachments.append(
+                    {
+                        "name": fp.name,
+                        "mime": mime,
+                        "size": len(data),
+                        "content_base64": base64.b64encode(data).decode("ascii"),
+                    }
+                )
+            except Exception as exc:
+                self.error.configure(text=f"Could not read file: {exc}", text_color=RED)
+        self._refresh_att_label()
+
+    def _refresh_att_label(self) -> None:
+        if not self._attachments:
+            self._att_label.configure(text="No files attached", text_color=MUTED)
+        else:
+            names = ", ".join(a["name"] for a in self._attachments)
+            self._att_label.configure(
+                text=f"{len(self._attachments)} file(s): {names}", text_color=TEXT
+            )
+
+    @ui_task
+    def _submit(self) -> None:
+        if self._busy:
+            return
+        title = self.title_entry.get().strip()
+        if not title:
+            self.error.configure(text="Title is required.", text_color=RED)
+            self.title_entry.focus_set()
             return
         try:
-            self._controller.delete_task(_task_id_key(self._task.id))
+            hours = float(self.hours_entry.get() or 0)
+        except ValueError:
+            hours = 0.0
+        assignee = (self.assignee.get() or "").strip()
+        if not self._can_assign:
+            assignee = "Unassigned"
+        data = {
+            "title": title,
+            "description": self.desc_entry.get("1.0", "end").strip(),
+            "assigned_employee": assignee,
+            "priority": self.priority.get(),
+            "due_date": self.due_entry.get().strip() or None,
+            "estimated_hours": hours,
+            "status": "Assigned" if assignee and assignee.lower() != "unassigned" else "Pending",
+            "category": self.category.get() or "Administration",
+            "attachments": list(self._attachments),
+        }
+        self._busy = True
+        try:
+            self._save_btn.configure(state="disabled", text="Saving…")
+            self._cancel_btn.configure(state="disabled")
+        except Exception:
+            pass
+        self.error.configure(text="Saving to server…", text_color=MUTED)
+        self.update_idletasks()
+        try:
+            (yield RemoteCall(self._controller.create_task, data))
+            self._on_created()
+            self.destroy()
         except Exception as exc:
-            messagebox.showerror("Task not deleted", str(exc), parent=self)
-            return
-        if callable(self._on_saved):
-            self._on_saved()
-        self.destroy()
+            self._busy = False
+            try:
+                self._save_btn.configure(
+                    state="normal",
+                    text="Create & Assign" if self._can_assign else "Send to Operations",
+                )
+                self._cancel_btn.configure(state="normal")
+            except Exception:
+                pass
+            self.error.configure(text=str(exc), text_color=RED)

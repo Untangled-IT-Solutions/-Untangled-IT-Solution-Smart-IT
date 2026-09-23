@@ -1,0 +1,223 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import secrets
+import uuid
+import re
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from bson import ObjectId
+from fastapi import Header, HTTPException, Request
+
+from app.db import get_db
+
+
+def today_south_africa() -> str:
+    from zoneinfo import ZoneInfo
+
+    return datetime.now(ZoneInfo("Africa/Johannesburg")).strftime("%Y-%m-%d")
+
+
+def is_active(value: Any, default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    s = str(value).strip().lower()
+    if s in ("active", "enabled", "approved", "true", "1", "yes"):
+        return True
+    if s in ("inactive", "disabled", "suspended", "false", "0", "no", "terminated"):
+        return False
+    return default
+
+
+def normalise_login(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def verify_pbkdf2_sha256(password: str, stored: str) -> bool:
+    try:
+        parts = stored.split("$")
+        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+            return False
+        iterations = int(parts[1])
+        if iterations < 1 or iterations > 5_000_000:
+            return False
+        salt = parts[2].encode("utf-8")
+        expected = bytes.fromhex(parts[3])
+        derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations, dklen=32)
+        return hmac.compare_digest(derived, expected)
+    except Exception:
+        return False
+
+
+def verify_password(password: str, stored_hash: Any) -> bool:
+    if not isinstance(stored_hash, str) or not stored_hash:
+        return False
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        return verify_pbkdf2_sha256(password, stored_hash)
+    if len(stored_hash) == 64 and all(c in "0123456789abcdefABCDEF" for c in stored_hash):
+        digest = hashlib.sha256(password.encode("utf-8")).hexdigest()
+        return hmac.compare_digest(digest.lower(), stored_hash.lower())
+    return False
+
+
+def hash_pbkdf2_sha256(password: str, iterations: int = 310_000) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations, dklen=32
+    ).hex()
+    return f"pbkdf2_sha256${iterations}${salt}${digest}"
+
+
+def make_token() -> str:
+    return f"{uuid.uuid4().hex}.{secrets.token_hex(32)}"
+
+
+def safe_object_id(value: Any) -> Optional[ObjectId]:
+    if value is None:
+        return None
+    if isinstance(value, ObjectId):
+        return value
+    try:
+        return ObjectId(str(value))
+    except Exception:
+        return None
+
+
+def employee_reference_values(value: Any) -> list[Any]:
+    values: list[Any] = []
+    if value is None:
+        return values
+    values.append(value)
+    if isinstance(value, ObjectId):
+        values.append(str(value))
+    else:
+        s = str(value)
+        values.append(s)
+        if s.isdigit() and str(int(s)) == s:
+            values.append(int(s))
+        oid = safe_object_id(s)
+        if oid is not None:
+            values.append(oid)
+    # unique preserve order
+    seen = set()
+    out = []
+    for v in values:
+        key = (type(v).__name__, str(v))
+        if key not in seen:
+            seen.add(key)
+            out.append(v)
+    return out
+
+
+async def find_employee_for_user(user: dict) -> Optional[dict]:
+    db = get_db()
+    employees = db["employees"]
+    keys: list[Any] = []
+    for field in ("employee_id",):
+        if user.get(field) is not None:
+            keys.extend(employee_reference_values(user.get(field)))
+    if keys:
+        emp = await employees.find_one(
+            {
+                "$or": [
+                    {"_id": {"$in": keys}},
+                    {"employee_id": {"$in": keys}},
+                    {"id": {"$in": keys}},
+                ]
+            }
+        )
+        if emp:
+            return emp
+    email = normalise_login(user.get("email") or user.get("username"))
+    if email:
+        return await employees.find_one(
+            {
+                "$or": [
+                    {"email": {"$regex": f"^{re.escape(email)}$", "$options": "i"}},
+                    {"email_address": {"$regex": f"^{re.escape(email)}$", "$options": "i"}},
+                ]
+            }
+        )
+    return None
+
+
+async def require_session(request: Request, authorization: Optional[str] = Header(default=None)) -> dict:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Authentication token is required.")
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Authentication token is required.")
+
+    db = get_db()
+    session = await db["api_sessions"].find_one(
+        {"$or": [{"token_hash": hashlib.sha256(token.encode()).hexdigest()}, {"token": token}], "status": "active", "expires_at": {"$gt": datetime.now(timezone.utc)}},
+        projection={"user_id": 1, "employee_id": 1, "last_activity_at": 1},
+    )
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired or invalid. Please log in again.")
+
+    user = await db["users"].find_one(
+        {"_id": session["user_id"]},
+        projection={
+            "_id": 1,
+            "username": 1,
+            "email": 1,
+            "role": 1,
+            "status": 1,
+            "employee_id": 1,
+            "full_name": 1,
+            "department": 1,
+            "position": 1,
+            "require_password_change": 1,
+        },
+    )
+    if not user or not is_active(user.get("status"), True):
+        await db["api_sessions"].update_one(
+            {"_id": session["_id"]},
+            {"$set": {"status": "revoked", "revoked_at": datetime.now(timezone.utc)}},
+        )
+        raise HTTPException(status_code=403, detail="Your user account is inactive.")
+
+    employee = await find_employee_for_user(user)
+    if not employee or not is_active(employee.get("status"), True):
+        msg = (
+            "Your account is not linked to an employee record."
+            if not employee
+            else "Your employee record is inactive."
+        )
+        raise HTTPException(status_code=403, detail=msg)
+
+    if user.get('require_password_change') and request.url.path not in {
+        '/api/auth/me', '/api/auth/logout', '/api/auth/change-password'
+    }:
+        raise HTTPException(403, 'PASSWORD_CHANGE_REQUIRED')
+
+    # touch session activity at most every 5 minutes
+    last = session.get("last_activity_at")
+    last_ts = last.timestamp() if isinstance(last, datetime) else 0
+    if datetime.now(timezone.utc).timestamp() - last_ts >= 300:
+        await db["api_sessions"].update_one(
+            {"_id": session["_id"]},
+            {"$set": {"last_activity_at": datetime.now(timezone.utc)}},
+        )
+
+    return {"db": db, "session": session, "user": user, "employee": employee}
+
+
+def serialize_id(doc: Optional[dict]) -> Optional[dict]:
+    if doc is None:
+        return None
+    def walk(value):
+        if isinstance(value, ObjectId):
+            return str(value)
+        if isinstance(value, datetime):
+            value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {str(k): walk(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [walk(v) for v in value]
+        return value
+    return walk(doc)

@@ -65,6 +65,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=str(icon_path) if icon_path.exists() else None,
+    version=str(ROOT / "build_metadata" / "version_info.txt") if (ROOT / "build_metadata" / "version_info.txt").exists() else None,
 )
 
 coll = COLLECT(

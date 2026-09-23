@@ -48,7 +48,7 @@ class BackendAuthService:
         except BackendAPIError as exc:
             # Normalise common auth failures to a clear message
             msg = str(exc) or "Invalid username or password."
-            if getattr(exc, "status_code", None) in (401, 403):
+            if getattr(exc, "status_code", None) == 401:
                 msg = "Invalid username or password."
             raise PermissionError(msg) from exc
 
@@ -77,6 +77,20 @@ class BackendAuthService:
     def logout(self) -> None:
         self._backend.logout()
         self._current = None
+
+    @property
+    def requires_password_change(self) -> bool:
+        if not self._current:
+            return False
+        user = self._current.get("user") or {}
+        raw = self._current.get("raw") or {}
+        return bool(user.get("require_password_change") or raw.get("require_password_change"))
+
+    def change_password(self, current_password: str, new_password: str) -> None:
+        self._backend.change_password(current_password, new_password)
+        if self._current:
+            user = self._current.get("user") or {}
+            user["require_password_change"] = False
 
     @property
     def current(self) -> Optional[dict[str, Any]]:

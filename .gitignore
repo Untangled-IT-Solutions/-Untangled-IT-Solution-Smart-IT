@@ -9,8 +9,18 @@ App.zip
 .github.zip
 *.zip
 
-# Python/runtime artifacts
-__pycache__/
+# Local dependencies, generated files, and private runtime data
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/build/
+**/dist/
 *.py[cod]
-.pytest_cache/
+*.log
+.env.*
+!.env.example
+App/data/
 App/logs/
+App/cache/
+App/build_metadata/

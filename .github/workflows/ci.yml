@@ -1,39 +1,90 @@
-# Continuous checks on main / pull requests – no installer, no release.
 name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, nexus-unified-optimization]
   pull_request:
     branches: [main, master]
 
 jobs:
-  test:
+  desktop:
+    name: Desktop tests
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: App   # ← all commands now run inside App/
-
+        working-directory: App
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "pip"
+          cache: pip
           cache-dependency-path: App/requirements.txt
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
+          python -m pip install -r requirements.txt pytest
       - name: Run tests
         run: python -m pytest tests/ -q --tb=short
-
       - name: Import check
         run: |
-          python -c "from app.__version__ import __version__; from app.utils.config import APP_VERSION; assert __version__==APP_VERSION; print(__version__)"
-          python -c "from app.services.backend_api_client import BackendAPIClient; from app.services.backend_auth_service import BackendAuthService; print('ok')"
+          python -c "from app.__version__ import __version__; from app.utils.config import APP_VERSION; assert __version__ == APP_VERSION; print(__version__)"
+          python -c "from app.services.backend_api_client import BackendAPIClient; from app.services.backend_auth_service import BackendAuthService; print('desktop imports ok')"
+
+  api:
+    name: FastAPI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: untangled-nexus-api-main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            untangled-nexus-api-main/requirements.txt
+            untangled-nexus-api-main/requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+      - name: Run tests
+        run: python -m pytest -q --tb=short
+
+  backend:
+    name: TypeScript backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  website:
+    name: Website build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Website/package-lock.json
+      - run: npm ci
+      - run: npm run build

@@ -1,14 +1,15 @@
 # app/controllers/navigation_controller.py
-"""Navigation controller - MongoDB only with role-based access."""
+"""Backend API navigation controller with role-based access."""
 
 import customtkinter as ctk
 from typing import Optional, Callable, List, Dict, Any
 
 from app.utils.theme import Theme
+from app.models.role_permission import can_access_module
 
 
 class NavigationController:
-    """Navigation controller for Untangled Workplace - MongoDB only."""
+    """Navigation controller for the Backend API-based desktop client."""
 
     # Role-based access control
     MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
@@ -29,8 +30,6 @@ class NavigationController:
         self._navigate_callback = navigate_callback
         self._get_current_account = get_current_account
 
-        self._database = services.get("database")
-        self._mongodb = services.get("mongodb_service")
         self._notification_service = services.get("notification_service")
         self._people_service = services.get("people_service")
         self._auth_service = services.get("auth_service")
@@ -205,21 +204,12 @@ class NavigationController:
 
     def _build_navigation_items(self) -> List[str]:
         """Build navigation items from the already-known authenticated role."""
-        base_items = [
+        candidates = [
             "Dashboard", "People", "Attendance", "Calendar", "Approvals",
             "Office Requests", "Notifications", "Projects", "Tasks", "Reports",
-            "Quote Management", "Order Management",
+            "Quote Management", "Order Management", "User Management", "Settings",
         ]
-        if self.is_manager():
-            # Insert sprint planning near Tasks
-            if "Tasks" in base_items:
-                i = base_items.index("Tasks") + 1
-                base_items.insert(i, "Sprint Planning")
-            else:
-                base_items.append("Sprint Planning")
-            base_items.extend(["Quote Sync", "User Management"])
-        base_items.append("Settings")
-        return base_items
+        return [item for item in candidates if can_access_module(self._current_role, item)]
 
     def get_navigation_items(self, refresh: bool = False) -> List[str]:
         """Return cached navigation items; refresh only after account changes."""
@@ -240,22 +230,16 @@ class NavigationController:
 
         elif name == "Tasks":
             from app.views.task_view import TaskView
-            account = self.get_current_account() if hasattr(self, "get_current_account") else None
-            return TaskView(workspace, controller, current_account=account)
-
-        elif name == "Sprint Planning":
-            from app.views.sprint_planning_view import SprintPlanningView
-            account = self.get_current_account() if hasattr(self, "get_current_account") else None
-            return SprintPlanningView(workspace, controller, current_account=account)
+            return TaskView(workspace, controller)
 
         elif name == "Attendance":
             from app.views.attendance_view import AttendanceView
             return AttendanceView(workspace, controller)
 
         elif name == "Work":
+            # Production: Work is task-based (Backend API). Old Mongo quote workspace is retired.
             from app.views.task_view import TaskView
-            account = self.get_current_account() if hasattr(self, "get_current_account") else None
-            return TaskView(workspace, controller, current_account=account)
+            return TaskView(workspace, controller)
 
         elif name == "People":
             from app.views.people_view import PeopleView
@@ -313,6 +297,17 @@ class NavigationController:
                 "Quote Sync",
                 "Quote Sync runs on the server. Use Quote Management — all data is loaded from the Backend API.",
             )
+
+        elif name in {"Calendar", "Approvals", "Office Requests", "Projects", "Reports"}:
+            from app.views.calendar_view import CalendarView
+            from app.views.approval_view import ApprovalView
+            from app.views.office_request_view import OfficeRequestView
+            from app.views.project_view import ProjectView
+            from app.views.report_view import ReportView
+            views = {"Calendar": CalendarView, "Approvals": ApprovalView,
+                     "Office Requests": OfficeRequestView, "Projects": ProjectView,
+                     "Reports": ReportView}
+            return views[name](workspace, controller)
 
         elif name == "Settings":
             from app.views.settings_view import SettingsView

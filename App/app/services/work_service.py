@@ -53,6 +53,7 @@ class WorkService:
             due_date=raw.get("due_date") or "",
             estimated_hours=float(raw.get("estimated_hours") or 0),
             actual_hours=float(raw.get("actual_hours") or 0),
+            elapsed_hours=float(raw.get("elapsed_hours") or raw.get("actual_hours") or 0),
             category=raw.get("category") or "Administration",
             comments=raw.get("comments") or "",
             checklist=raw.get("checklist") or "[]",
@@ -60,10 +61,6 @@ class WorkService:
             active_timer_started_at=raw.get("active_timer_started_at"),
             director_approval_status=raw.get("director_approval_status"),
             returned_reason=raw.get("returned_reason"),
-            sprint_bucket=str(raw.get("sprint_bucket") or raw.get("sprint") or "Backlog"),
-            story_points=int(raw.get("story_points") or raw.get("points") or 1),
-            hardware_serial=str(raw.get("hardware_serial") or raw.get("serial") or ""),
-            external_reference=str(raw.get("external_reference") or raw.get("reference") or ""),
             raw=raw,
         )
 
@@ -87,12 +84,6 @@ class WorkService:
             "estimated_hours": float(data.get("estimated_hours") or 0),
             "category": data.get("category") or "Administration",
             "attachments": data.get("attachments") or [],
-            "department": data.get("department") or "",
-            "assigned_by": data.get("assigned_by") or "",
-            "sprint_bucket": data.get("sprint_bucket") or "Backlog",
-            "story_points": int(data.get("story_points") or 1),
-            "hardware_serial": data.get("hardware_serial") or "",
-            "external_reference": data.get("external_reference") or "",
         }
         # Persist both array and string forms for schema flexibility
         atts = payload["attachments"]
@@ -194,7 +185,10 @@ class WorkService:
         try:
             self._backend.update_task(task_id, {"hours_logged": hours, "note": note})
         except BackendAPIError:
-            self._backend.task_action(task_id, "log-time", note)
+            self._backend.task_action(task_id, "log-time", note, {"hours": hours})
+
+    def prioritize_task(self, task_id: Any, priority: str) -> None:
+        self._backend.update_task(task_id, {"priority": priority})
 
     def assign_task(self, task_id: Any, assignee: str) -> None:
         assignee = (assignee or "").strip()
@@ -266,6 +260,9 @@ class WorkService:
     def pause_work(self, task_id: Any, note: str = "") -> None:
         self._set_status(task_id, "Paused", note, action="pause")
 
+    def resume_work(self, task_id: Any, note: str = "") -> None:
+        self._set_status(task_id, "In Progress", note, action="resume")
+
     def submit_for_review(self, task_id: Any, note: str = "") -> None:
         self._set_status(task_id, "Waiting Review", note, action="submit-review")
 
@@ -296,35 +293,3 @@ class WorkService:
 
     def get_work(self, task_id: Any) -> Optional[Task]:
         return self.get_task(task_id)
-
-
-    def update_task(self, task_id: Any, data: dict) -> dict:
-        """PATCH/PUT task fields on the backend."""
-        payload = {k: v for k, v in (data or {}).items() if v is not None}
-        # Aliases
-        if "assigned_employee" in payload:
-            payload.setdefault("assignee", payload["assigned_employee"])
-            payload.setdefault("assigned_to", payload["assigned_employee"])
-        try:
-            return self._backend.request("PATCH", f"/api/tasks/{task_id}", payload)
-        except BackendAPIError:
-            try:
-                return self._backend.request("PUT", f"/api/tasks/{task_id}", payload)
-            except BackendAPIError:
-                # Fallback: status-only endpoint if full update not supported
-                if "status" in payload:
-                    self._set_status(task_id, str(payload["status"]))
-                if "assigned_employee" in payload and payload["assigned_employee"]:
-                    try:
-                        self.assign_task(task_id, str(payload["assigned_employee"]))
-                    except Exception:
-                        pass
-                return {"success": True, "id": task_id}
-
-    def delete_task(self, task_id: Any) -> dict:
-        try:
-            return self._backend.request("DELETE", f"/api/tasks/{task_id}")
-        except BackendAPIError:
-            # Soft-delete via status
-            self._set_status(task_id, "Cancelled", note="Deleted from workspace")
-            return {"success": True}

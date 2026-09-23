@@ -21,3 +21,24 @@ def test_auth_service_constructs():
     backend_auth = BackendAuthService(client)
     auth = AuthService(backend_auth)
     assert auth is not None
+
+
+def test_backend_auth_tracks_required_password_change(monkeypatch):
+    client = BackendAPIClient(base_url="https://example-api.test")
+    monkeypatch.setattr(
+        client,
+        "login",
+        lambda username, password: {
+            "token": "test-token",
+            "user": {"id": "u1", "require_password_change": True},
+            "employee": {"id": "e1"},
+        },
+    )
+    calls = []
+    monkeypatch.setattr(client, "change_password", lambda current, new: calls.append((current, new)))
+    service = BackendAuthService(client)
+    service.authenticate("person@example.test", "temporary")
+    assert service.requires_password_change is True
+    service.change_password("temporary", "new-password")
+    assert service.requires_password_change is False
+    assert calls == [("temporary", "new-password")]

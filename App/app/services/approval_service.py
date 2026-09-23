@@ -10,7 +10,6 @@ from app.services.backend_api_client import BackendAPIClient, BackendAPIError
 
 class ApprovalService:
     REQUEST_TYPES = [
-        "Leave",
         "Purchase",
         "Travel",
         "Overtime",
@@ -45,6 +44,11 @@ class ApprovalService:
             business_approved_by=str(raw.get("business_approved_by") or ""),
             director_approved_by=str(raw.get("director_approved_by") or ""),
             rejection_reason=str(raw.get("rejection_reason") or ""),
+            leave_type=str(raw.get("leave_type") or ""),
+            start_date=str(raw.get("start_date") or ""),
+            end_date=str(raw.get("end_date") or ""),
+            document_ids=tuple(str(value) for value in (raw.get("document_ids") or [])),
+            raw=raw,
         )
 
     def get_approvals(self, status: str = "All") -> List[ApprovalRequest]:
@@ -115,3 +119,37 @@ class ApprovalService:
             f"/api/approvals/{approval_id}/reject",
             {"reviewer": reviewer, "stage": stage, "reason": reason},
         )
+
+    def submit_leave(
+        self,
+        leave_type: str,
+        start_date: str,
+        end_date: str,
+        reason: str,
+        document_paths: list[str],
+        requires_director: bool,
+    ) -> dict:
+        document_ids = []
+        for path in document_paths:
+            document_type = "Doctor note" if leave_type == "Sick" else "Supporting Document"
+            uploaded = self._backend.upload_document(path, document_type)
+            document = uploaded.get("document") or {}
+            document_id = document.get("id") or document.get("_id")
+            if not document_id:
+                raise RuntimeError("The server did not return the uploaded document ID.")
+            document_ids.append(str(document_id))
+        return self._backend.request(
+            "POST",
+            "/api/leave",
+            {
+                "leave_type": leave_type,
+                "start_date": start_date,
+                "end_date": end_date,
+                "reason": reason,
+                "document_ids": document_ids,
+                "requires_director": requires_director,
+            },
+        )
+
+    def download_document(self, document_id: str) -> dict:
+        return self._backend.download_document(document_id)
