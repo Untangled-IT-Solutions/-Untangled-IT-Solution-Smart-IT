@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     node_env: str = "production"
     dashboard_cache_ms: int = 15_000
     mongodb_max_pool_size: int = 20
+    slow_request_ms: int = Field(default=1_000, ge=100, le=60_000)
+    metrics_token: str = ""
 
 
 @lru_cache

@@ -90,5 +90,19 @@ async def ensure_indexes(db):
     await db['users'].create_index('username_normalized', unique=True, sparse=True, name='nexus_username_unique')
     await db['login_attempts'].create_index('expires_at', expireAfterSeconds=0, name='nexus_login_attempt_expiry')
     await db['api_sessions'].create_index('token_hash', sparse=True, name='nexus_token_hash')
+    await db['api_sessions'].create_index('expires_at', expireAfterSeconds=0, name='nexus_session_expiry')
+    await db['notifications'].create_index(
+        [('employee_id', 1), ('read', 1), ('created_at', -1)],
+        name='nexus_notification_inbox',
+    )
+    await db['notifications'].create_index(
+        [('reference_type', 1), ('reference_id', 1)],
+        sparse=True,
+        name='nexus_notification_reference',
+    )
+    await db['audit_events'].create_index(
+        [('created_at', -1), ('employee_id', 1)],
+        name='nexus_audit_timeline',
+    )
     await db['documents'].create_index([('employee_id', 1), ('expiry_date', 1)], name='nexus_document_employee_expiry')
     await db['documents'].create_index([('expiry_status', 1), ('expiry_date', 1)], name='nexus_document_expiry_status')

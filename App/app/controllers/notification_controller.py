@@ -1,6 +1,8 @@
 # app/controllers/notification_controller.py
 """Notification controller."""
 
+import threading
+
 from app.services.mongo_notification_service import MongoNotificationService
 from app.services.mongo_auth_service import MongoAuthService
 
@@ -55,6 +57,15 @@ class NotificationController:
     def get_role_options(self) -> list:
         """Get available role filter options."""
         return self.ROLE_OPTIONS
+
+    def stream_events(self, stop_event: threading.Event):
+        yield from self._notification_service.stream_events(stop_event)
+
+    def is_stale(self) -> bool:
+        return bool(getattr(self._notification_service, "is_stale", False))
+
+    def last_error(self) -> str:
+        return str(getattr(self._notification_service, "last_error", "") or "")
 
     def notify_user(
         self,

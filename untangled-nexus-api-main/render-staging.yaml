@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: untangled-nexus-api
+    name: untangled-nexus-api-staging
     runtime: python
     plan: starter
     buildCommand: pip install -r requirements.txt
@@ -9,13 +9,17 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.8"
+      - key: NODE_ENV
+        value: staging
       - key: MONGODB_URI
         sync: false
+      - key: MONGODB_DB
+        value: untangled_its_staging
       - key: FRONTEND_URL
-        value: "*"
+        sync: false
       - key: DASHBOARD_CACHE_MS
-        value: "15000"
+        value: "5000"
       - key: SLOW_REQUEST_MS
-        value: "1000"
+        value: "750"
       - key: METRICS_TOKEN
         sync: false

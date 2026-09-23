@@ -51,7 +51,7 @@ def start_ui_dispatcher(root: Any) -> None:
     root.after(_IDLE_POLL_MS, poll)
 
 
-def _schedule_on_ui(owner: Any, callback: Callable[[], None]) -> None:
+def schedule_on_ui(owner: Any, callback: Callable[[], None]) -> None:
     """Workers only enqueue. All Tk calls execute in the main-thread poller."""
     def deliver():
         try:
@@ -61,6 +61,10 @@ def _schedule_on_ui(owner: Any, callback: Callable[[], None]) -> None:
         if exists and not getattr(owner, '_is_destroyed', False) and not getattr(owner, '_destroyed', False):
             callback()
     _UI_QUEUE.put(deliver)
+
+
+# Kept for older imports while callers migrate to the public helper.
+_schedule_on_ui = schedule_on_ui
 
 
 def run_in_background(
@@ -87,7 +91,7 @@ def run_in_background(
                     except Exception:
                         traceback.print_exc()
 
-                _schedule_on_ui(owner, report)
+                schedule_on_ui(owner, report)
             return
 
         if on_success is not None:
@@ -97,7 +101,7 @@ def run_in_background(
                 except Exception:
                     traceback.print_exc()
 
-            _schedule_on_ui(owner, deliver)
+            schedule_on_ui(owner, deliver)
 
     thread = threading.Thread(target=worker, name=name, daemon=True)
     thread.start()

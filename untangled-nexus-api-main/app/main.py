@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import time
 import asyncio
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
 from contextlib import suppress
 from contextlib import asynccontextmanager
 
@@ -15,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db import connect_db, close_db, get_db
+from app.observability import record_request
 from app.routers import (
     health,
     auth,
@@ -56,6 +61,8 @@ app = FastAPI(
 )
 
 settings = get_settings()
+logger = logging.getLogger("nexus.api")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 origins = [o.strip() for o in (settings.frontend_url or "*").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -69,18 +76,43 @@ app.add_middleware(
 @app.middleware("http")
 async def timing_middleware(request: Request, call_next):
     started = time.perf_counter()
+    request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
+    request.state.request_id = request_id
     response = await call_next(request)
     duration_ms = (time.perf_counter() - started) * 1000
-    # Log real path (not "/") so Render logs are useful
-    print(
-        {
+    route = getattr(request.scope.get("route"), "path", request.url.path)
+    record_request(route, response.status_code, duration_ms, settings.slow_request_ms)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    event = {
+        "event": "http_request",
+        "request_id": request_id,
+        "method": request.method,
+        "route": route,
+        "status": response.status_code,
+        "duration_ms": round(duration_ms, 1),
+        "slow": duration_ms >= settings.slow_request_ms,
+    }
+    logger.warning(json.dumps(event)) if event["slow"] else logger.info(json.dumps(event))
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and response.status_code < 500:
+        audit_event = {
+            "request_id": request_id,
             "method": request.method,
-            "route": request.url.path,
-
+            "route": route,
             "status": response.status_code,
-            "duration_ms": round(duration_ms, 1),
+            "user_id": getattr(request.state, "user_id", None),
+            "employee_id": getattr(request.state, "employee_id", None),
+            "role": getattr(request.state, "role", None),
+            "created_at": datetime.now(timezone.utc),
         }
-    )
+        try:
+            await get_db()["audit_events"].insert_one(audit_event)
+        except Exception as exc:
+            logger.error(json.dumps({"event": "audit_write_failed", "request_id": request_id, "error": type(exc).__name__}))
     return response
 
 

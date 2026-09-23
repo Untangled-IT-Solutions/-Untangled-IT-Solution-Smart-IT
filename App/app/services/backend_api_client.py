@@ -9,6 +9,7 @@ Production HTTP client for Untangled Nexus Backend API.
 from __future__ import annotations
 
 import logging
+import json
 import threading
 import os
 import sys
@@ -170,6 +171,40 @@ class BackendAPIClient:
             if self.on_request_error and token and token == self.token and exc.status_code != 401:
                 self.on_request_error(str(exc), token)
             raise
+
+    def iter_sse(self, path: str, stop_event: threading.Event):
+        """Yield authenticated server-sent events from a background thread."""
+        if threading.current_thread() is threading.main_thread():
+            raise BackendAPIError("Notification streaming must run in a background worker.")
+        try:
+            with requests.get(
+                self._url(path),
+                headers={**self._headers(), "Accept": "text/event-stream"},
+                stream=True,
+                timeout=(20, 35),
+            ) as response:
+                if response.status_code == 401:
+                    raise BackendAPIError("Session expired or invalid.", 401)
+                response.raise_for_status()
+                event_name = "message"
+                data_lines: list[str] = []
+                for raw in response.iter_lines(decode_unicode=True):
+                    if stop_event.is_set():
+                        return
+                    line = raw or ""
+                    if not line:
+                        if data_lines:
+                            payload = json.loads("\n".join(data_lines))
+                            payload["_event"] = event_name
+                            yield payload
+                        event_name = "message"
+                        data_lines = []
+                    elif line.startswith("event:"):
+                        event_name = line[6:].strip()
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+        except (requests.RequestException, ValueError) as exc:
+            raise BackendAPIError(f"Notification stream unavailable: {exc}") from exc
 
     def _request(
         self,

@@ -194,6 +194,10 @@ async def require_session(request: Request, authorization: Optional[str] = Heade
     }:
         raise HTTPException(403, 'PASSWORD_CHANGE_REQUIRED')
 
+    request.state.user_id = str(user['_id'])
+    request.state.employee_id = str(employee['_id'])
+    request.state.role = str(user.get('role') or employee.get('role') or '')
+
     # touch session activity at most every 5 minutes
     last = session.get("last_activity_at")
     last_ts = last.timestamp() if isinstance(last, datetime) else 0

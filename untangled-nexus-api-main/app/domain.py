@@ -111,9 +111,20 @@ async def notify(db, key, employee_id, title, message, reference_type='', refere
     result = await db['notifications'].update_one({'_id': key}, {'$setOnInsert': {
         'employee_id': employee_id, 'title': title, 'message': message,
         'reference_type': reference_type, 'reference_id': str(reference_id),
-        'category': reference_type or 'General', 'read': False, 'created_at': now(),
+        'category': reference_type or 'General', 'read': False,
+        'delivery_status': 'created', 'created_at': now(),
     }}, upsert=True)
-    return result.upserted_id is not None
+    created = result.upserted_id is not None
+    if created:
+        from app.notification_events import publish
+        publish(employee_id, {
+            'id': key,
+            'title': title,
+            'message': message,
+            'reference_type': reference_type,
+            'reference_id': str(reference_id),
+        })
+    return created
 
 
 async def notify_roles(db, key, roles, title, message, reference_type='', reference_id=''):

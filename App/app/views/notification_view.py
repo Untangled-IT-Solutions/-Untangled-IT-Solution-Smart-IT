@@ -32,11 +32,18 @@ class NotificationView(ctk.CTkFrame):
     ]
 
     @ui_task
-    def __init__(self, master, controller: NotificationController, filters=None):
+    def __init__(
+        self,
+        master,
+        controller: NotificationController,
+        filters=None,
+        navigate_callback=None,
+    ):
         super().__init__(master, fg_color=Theme.BG)
 
         self.controller = controller
         self.filters = filters or {}
+        self._navigate_callback = navigate_callback
         self._master_window = master
 
         self._previous_notification_ids = set()
@@ -112,6 +119,14 @@ class NotificationView(ctk.CTkFrame):
             command=self.mark_all_as_read,
         )
         self.mark_all_btn.pack(side="right", padx=(10, 0))
+
+        self.connection_status = ctk.CTkLabel(
+            self,
+            text="",
+            font=("Segoe UI", 11),
+            text_color="#B45309",
+        )
+        self.connection_status.pack(fill="x", padx=20, pady=(8, 0))
 
         self.list_frame = ctk.CTkScrollableFrame(
             self,
@@ -221,16 +236,21 @@ class NotificationView(ctk.CTkFrame):
             unread_only=self.unread_var.get(),
         ))
 
-        unread_check = (yield RemoteCall(self.controller.get_notifications,
-            role=self.role_var.get(),
-            unread_only=True,
-        ))
-
         current_ids = set()
-        for item in unread_check or []:
-            nid = self._extract_id(item)
-            if nid:
+        for item in display_notifications or []:
+            notification = self._convert(item)
+            nid = self._extract_id(notification)
+            if nid and not notification.is_read:
                 current_ids.add(nid)
+
+        stale = self.controller.is_stale()
+        self.connection_status.configure(
+            text=(
+                "Offline: showing the most recently loaded notifications."
+                if stale
+                else ""
+            )
+        )
 
         new_notifications = current_ids - self._previous_notification_ids
 
@@ -368,11 +388,16 @@ class NotificationView(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(main, fg_color="transparent")
         btn_row.pack()
 
+        def open_quote_management():
+            dialog.destroy()
+            if self._navigate_callback:
+                self._navigate_callback("Quote Management")
+
         ctk.CTkButton(
             btn_row,
             text="Open Quote Management",
             width=180,
-            command=dialog.destroy,
+            command=open_quote_management,
         ).pack(side="left", padx=6)
 
         ctk.CTkButton(

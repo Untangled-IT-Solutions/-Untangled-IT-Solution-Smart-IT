@@ -4,6 +4,7 @@ from bson import ObjectId
 from httpx import AsyncClient, ASGITransport
 from mongomock_motor import AsyncMongoMockClient
 from app.main import app
+import app.main as application
 from app import security, db as database
 from app.routers import auth
 from app.domain import now
@@ -18,6 +19,7 @@ async def api(monkeypatch):
     db = AsyncMongoMockClient(tz_aware=True)['nexus_test']
     monkeypatch.setattr(security, 'get_db', lambda: db)
     monkeypatch.setattr(auth, 'get_db', lambda: db)
+    monkeypatch.setattr(application, 'get_db', lambda: db)
     await database.ensure_indexes(db)
     people = {}
     for i, role in enumerate(('Director', 'Business Lead', 'Operations Manager', 'Staff', 'Intern', 'Branch Manager')):

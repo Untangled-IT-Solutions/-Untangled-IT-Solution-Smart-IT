@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 import queue
+import threading
 
 import customtkinter as ctk
 
@@ -337,6 +338,8 @@ class MainWindow(ctk.CTkToplevel):
         self._mongo_auth = None
         self._notification_controller = None
         self._notif_poll_job = None
+        self._notification_stream_stop = threading.Event()
+        self._notification_stream_thread = None
         self._last_unread = 0
         self._nav_items = []
         self._nav_frame = None  # Store reference to nav frame
@@ -558,11 +561,37 @@ class MainWindow(ctk.CTkToplevel):
     def set_notification_controller(self, controller) -> None:
         """Attach notification controller for sidebar badge updates."""
         self._notification_controller = controller
+        self._start_notification_stream()
         if not self._is_destroyed:
             try:
                 self.after(200, self._poll_notification_badge)
             except Exception:
                 pass
+
+    def _start_notification_stream(self) -> None:
+        if self._notification_stream_thread is not None or self._notification_controller is None:
+            return
+        from app.utils.async_tasks import schedule_on_ui
+
+        def worker():
+            delay = 2
+            while not self._notification_stream_stop.is_set():
+                try:
+                    for event in self._notification_controller.stream_events(self._notification_stream_stop):
+                        delay = 2
+                        if event.get("_event") == "notification":
+                            schedule_on_ui(self, self._poll_notification_badge)
+                    if self._notification_stream_stop.is_set():
+                        return
+                except Exception:
+                    if self._notification_stream_stop.wait(delay):
+                        return
+                    delay = min(delay * 2, 60)
+
+        self._notification_stream_thread = threading.Thread(
+            target=worker, name="notification-stream", daemon=True
+        )
+        self._notification_stream_thread.start()
 
     def _poll_notification_badge(self) -> None:
         """Refresh the Notifications sidebar badge every ~25s."""
@@ -1201,6 +1230,7 @@ class MainWindow(ctk.CTkToplevel):
             return
 
         self._is_destroyed = True
+        self._notification_stream_stop.set()
 
         if self._timer_widget is not None:
             try:

@@ -247,7 +247,7 @@ class NavigationController:
 
         elif name == "Notifications":
             from app.views.notification_view import NotificationView
-            return NotificationView(workspace, controller)
+            return NotificationView(workspace, controller, navigate_callback=self.navigate)
 
         elif name == "Quote Management":
             from app.views.quote_management_view import QuoteManagementView
