@@ -8,3 +8,9 @@ Backend/node_modules/
 App.zip
 .github.zip
 *.zip
+
+# Python/runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+App/logs/

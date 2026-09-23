@@ -54,7 +54,7 @@ class QuoteManagementView(ctk.CTkFrame):
         "assigned": "Assigned",
     }
 
-    MANAGER_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+    MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
     STAFF_ROLES = ["Staff", "Intern"]
 
     def __init__(
@@ -161,7 +161,7 @@ class QuoteManagementView(ctk.CTkFrame):
         ctk.CTkLabel(
             frame,
             text=(
-                "Quote Management is available to Directors, Branch Managers,\n"
+                "Quote Management is available to Directors, Business Leads,\n"
                 "Business Leads and Operations Managers."
             ),
             font=ctk.CTkFont(size=14),

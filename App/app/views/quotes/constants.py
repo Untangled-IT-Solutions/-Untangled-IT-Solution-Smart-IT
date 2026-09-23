@@ -90,7 +90,7 @@ WORKFLOW_NEXT = {
     "Awaiting Client": {"label": "💳 Mark Awaiting Payment", "action": "await_payment", "color": "#E91E63"},
 }
 
-MANAGER_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
 STAFF_ROLES = ["Staff", "Intern"]
 
 # Map display status to MongoDB / API status

@@ -3,7 +3,6 @@
 
 ROLE_PERMISSIONS = {
     "Director": ("Executive Briefs", "Company Health", "Compliance"),
-    "Branch Manager": ("Approvals", "Reports", "Operations", "Manage Staff"),
     "Business Lead": ("Approvals", "Reports", "Operations"),
     "Operations Manager": ("Manage Staff", "Assign Tasks", "Edit Tasks", "View Reports"),
     "Staff": ("View Own Work", "Update Own Work Status"),
@@ -12,15 +11,14 @@ ROLE_PERMISSIONS = {
 
 ROLE_MODULES = {
     "Director": ("Dashboard", "People", "Work", "Attendance", "Calendar", "Approvals", "Office Requests", "Reports", "Search"),
-    "Branch Manager": ("Dashboard", "People", "Approvals", "Work", "Attendance", "Calendar", "Projects", "Reports", "Search"),
     "Business Lead": ("Dashboard", "Approvals", "Work", "Projects", "Reports", "Search"),
     "Operations Manager": ("Dashboard", "People", "Attendance", "Work", "Calendar", "Approvals", "Office Requests", "Projects", "Search"),
     "Staff": ("Dashboard", "Work", "Attendance", "Calendar", "Office Requests", "Notifications", "Search"),
     "Intern": ("Dashboard", "Work", "Attendance", "Calendar", "Office Requests", "Notifications", "Search"),
 }
 
-MANAGEMENT_ROLES = ("Director", "Branch Manager", "Business Lead", "Operations Manager")
-ACCOUNT_ADMIN_ROLES = ("Director", "Branch Manager", "Operations Manager")
+MANAGEMENT_ROLES = ("Director", "Business Lead", "Operations Manager")
+ACCOUNT_ADMIN_ROLES = ("Director", "Operations Manager")
 
 
 def permissions_for_role(role: str) -> tuple[str, ...]:

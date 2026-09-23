@@ -11,14 +11,14 @@ class NavigationController:
     """Navigation controller for Untangled Workplace - MongoDB only."""
 
     # Role-based access control
-    MANAGER_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+    MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
     STAFF_ROLES = ["Staff", "Intern"]
     
     # Who can see User Management
-    USER_MANAGEMENT_ROLES = ["Director", "Branch Manager", "Operations Manager"]
+    USER_MANAGEMENT_ROLES = ["Director", "Operations Manager"]
     
     # Who can see Quote Sync
-    QUOTE_SYNC_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+    QUOTE_SYNC_ROLES = ["Director", "Business Lead", "Operations Manager"]
 
     def __init__(
         self,
@@ -294,7 +294,7 @@ class NavigationController:
                 return self._create_access_denied_view(
                     workspace,
                     "User Management",
-                    "Only Directors, Branch Managers, and Operations Managers can access User Management."
+                    "Only Directors and Operations Managers can access User Management."
                 )
 
             from app.views.user_management_view import UserManagementView
@@ -305,7 +305,7 @@ class NavigationController:
                 return self._create_access_denied_view(
                     workspace,
                     "Quote Sync",
-                    "Only Directors, Branch Managers, Business Leads, and Operations Managers can access Quote Sync."
+                    "Only Directors, Business Leads, and Operations Managers can access Quote Sync."
                 )
 
             return self._create_access_denied_view(

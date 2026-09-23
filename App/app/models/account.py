@@ -32,7 +32,6 @@ class UserAccount:
     def is_admin(self) -> bool:
         return self.role in {
             "Director",
-            "Branch Manager",
             "Operations Manager",
         }
 

@@ -8,7 +8,7 @@ from app.services.mongo_auth_service import MongoAuthService
 class NotificationController:
     """Controls notification display and filtering."""
 
-    ROLE_OPTIONS = ["All", "Director", "Branch Manager", "Business Lead", "Operations Manager", "Staff", "Intern"]
+    ROLE_OPTIONS = ["All", "Director", "Business Lead", "Operations Manager", "Staff", "Intern"]
 
     def __init__(
         self,

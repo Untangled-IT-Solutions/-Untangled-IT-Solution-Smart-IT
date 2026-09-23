@@ -15,9 +15,8 @@ def _resolve_db_name(uri: str) -> str:
     """
     Resolve MongoDB database name safely.
 
-    Atlas URIs often look like:
-      mongodb+srv://user:pass@cluster.mongodb.net/?retryWrites=true
-    (no path DB) — host contains dots and must NOT be used as the DB name.
+    Atlas SRV URIs may omit the database path. In that case, the host
+    contains dots and must not be used as the database name.
     """
     # Explicit override wins
     explicit = (os.getenv("MONGODB_DB") or os.getenv("MONGO_DB") or "").strip()
@@ -25,7 +24,7 @@ def _resolve_db_name(uri: str) -> str:
         return explicit
 
     try:
-        # urlparse works for mongodb:// ; for mongodb+srv:// path is still usable
+        # urlparse exposes the path for both standard and SRV MongoDB URIs.
         parsed = urlparse(uri)
         path = (parsed.path or "").lstrip("/")
         if path:

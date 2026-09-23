@@ -41,7 +41,6 @@ class UserManagementView(ctk.CTkFrame):
 
     ROLES = (
         "Director",
-        "Branch Manager",
         "Business Lead",
         "Operations Manager",
         "Staff",

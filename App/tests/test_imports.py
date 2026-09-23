@@ -10,6 +10,7 @@ def test_import_core_services():
     import app.services.auth_service  # noqa: F401
     import app.services.work_service  # noqa: F401
     import app.services.attendance_service  # noqa: F401
+    import app.main  # noqa: F401
 
 
 def test_import_gui_modules_if_available():

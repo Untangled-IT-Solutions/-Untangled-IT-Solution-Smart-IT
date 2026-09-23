@@ -11,7 +11,6 @@ from app.services.work_service import WorkService
 
 MANAGER_ROLES = {
     "Director",
-    "Branch Manager",
     "Business Lead",
     "Operations Manager",
     "Super User",

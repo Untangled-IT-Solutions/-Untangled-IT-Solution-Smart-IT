@@ -113,7 +113,7 @@ class QuoteManagementView(ctk.CTkFrame):
         "Awaiting Client": {"label": "💳 Mark Awaiting Payment", "action": "await_payment", "color": "#E91E63"},
     }
 
-    MANAGER_ROLES = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+    MANAGER_ROLES = ["Director", "Business Lead", "Operations Manager"]
     STAFF_ROLES = ["Staff", "Intern"]
 
     # Map display status to MongoDB / API status
@@ -1965,7 +1965,7 @@ class QuoteManagementView(ctk.CTkFrame):
             anchor="w",
         ).pack(fill="x")
         
-        return_to_options = ["Director", "Branch Manager", "Business Lead", "Operations Manager"]
+        return_to_options = ["Director", "Business Lead", "Operations Manager"]
         return_var = ctk.StringVar(value="Director")
         return_menu = ctk.CTkOptionMenu(
             main,
@@ -2423,7 +2423,6 @@ class QuoteManagementView(ctk.CTkFrame):
             "director",
             "demo admin",
             "admin",
-            "branch manager",
             "business lead",
             "operations manager",
         } or "director" in role

@@ -70,7 +70,6 @@ class SettingsController:
         except Exception:
             return str(role).strip().lower() in {
                 "director",
-                "branch manager",
                 "operations manager",
             }
 
@@ -97,7 +96,6 @@ class SettingsController:
     def get_role_options(self) -> list[str]:
         return [
             "Director",
-            "Branch Manager",
             "Business Lead",
             "Operations Manager",
             "Staff",

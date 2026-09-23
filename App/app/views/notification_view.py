@@ -24,7 +24,6 @@ class NotificationView(ctk.CTkFrame):
     ROLE_OPTIONS = [
         "All",
         "Director",
-        "Branch Manager",
         "Business Lead",
         "Operations Manager",
         "Staff",

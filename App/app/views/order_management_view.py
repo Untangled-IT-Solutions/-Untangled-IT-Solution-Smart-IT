@@ -112,7 +112,6 @@ class OrderManagementView(ctk.CTkFrame):
 
     MANAGER_ROLES = [
         "Director",
-        "Branch Manager",
         "Business Lead",
         "Operations Manager",
         "Manager",
