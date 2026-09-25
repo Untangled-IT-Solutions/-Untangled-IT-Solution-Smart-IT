@@ -29,6 +29,7 @@ if getattr(sys, "frozen", False):
 # ---------------------------------------------------------------------------
 API_BASE_URL: str = os.getenv("API_BASE_URL", "https://untangled-nexus-api.onrender.com").rstrip("/")
 ENVIRONMENT: str = os.getenv("ENVIRONMENT", "production").lower()
+APP_CHANNEL: str = os.getenv("APP_CHANNEL", ENVIRONMENT).strip().lower()
 
 # ---------------------------------------------------------------------------
 # Security
@@ -65,6 +66,10 @@ for _d in (DATA_DIR, LOG_DIR, CACHE_DIR):
 # ---------------------------------------------------------------------------
 from app.__version__ import __version__ as APP_VERSION  # single source of truth
 
-COMPANY_NAME = "Untangled Nexus"
+COMPANY_NAME = (
+    "Untangled Nexus"
+    if APP_CHANNEL == "production"
+    else f"Untangled Nexus [{APP_CHANNEL.upper()}]"
+)
 COMPANY_LEGAL_NAME = "Untangled IT Solutions"
 SUBTITLE = "Internal Operations Platform"

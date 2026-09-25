@@ -2,7 +2,8 @@
 # Usage:  pwsh scripts/build_windows.ps1 -Version 1.1.0
 
 param(
-    [string]$Version = "1.0.0"
+    [Parameter(Mandatory = $true)]
+    [string]$Version
 )
 
 $ErrorActionPreference = "Stop"

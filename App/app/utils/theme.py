@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import json
+import os
 
 import customtkinter as ctk
 
@@ -17,7 +18,12 @@ class Theme:
     # ✅ FIXED: Changed from .png to .ico to match iconbitmap() requirements
     ICON_PATH = PROJECT_ROOT / "assets" / "icons" / "icon.ico" 
 
-    COMPANY_NAME = "Untangled Nexus"
+    _CHANNEL = os.getenv("APP_CHANNEL", os.getenv("ENVIRONMENT", "production")).strip().lower()
+    COMPANY_NAME = (
+        "Untangled Nexus"
+        if _CHANNEL == "production"
+        else f"Untangled Nexus [{_CHANNEL.upper()}]"
+    )
     COMPANY_LEGAL_NAME = "Untangled IT Solutions"
     SUBTITLE = "Internal Operations Platform"
     VERSION = __import__("app.__version__", fromlist=["__version__"]).__version__

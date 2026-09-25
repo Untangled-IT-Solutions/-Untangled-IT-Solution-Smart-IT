@@ -13,6 +13,16 @@
 
 Production and staging must use separate API services, MongoDB databases, secrets, and desktop configuration. Production data must never be copied into staging without approved redaction. Every release is promoted through staging after CI, smoke, migration, and backup checks.
 
+Create staging from the repository-root `render-staging.yaml` blueprint. Launch
+the source desktop against it with:
+
+```powershell
+pwsh App/scripts/run_staging.ps1 -ApiUrl https://YOUR-STAGING-SERVICE.onrender.com
+```
+
+The title must display `Untangled Nexus [STAGING]`; stop testing immediately if
+the production title or production API URL appears.
+
 ## Monitoring and alerts
 
 - Probe `/api/health` for process liveness and `/api/ready` for database readiness.

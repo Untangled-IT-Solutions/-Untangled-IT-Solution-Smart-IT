@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 base_url = os.environ.get("NEXUS_API_URL", "").rstrip("/")
@@ -22,6 +23,15 @@ def get(path: str, timeout: float = 15.0) -> tuple[dict, float]:
     return payload, (time.perf_counter() - started) * 1000
 
 
+def status(path: str, timeout: float = 15.0) -> int:
+    request = Request(base_url + path, headers={"Accept": "application/json"})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            return response.status
+    except HTTPError as exc:
+        return exc.code
+
+
 failures = []
 for endpoint in ("/api/health", "/api/ready", "/api/metrics"):
     try:
@@ -33,6 +43,25 @@ for endpoint in ("/api/health", "/api/ready", "/api/metrics"):
             failures.append(f"{endpoint} exceeded 2000 ms")
     except Exception as exc:
         failures.append(f"{endpoint} failed: {type(exc).__name__}")
+
+protected_routes = (
+    "/api/dashboard/summary",
+    "/api/dashboard/director",
+    "/api/dashboard/business-lead",
+    "/api/dashboard/operations",
+    "/api/notifications/unread-count",
+    "/api/notifications/stream",
+)
+for endpoint in protected_routes:
+    try:
+        response_status = status(endpoint)
+        print(f"{endpoint}: HTTP {response_status}")
+        if response_status not in (401, 403):
+            failures.append(
+                f"{endpoint} expected authentication response, got HTTP {response_status}"
+            )
+    except Exception as exc:
+        failures.append(f"{endpoint} route check failed: {type(exc).__name__}")
 
 if failures:
     print("\n".join(failures), file=sys.stderr)

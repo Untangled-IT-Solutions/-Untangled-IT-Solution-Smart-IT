@@ -10,6 +10,8 @@ import sys
 import pytest
 
 from app.services.update_service import (
+    GITHUB_OWNER,
+    GITHUB_REPOSITORY,
     UpdateInfo,
     UpdateService,
     is_newer_version,
@@ -17,6 +19,11 @@ from app.services.update_service import (
 )
 from app.services import updater as updater_mod
 from app.__version__ import __version__
+
+
+def test_update_repository_is_the_canonical_company_repository():
+    assert GITHUB_OWNER == "Untangled-IT-Solutions"
+    assert GITHUB_REPOSITORY == "-Untangled-IT-Solution-Smart-IT"
 
 
 def test_parse_version_basic():

@@ -3,9 +3,12 @@ services:
     name: untangled-nexus-api-staging
     runtime: python
     plan: starter
+    rootDir: untangled-nexus-api-main
+    branch: nexus-reliability-notifications
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/ready
+    autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.8"

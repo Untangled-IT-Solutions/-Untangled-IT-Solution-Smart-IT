@@ -30,8 +30,8 @@ logger = logging.getLogger("untangled.update")
 # GitHub repository that publishes Untangled-Nexus-Setup-X.Y.Z.exe
 # Adjust these if the desktop release repository differs from the API repo.
 # ---------------------------------------------------------------------------
-GITHUB_OWNER = "Siyanda-UntangledItS"
-GITHUB_REPOSITORY = "untangled-nexus"
+GITHUB_OWNER = "Untangled-IT-Solutions"
+GITHUB_REPOSITORY = "-Untangled-IT-Solution-Smart-IT"
 
 REQUEST_TIMEOUT_SECONDS = 15
 DOWNLOAD_TIMEOUT_SECONDS = 120

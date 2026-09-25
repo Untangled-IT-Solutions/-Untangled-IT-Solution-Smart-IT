@@ -22,7 +22,7 @@ remain for subsequent implementation phases.
 |------|--------|
 | Health | `GET /api/health`, `GET /ready` |
 | Auth | `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout` |
-| Dashboard | `GET /api/dashboard/summary`, `GET /api/v1/nexus/dashboard` |
+| Dashboard | `GET /api/dashboard/summary`, `/director`, `/business-lead`, `/operations` |
 | Attendance | `GET /api/attendance/today`, team/history aliases, clock-in/out, break |
 | Notifications | `GET /api/notifications`, unread-count, mark read |
 | Tasks | `GET /api/tasks`, get/update/start/assign |
@@ -45,7 +45,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-**Health check path:** `/api/health`
+**Health check path:** `/api/ready`
 
 **Env**
 
