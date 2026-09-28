@@ -1297,3 +1297,112 @@ ImportError: cannot import name '_format_ticket' from 'app.views.task_view' (C:\
 2026-09-14 15:14:36,300 | INFO    | untangled.app | Main window shown – entering mainloop
 2026-09-14 15:14:43,405 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
 2026-09-14 15:16:01,222 | INFO    | untangled.app | User logged out
+2026-09-15 11:15:12,538 | INFO    | untangled | ============================================================
+2026-09-15 11:15:12,541 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 11:15:12,590 | INFO    | untangled | ============================================================
+2026-09-15 11:15:12,602 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:15:12,604 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:15:12,605 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 11:15:12,639 | INFO    | untangled | Application composition complete
+2026-09-15 11:15:34,297 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 11:15:38,092 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 11:15:44,397 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 11:15:58,561 | ERROR   | untangled.app | Failed to build view Attendance
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\app_controller.py", line 287, in _navigate_destination
+    from app.views.attendance_view import AttendanceView
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\attendance_view.py", line 12, in <module>
+    from app.utils.ui_tasks import ui_task, RemoteCall
+ModuleNotFoundError: No module named 'app.utils.ui_tasks'
+2026-09-15 11:16:02,445 | ERROR   | untangled.app | Failed to build view Attendance
+Traceback (most recent call last):
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\controllers\app_controller.py", line 287, in _navigate_destination
+    from app.views.attendance_view import AttendanceView
+  File "C:\Users\User\OneDrive\-Untangled-IT-Solution-Smart-IT\App\app\views\attendance_view.py", line 12, in <module>
+    from app.utils.ui_tasks import ui_task, RemoteCall
+ModuleNotFoundError: No module named 'app.utils.ui_tasks'
+2026-09-15 11:21:10,287 | INFO    | untangled | ============================================================
+2026-09-15 11:21:10,334 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 11:21:10,402 | INFO    | untangled | ============================================================
+2026-09-15 11:21:10,405 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:21:10,406 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:21:10,470 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 11:21:10,562 | INFO    | untangled | Application composition complete
+2026-09-15 11:21:27,281 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 11:21:31,325 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 11:21:39,904 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 11:23:31,372 | INFO    | untangled | ============================================================
+2026-09-15 11:23:31,413 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 11:23:31,414 | INFO    | untangled | ============================================================
+2026-09-15 11:23:31,416 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:23:31,417 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 11:23:31,418 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 11:23:31,420 | INFO    | untangled | Application composition complete
+2026-09-15 11:23:50,894 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 11:23:54,544 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 11:24:00,616 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 11:39:24,573 | INFO    | untangled.app | User logged out
+2026-09-15 11:39:52,174 | INFO    | untangled.app | Opening main window for Ubuntu Hadebe (Operations Manager)
+2026-09-15 11:39:54,419 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 11:40:00,846 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:06:01,579 | INFO    | untangled | ============================================================
+2026-09-15 12:06:01,591 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 12:06:01,592 | INFO    | untangled | ============================================================
+2026-09-15 12:06:01,594 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:06:01,595 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:06:01,597 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 12:06:01,599 | INFO    | untangled | Application composition complete
+2026-09-15 12:06:18,979 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 12:06:22,615 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 12:06:28,578 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:13:38,442 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/attendance/status
+2026-09-15 12:13:38,445 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/notifications/unread-count
+2026-09-15 12:14:06,877 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='untangled-nexus-api.onrender.com', port=443): Read timed out. (read timeout=45.0)")': /api/dashboard/summary
+2026-09-15 12:14:08,430 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'ReadTimeoutError("HTTPSConnectionPool(host='untangled-nexus-api.onrender.com', port=443): Read timed out. (read timeout=45.0)")': /api/attendance/status
+2026-09-15 12:25:59,481 | INFO    | untangled | ============================================================
+2026-09-15 12:25:59,595 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 12:25:59,596 | INFO    | untangled | ============================================================
+2026-09-15 12:25:59,599 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:25:59,600 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:25:59,607 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 12:25:59,713 | INFO    | untangled | Application composition complete
+2026-09-15 12:26:19,067 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 12:26:23,396 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 12:26:29,787 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:31:34,711 | INFO    | untangled | ============================================================
+2026-09-15 12:31:34,731 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 12:31:34,732 | INFO    | untangled | ============================================================
+2026-09-15 12:31:34,733 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:31:34,734 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:31:34,735 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 12:31:34,771 | INFO    | untangled | Application composition complete
+2026-09-15 12:31:59,451 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 12:32:03,370 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 12:32:10,197 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:36:00,995 | INFO    | untangled | ============================================================
+2026-09-15 12:36:01,022 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 12:36:01,023 | INFO    | untangled | ============================================================
+2026-09-15 12:36:01,024 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:36:01,025 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:36:01,029 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 12:36:01,031 | INFO    | untangled | Application composition complete
+2026-09-15 12:36:01,143 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/health
+2026-09-15 12:36:03,550 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/health
+2026-09-15 12:36:08,352 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/health
+2026-09-15 12:36:15,178 | WARNING | urllib3.connectionpool | Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/auth/login
+2026-09-15 12:36:17,580 | WARNING | urllib3.connectionpool | Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/auth/login
+2026-09-15 12:36:22,381 | WARNING | urllib3.connectionpool | Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NameResolutionError("HTTPSConnection(host='untangled-nexus-api.onrender.com', port=443): Failed to resolve 'untangled-nexus-api.onrender.com' ([Errno 11001] getaddrinfo failed)")': /api/auth/login
+2026-09-15 12:36:42,514 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 12:36:46,050 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 12:36:52,084 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:43:44,899 | INFO    | untangled | ============================================================
+2026-09-15 12:43:44,901 | INFO    | untangled | Untangled Nexus v1.0.0 – starting
+2026-09-15 12:43:44,901 | INFO    | untangled | ============================================================
+2026-09-15 12:43:44,903 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:43:44,904 | INFO    | untangled.api | Backend API client → https://untangled-nexus-api.onrender.com
+2026-09-15 12:43:44,905 | INFO    | untangled | Backend client ready → https://untangled-nexus-api.onrender.com
+2026-09-15 12:43:44,909 | INFO    | untangled | Application composition complete
+2026-09-15 12:44:10,038 | INFO    | untangled.app | Opening main window for Demo Admin (Director)
+2026-09-15 12:44:16,692 | INFO    | untangled.app | Main window shown – entering mainloop
+2026-09-15 12:44:23,434 | INFO    | untangled.update | No GitHub releases found for Siyanda-UntangledItS/untangled-nexus
+2026-09-15 12:54:07,237 | INFO    | untangled.app | User logged out

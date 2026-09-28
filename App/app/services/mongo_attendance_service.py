@@ -51,9 +51,13 @@ class MongoAttendanceService:
         try:
             data = self._backend.attendance_status()
         except BackendAPIError as exc:
-            # Keep previous good state on transient failure
+            # A cached state may keep the timer readable, but it must be marked
+            # stale so callers never mistake it for a fresh server response.
             if self._last_state and self._last_state.get("status") not in (None, "unknown"):
-                return self._last_state
+                stale = dict(self._last_state)
+                stale["stale"] = True
+                stale["sync_error"] = str(exc)
+                return stale
             data = {
                 "error": str(exc),
                 "state": "unknown",
@@ -169,6 +173,9 @@ class MongoAttendanceService:
         if not start_raw:
             return int(record.get("elapsed_seconds") or record.get("seconds") or 0)
 
+        if record.get("clock_out_at") and record.get("work_seconds") is not None:
+            return max(0, int(float(record.get("work_seconds") or 0)))
+
         try:
             if isinstance(start_raw, (int, float)):
                 start = datetime.fromtimestamp(float(start_raw), tz=timezone.utc)
@@ -180,9 +187,18 @@ class MongoAttendanceService:
             now = datetime.now(timezone.utc)
             elapsed = max(0, int((now - start).total_seconds()))
 
-            break_mins = int(record.get("break_duration_minutes") or 0)
-            if break_mins > 0:
-                elapsed = max(0, elapsed - break_mins * 60)
+            break_seconds = float(
+                record.get("break_seconds")
+                or float(record.get("break_duration_minutes") or 0) * 60
+            )
+            break_started = record.get("break_started_at")
+            if break_started and not record.get("clock_out_at"):
+                text = str(break_started).strip().replace("Z", "+00:00")
+                active_break = datetime.fromisoformat(text)
+                if active_break.tzinfo is None:
+                    active_break = active_break.replace(tzinfo=timezone.utc)
+                break_seconds += max(0, (now - active_break).total_seconds())
+            elapsed = max(0, elapsed - int(break_seconds))
             return elapsed
         except Exception:
             return int(record.get("elapsed_seconds") or 0)
