@@ -25,6 +25,19 @@ pwsh App/scripts/run_staging.ps1 -ApiUrl https://YOUR-STAGING-SERVICE.onrender.c
 The title must display `Untangled Nexus [STAGING]`; stop testing immediately if
 the production title or production API URL appears.
 
+For guaranteed zero-billing testing, use disposable local staging instead of
+creating a cloud service:
+
+```powershell
+pwsh App/scripts/start_local_staging.ps1
+# Test with the temporary credentials printed by the launcher.
+pwsh App/scripts/stop_local_staging.ps1
+```
+
+This mode binds the API to `127.0.0.1`, stores all records in memory, requires
+`NODE_ENV=staging`, and loses all test data when stopped. It must never be used
+for production or real company records.
+
 ## Monitoring and alerts
 
 - Probe `/api/health` for process liveness and `/api/ready` for database readiness.

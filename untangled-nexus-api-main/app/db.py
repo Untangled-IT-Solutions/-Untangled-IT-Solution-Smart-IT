@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Any
 from urllib.parse import urlparse, unquote
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from app.config import get_settings
 
-_client: AsyncIOMotorClient | None = None
+_client: Any | None = None
 _db_name: str | None = None
 
 
@@ -50,6 +51,26 @@ def _resolve_db_name(uri: str) -> str:
 async def connect_db() -> None:
     global _client, _db_name
     settings = get_settings()
+    if settings.local_ephemeral_db:
+        if settings.node_env != "staging":
+            raise RuntimeError("LOCAL_EPHEMERAL_DB is allowed only when NODE_ENV=staging")
+        if settings.local_ephemeral_ack != "localhost-only" or os.getenv("RENDER"):
+            raise RuntimeError("Ephemeral staging is restricted to an acknowledged local host")
+        if len(settings.nexus_staging_password) < 12:
+            raise RuntimeError("NEXUS_STAGING_PASSWORD must contain at least 12 characters")
+        try:
+            from mongomock_motor import AsyncMongoMockClient
+        except ImportError as exc:
+            raise RuntimeError(
+                "Local staging requires requirements-dev.txt"
+            ) from exc
+        _db_name = "untangled_its_staging_ephemeral"
+        _client = AsyncMongoMockClient(tz_aware=True)
+        await ensure_indexes(get_db())
+        from app.local_staging import seed_local_staging
+        await seed_local_staging(get_db(), settings.nexus_staging_password)
+        print(f"Local ephemeral MongoDB ready (database={_db_name})")
+        return
     if not settings.mongodb_uri:
         raise RuntimeError("MONGODB_URI is required")
 
@@ -63,7 +84,7 @@ async def connect_db() -> None:
     # Verify connectivity
     await _client.admin.command("ping")
     await ensure_indexes(get_db())
-    print(f"✅ MongoDB connected (database={_db_name})")
+    print(f"MongoDB connected (database={_db_name})")
 
 
 async def close_db() -> None:

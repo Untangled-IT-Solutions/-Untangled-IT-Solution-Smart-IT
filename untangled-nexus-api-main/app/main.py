@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(6 * 60 * 60)
 
     expiry_task = asyncio.create_task(expiry_monitor(), name='document-expiry-monitor')
-    print("✅ MongoDB connected")
-    print("🚀 Untangled Nexus API (FastAPI) ready")
+    print("MongoDB connected")
+    print("Untangled Nexus API (FastAPI) ready")
     yield
     expiry_task.cancel()
     with suppress(asyncio.CancelledError):

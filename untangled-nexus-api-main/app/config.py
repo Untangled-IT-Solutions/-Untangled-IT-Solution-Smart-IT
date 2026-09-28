@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     mongodb_max_pool_size: int = 20
     slow_request_ms: int = Field(default=1_000, ge=100, le=60_000)
     metrics_token: str = ""
+    local_ephemeral_db: bool = False
+    local_ephemeral_ack: str = ""
+    nexus_staging_password: str = ""
 
 
 @lru_cache
