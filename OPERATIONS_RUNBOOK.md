@@ -13,7 +13,9 @@
 
 Production and staging must use separate API services, MongoDB databases, secrets, and desktop configuration. Production data must never be copied into staging without approved redaction. Every release is promoted through staging after CI, smoke, migration, and backup checks.
 
-Create staging from the repository-root `render-staging.yaml` blueprint. Launch
+Create staging from the repository-root `render-staging.yaml` blueprint. It is
+locked to Render's free plan and must not be upgraded without written billing
+authorization. Free services sleep when idle, so allow for cold-start delay. Launch
 the source desktop against it with:
 
 ```powershell
@@ -62,7 +64,8 @@ For P1 incidents, stop deployments, preserve logs, assign an incident lead, comm
 
 ## External configuration required
 
-- Move production from a sleeping/free service to an always-on instance.
+- Keep production on the approved free service until written billing authorization
+  permits an always-on instance; document the cold-start and availability risk.
 - Enable managed continuous backups and point-in-time recovery.
 - Configure centralized logs, error tracking, uptime probes, and alert destinations.
 - Configure company identity SSO and MFA before broad staff rollout.

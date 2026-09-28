@@ -2,7 +2,7 @@ services:
   - type: web
     name: untangled-nexus-api-staging
     runtime: python
-    plan: starter
+    plan: free
     rootDir: untangled-nexus-api-main
     branch: nexus-reliability-notifications
     buildCommand: pip install -r requirements.txt
