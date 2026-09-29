@@ -78,7 +78,7 @@ async def test_people_and_attendance_are_personal_or_authorized_team_scope(api):
     path = "/api/employees/" + str(finance["_id"])
     await call(c, h, "GET", path, "Business Lead", expected=403)
     await call(c, h, "GET", path, "Operations Manager")
-    await call(c, h, "GET", "/api/attendance/team", "Business Lead", expected=403)
+    await call(c, h, "GET", "/api/attendance/team", "Business Lead")
     await call(c, h, "GET", "/api/attendance/team", "Operations Manager")
     await call(
         c, h, "GET", "/api/attendance/today?employee_id=" + str(finance["_id"]),

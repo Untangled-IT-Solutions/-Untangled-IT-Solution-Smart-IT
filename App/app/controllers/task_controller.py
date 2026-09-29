@@ -1,4 +1,4 @@
-"""Task controller – Backend only, with assignment notifications and role rules."""
+"""Task controller – Backend-only task workflow and role rules."""
 
 from __future__ import annotations
 
@@ -116,7 +116,6 @@ class TaskController:
         if not self.can_assign_tasks():
             raise PermissionError("Only Operations Managers can assign tasks.")
         self._service.assign_task(task_id, assignee)
-        self._notify_assignment(assignee=assignee, task_id=task_id, title=None)
 
     def start_work(self, task_id: Any, note: str = "") -> None:
         self._service.start_work(task_id, note)
@@ -158,37 +157,5 @@ class TaskController:
     def create_task(self, data: dict) -> dict:
         if not self.is_manager():
             raise PermissionError("Employees cannot create tasks. Tasks are assigned to you by a manager.")
-        result = self._service.create_task(data)
-        assignee = (data.get("assigned_employee") or "").strip()
-        if assignee and assignee.lower() != "unassigned":
-            title = data.get("title") or ""
-            task_id = None
-            if isinstance(result, dict):
-                task = result.get("task") or result
-                if isinstance(task, dict):
-                    task_id = task.get("id") or task.get("_id")
-            self._notify_assignment(assignee=assignee, task_id=task_id, title=title)
-        return result
-
-    def _notify_assignment(
-        self,
-        *,
-        assignee: str,
-        task_id: Any = None,
-        title: Optional[str] = None,
-    ) -> None:
-        if not self._notifications or not assignee:
-            return
-        try:
-            msg_title = "New task assigned"
-            message = f'You were assigned "{title}"' if title else "You have a new task assignment."
-            self._notifications.notify_user(
-                user_name=assignee,
-                title=msg_title,
-                message=message,
-                category="Task",
-                reference_type="task",
-                reference_id=str(task_id) if task_id else None,
-            )
-        except Exception as exc:
-            print(f"⚠️ Task assignment notification failed: {exc}")
+        # The API owns task notifications so each assignment emits exactly once.
+        return self._service.create_task(data)

@@ -10,9 +10,9 @@ Navigation:
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
-import queue
 import threading
 
 import customtkinter as ctk
@@ -27,7 +27,7 @@ from app.controllers.navigation_controller import NavigationController
 from app.controllers.search_controller import SearchController
 from app.models.account import UserAccount
 from app.utils.theme import Theme
-from app.utils.async_tasks import start_ui_dispatcher
+from app.utils.async_tasks import run_in_background, start_ui_dispatcher
 from app.widgets.sidebar_button import SidebarButton
 from app.views.search_view import GlobalSearchModal
 from app.services.mongo_attendance_service import MongoAttendanceService
@@ -53,12 +53,9 @@ class TimerWidget(ctk.CTkFrame):
         self._state = None
         self._navigation_controller = None  # Timer is intentionally not a navigation owner.
         self._busy = False
-        self._backend_queue = queue.Queue()
-        self._queue_job = None
         self._build_layout()
         # TimerWidget is a UI component, not the navigation owner.
         # NavigationController must be attached to MainWindow instead.
-        self._queue_job = self.after(200, self._drain_backend_queue)
         self.after(100, self._initial_sync)
 
     def _build_layout(self) -> None:
@@ -92,41 +89,13 @@ class TimerWidget(ctk.CTkFrame):
         self._busy = True
         self._set_buttons_busy(True)
 
-        import threading
-
-        def worker():
-            try:
-                result = operation()
-                self._backend_queue.put(("success", result, on_success, action_name))
-            except Exception as exc:
-                self._backend_queue.put(("error", exc, None, action_name))
-
-        threading.Thread(target=worker, name="attendance-api", daemon=True).start()
-
-    def _drain_backend_queue(self) -> None:
-        """Apply background HTTP results on Tkinter's main thread only."""
-        if self._is_destroyed:
-            return
-
-        handled = False
-        try:
-            while True:
-                kind, payload, callback, action_name = self._backend_queue.get_nowait()
-                handled = True
-                if kind == "success":
-                    self._backend_success(payload, callback)
-                else:
-                    self._backend_error(payload, action_name)
-        except queue.Empty:
-            pass
-        except Exception as exc:
-            print(f"⚠️ Attendance UI callback error: {exc}")
-
-        if not self._is_destroyed:
-            try:
-                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
-            except Exception:
-                self._queue_job = None
+        run_in_background(
+            self,
+            operation,
+            lambda result: self._backend_success(result, on_success),
+            lambda exc: self._backend_error(exc, action_name),
+            name="attendance-api",
+        )
 
     def _backend_success(self, result, callback=None) -> None:
         self._busy = False
@@ -275,18 +244,16 @@ class TimerWidget(ctk.CTkFrame):
         self._sync_from_backend()
 
     def pause(self) -> None:
-        for job in (self._update_job, self._sync_job, self._queue_job):
+        for job in (self._update_job, self._sync_job):
             if job is not None:
                 try:
                     self.after_cancel(job)
                 except Exception:
                     pass
-        self._update_job = self._sync_job = self._queue_job = None
+        self._update_job = self._sync_job = None
 
     def resume(self) -> None:
         if not self._is_destroyed:
-            if self._queue_job is None:
-                self._queue_job = self.after(50, self._drain_backend_queue)
             self._sync_from_backend()
             self._schedule_local_tick()
 
@@ -294,13 +261,13 @@ class TimerWidget(ctk.CTkFrame):
         if self._is_destroyed:
             return
         self._is_destroyed = True
-        for job in (self._update_job, self._sync_job, self._queue_job):
+        for job in (self._update_job, self._sync_job):
             if job is not None:
                 try:
                     self.after_cancel(job)
                 except Exception:
                     pass
-        self._update_job = self._sync_job = self._queue_job = None
+        self._update_job = self._sync_job = None
         try:
             super().destroy()
         except Exception:
@@ -309,6 +276,8 @@ class TimerWidget(ctk.CTkFrame):
 
 class MainWindow(ctk.CTkToplevel):
     """Primary desktop shell with role-based navigation."""
+
+    MAX_CACHED_VIEWS = 4
 
     def __init__(
         self,
@@ -327,6 +296,7 @@ class MainWindow(ctk.CTkToplevel):
 
         self._nav_buttons = {}
         self._active_view = None
+        self._view_cache = OrderedDict()
         self._timer_widget = None
         self._active_destination = "Dashboard"
         self._logo_image = None
@@ -409,6 +379,7 @@ class MainWindow(ctk.CTkToplevel):
         print(f"🔄 MainWindow: Updating to new user: {getattr(account, 'full_name', 'Unknown')}")
 
         self._current_account = account
+        self._clear_view_cache()
 
         # Update navigation for new user's role
         if hasattr(self._navigation_controller, 'set_current_account'):
@@ -1075,7 +1046,18 @@ class MainWindow(ctk.CTkToplevel):
         except Exception:
             return False
 
-        # Place the new view first. If grid succeeds, the old view can be removed.
+        was_cached = bool(
+            destination
+            and self._view_cache.get(destination) is view
+        )
+
+        if self._active_view is view:
+            self._activate_workspace_view(view, refresh=True)
+            self.set_active_nav(destination or self._active_destination)
+            return True
+
+        # Place the new view first. The old view remains underneath until the
+        # replacement is mapped, so no synchronous geometry flush is needed.
         try:
             view.grid(
                 row=0,
@@ -1085,10 +1067,6 @@ class MainWindow(ctk.CTkToplevel):
                 pady=28,
             )
             view.lift()
-            # Force Tk to process the geometry change before replacing the
-            # previous workspace. This avoids a blank workspace during
-            # rapid navigation between complex CustomTkinter views.
-            self.workspace.update_idletasks()
         except Exception as exp:
             print(f"❌ Error displaying view: {exp}")
             try:
@@ -1105,12 +1083,69 @@ class MainWindow(ctk.CTkToplevel):
         if old_view is not None and old_view is not view:
             try:
                 if old_view.winfo_exists():
-                    old_view.destroy()
+                    on_hide = getattr(old_view, "on_hide", None)
+                    if callable(on_hide):
+                        on_hide()
+                    old_view.grid_remove()
             except Exception:
                 pass
 
+        if destination:
+            self._view_cache[destination] = view
+            self._view_cache.move_to_end(destination)
+        self._activate_workspace_view(view, refresh=was_cached)
+        self._trim_view_cache()
         self.set_active_nav(self._active_destination)
         return True
+
+    def get_cached_workspace_view(self, destination: str):
+        """Return a valid cached page and mark it as recently used."""
+        view = self._view_cache.get(destination)
+        if view is None:
+            return None
+        try:
+            if not view.winfo_exists():
+                self._view_cache.pop(destination, None)
+                return None
+        except Exception:
+            self._view_cache.pop(destination, None)
+            return None
+        self._view_cache.move_to_end(destination)
+        return view
+
+    @staticmethod
+    def _activate_workspace_view(view, *, refresh: bool) -> None:
+        on_show = getattr(view, "on_show", None)
+        if callable(on_show):
+            on_show()
+        elif refresh:
+            refresher = getattr(view, "refresh", None)
+            if callable(refresher):
+                refresher()
+
+    def _trim_view_cache(self) -> None:
+        while len(self._view_cache) > self.MAX_CACHED_VIEWS:
+            victim_key = next(
+                (key for key, cached in self._view_cache.items() if cached is not self._active_view),
+                None,
+            )
+            if victim_key is None:
+                return
+            victim = self._view_cache.pop(victim_key)
+            try:
+                victim.destroy()
+            except Exception:
+                pass
+
+    def _clear_view_cache(self) -> None:
+        cached = list(self._view_cache.values())
+        self._view_cache.clear()
+        self._active_view = None
+        for view in cached:
+            try:
+                view.destroy()
+            except Exception:
+                pass
 
     def navigate_to(self, destination: str) -> None:
         """Navigate safely on Tk's main event loop.
@@ -1173,6 +1208,7 @@ class MainWindow(ctk.CTkToplevel):
             persist=True,
         )
 
+        self._clear_view_cache()
         for widget in self.winfo_children():
             try:
                 widget.destroy()
@@ -1184,7 +1220,6 @@ class MainWindow(ctk.CTkToplevel):
         )
 
         self._nav_buttons.clear()
-        self._active_view = None
         self._timer_widget = None
         self._nav_frame = None
         self._logo_image = None
@@ -1231,6 +1266,7 @@ class MainWindow(ctk.CTkToplevel):
 
         self._is_destroyed = True
         self._notification_stream_stop.set()
+        self._clear_view_cache()
 
         if self._timer_widget is not None:
             try:
@@ -1239,8 +1275,6 @@ class MainWindow(ctk.CTkToplevel):
                 pass
 
             self._timer_widget = None
-
-        self._active_view = None
 
         try:
             super().destroy()

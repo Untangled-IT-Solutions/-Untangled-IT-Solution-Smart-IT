@@ -42,6 +42,14 @@ def controller(role):
     return TaskController(work, People(), get_current_account=lambda: account), work
 
 
+class Notifications:
+    def __init__(self):
+        self.calls = []
+
+    def notify_user(self, **kwargs):
+        self.calls.append(kwargs)
+
+
 def test_business_lead_can_dump_but_cannot_assign_or_open_operations_queue():
     ctrl, work = controller("Business Lead")
     assert ctrl.can_create_tasks() is True
@@ -60,6 +68,24 @@ def test_operations_manager_can_assign_and_review():
     ctrl.approve_review("t1", "Done")
     ctrl.prioritize_task("t1", "Urgent")
     assert [call[0] for call in work.calls] == ["assign", "approve", "prioritize"]
+
+
+def test_task_notifications_are_emitted_by_the_api_only():
+    work = Work()
+    notifications = Notifications()
+    account = SimpleNamespace(role="Operations Manager", full_name="Operations Person")
+    ctrl = TaskController(
+        work,
+        People(),
+        notification_service=notifications,
+        get_current_account=lambda: account,
+    )
+
+    ctrl.assign_task("t1", "Staff Person")
+    ctrl.create_task({"title": "Test", "assigned_employee": "Staff Person"})
+
+    assert notifications.calls == []
+    assert [call[0] for call in work.calls] == ["assign", "create"]
 
 
 def test_staff_cannot_create_assign_or_review():

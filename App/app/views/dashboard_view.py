@@ -11,13 +11,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Optional
-import queue
-import threading
 import time
 
 import customtkinter as ctk
 
 from app.controllers.dashboard_controller import DashboardController
+from app.utils.async_tasks import run_in_background
 from app.utils.theme import Theme
 
 
@@ -219,11 +218,11 @@ class DashboardView(ctk.CTkFrame):
 
         self._controller = controller
         self._refresh_job: Optional[str] = None
-        self._queue_job: Optional[str] = None
+        self._clock_job: Optional[str] = None
         self._is_destroyed = False
+        self._is_visible = True
         self._refresh_running = False
         self._last_refresh_started = 0.0
-        self._backend_queue: queue.Queue = queue.Queue()
         self._summary: Any = None
         self._last_error: Optional[str] = None
 
@@ -282,7 +281,6 @@ class DashboardView(ctk.CTkFrame):
         else:
             self._build_employee()
 
-        self._queue_job = self.after(200, self._drain_backend_queue)
         self.after(150, self._safe_refresh)
         self._refresh_job = self.after(self.REFRESH_INTERVAL_MS, self._scheduled_refresh)
 
@@ -436,15 +434,16 @@ class DashboardView(ctk.CTkFrame):
         return card
 
     def _tick_clock(self) -> None:
-        if self._is_destroyed:
+        if self._is_destroyed or not self._is_visible:
+            self._clock_job = None
             return
         try:
             now = datetime.now()
             if hasattr(self, "date_label"):
                 self.date_label.configure(text=f"🕐  {now.strftime('%H:%M:%S')} SAST")
-            self.after(1000, self._tick_clock)
+            self._clock_job = self.after(1000, self._tick_clock)
         except Exception:
-            pass
+            self._clock_job = None
 
     def _show_error(self, message: str) -> None:
         self._last_error = message
@@ -589,7 +588,7 @@ class DashboardView(ctk.CTkFrame):
             anchor="e",
         )
         self.date_label.pack(anchor="e", pady=(4, 0))
-        self.after(1000, self._tick_clock)
+        self._clock_job = self.after(1000, self._tick_clock)
 
     # ==================================================================
     # EXECUTIVE LAYOUT
@@ -1293,7 +1292,7 @@ class DashboardView(ctk.CTkFrame):
             self._safe_refresh()
 
     def _safe_refresh(self) -> None:
-        if self._is_destroyed or self._refresh_running:
+        if self._is_destroyed or not self._is_visible or self._refresh_running:
             return
         try:
             if not self.winfo_exists():
@@ -1310,47 +1309,33 @@ class DashboardView(ctk.CTkFrame):
         if self._summary is None:
             self._show_loading("Loading dashboard…")
 
-        def worker() -> None:
-            try:
-                summary = self._controller.get_summary()
-                self._backend_queue.put((True, summary, None))
-            except Exception as exc:
-                self._backend_queue.put((False, None, exc))
+        run_in_background(
+            self,
+            self._controller.get_summary,
+            self._accept_summary,
+            self._reject_summary,
+            name="dashboard-api",
+        )
 
-        threading.Thread(target=worker, daemon=True, name="DashboardAPI").start()
-
-    def _drain_backend_queue(self) -> None:
-        if self._is_destroyed:
+    def _accept_summary(self, summary) -> None:
+        self._refresh_running = False
+        if self._is_destroyed or not self._is_visible:
             return
-        handled = False
-        try:
-            while True:
-                success, summary, error = self._backend_queue.get_nowait()
-                handled = True
-                self._refresh_running = False
-                if success:
-                    self._hide_loading()
-                    if isinstance(summary, dict) and summary.get("error"):
-                        self._show_error(str(summary.get("error")))
-                        # Do not invent zeros on partial/error payloads
-                        self._apply_summary(summary)
-                    else:
-                        self._clear_error()
-                        self._apply_summary(summary)
-                else:
-                    self._hide_loading()
-                    print(f"⚠️ Dashboard refresh error: {error}")
-                    self._show_error(str(error) if error else "Unknown error")
-        except queue.Empty:
-            pass
-        except Exception as exc:
-            self._refresh_running = False
-            print(f"⚠️ Dashboard result handling error: {exc}")
-        if not self._is_destroyed:
-            try:
-                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
-            except Exception:
-                self._queue_job = None
+        self._hide_loading()
+        if isinstance(summary, dict) and summary.get("error"):
+            self._show_error(str(summary.get("error")))
+            self._apply_summary(summary)
+        else:
+            self._clear_error()
+            self._apply_summary(summary)
+
+    def _reject_summary(self, error: Exception) -> None:
+        self._refresh_running = False
+        if self._is_destroyed or not self._is_visible:
+            return
+        self._hide_loading()
+        print(f"⚠️ Dashboard refresh error: {error}")
+        self._show_error(str(error) if error else "Unknown error")
 
     def _apply_summary(self, summary) -> None:
         if self._is_destroyed:
@@ -1580,7 +1565,8 @@ class DashboardView(ctk.CTkFrame):
             return str(value)[:16]
 
     def _scheduled_refresh(self) -> None:
-        if self._is_destroyed:
+        if self._is_destroyed or not self._is_visible:
+            self._refresh_job = None
             return
         self._safe_refresh()
         if self._is_destroyed:
@@ -1596,6 +1582,33 @@ class DashboardView(ctk.CTkFrame):
     def _refresh_data(self) -> None:
         self._safe_refresh()
 
+    def on_hide(self) -> None:
+        """Pause page-local timers while another cached page is visible."""
+        self._is_visible = False
+        for attr in ("_refresh_job", "_clock_job", "_spin_job"):
+            job = getattr(self, attr, None)
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def on_show(self) -> None:
+        """Resume lightweight timers and refresh cached dashboard data."""
+        if self._is_destroyed:
+            return
+        was_visible = self._is_visible
+        self._is_visible = True
+        if self._clock_job is None and hasattr(self, "date_label"):
+            self._clock_job = self.after(1000, self._tick_clock)
+        if self._refresh_job is None:
+            self._refresh_job = self.after(self.REFRESH_INTERVAL_MS, self._scheduled_refresh)
+        if getattr(self, "_loading_visible", False) and getattr(self, "_spin_job", None) is None:
+            self._animate_spinner()
+        if not was_visible:
+            self._safe_refresh()
+
     def destroy(self) -> None:
         if self._is_destroyed:
             return
@@ -1607,13 +1620,13 @@ class DashboardView(ctk.CTkFrame):
             except Exception:
                 pass
             self._spin_job = None
-        for job in (self._refresh_job, self._queue_job):
+        for job in (self._refresh_job, self._clock_job):
             if job:
                 try:
                     self.after_cancel(job)
                 except Exception:
                     pass
-        self._refresh_job = self._queue_job = None
+        self._refresh_job = self._clock_job = None
         try:
             super().destroy()
         except Exception:

@@ -262,9 +262,13 @@ class AppController:
         controller = controller_map.get(destination)
 
         try:
+            cache_lookup = getattr(window, "get_cached_workspace_view", None)
+            view = cache_lookup(destination) if callable(cache_lookup) else None
             # Attendance needs the same MongoAttendanceService the header timer uses,
             # plus the logged-in account (employee_id). Navigation alone does not inject them.
-            if destination == "Attendance":
+            if view is not None:
+                pass
+            elif destination == "Attendance":
                 from app.views.attendance_view import AttendanceView
                 view = AttendanceView(
                     workspace,

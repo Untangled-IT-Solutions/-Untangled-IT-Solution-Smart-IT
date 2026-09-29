@@ -48,6 +48,8 @@ class NotificationView(ctk.CTkFrame):
 
         self._previous_notification_ids = set()
         self._destroyed = False
+        self._is_visible = True
+        self._auto_refresh_job = None
 
         self.role_var = ctk.StringVar(
             value=self.filters.get("role", "All")
@@ -59,7 +61,7 @@ class NotificationView(ctk.CTkFrame):
 
         self.build_ui()
         (yield from ui_steps(self.refresh))
-        (yield from ui_steps(self._schedule_auto_refresh))
+        self._auto_refresh_job = self.after(60000, self._schedule_auto_refresh)
 
     def build_ui(self):
         """Build the notification UI with sound toggle and Mark all as read."""
@@ -225,16 +227,19 @@ class NotificationView(ctk.CTkFrame):
 
     @ui_task
     def refresh(self):
-        if self._destroyed:
+        if self._destroyed or not self._is_visible:
             return
-
-        for child in self.list_frame.winfo_children():
-            child.destroy()
 
         display_notifications = (yield RemoteCall(self.controller.get_notifications,
             role=self.role_var.get(),
             unread_only=self.unread_var.get(),
         ))
+
+        if self._destroyed or not self._is_visible:
+            return
+
+        for child in self.list_frame.winfo_children():
+            child.destroy()
 
         current_ids = set()
         for item in display_notifications or []:
@@ -410,16 +415,44 @@ class NotificationView(ctk.CTkFrame):
 
     @ui_task
     def _schedule_auto_refresh(self):
-        if self._destroyed:
+        self._auto_refresh_job = None
+        if self._destroyed or not self._is_visible:
             return
         try:
             (yield from ui_steps(self.refresh))
         except Exception:
             pass
-        self.after(25000, self._schedule_auto_refresh)
+        if not self._destroyed and self._is_visible:
+            self._auto_refresh_job = self.after(60000, self._schedule_auto_refresh)
+
+    def on_hide(self):
+        self._is_visible = False
+        if self._auto_refresh_job is not None:
+            try:
+                self.after_cancel(self._auto_refresh_job)
+            except Exception:
+                pass
+            self._auto_refresh_job = None
+        SoundManager.stop_reminder()
+
+    def on_show(self):
+        if self._destroyed:
+            return
+        was_visible = self._is_visible
+        self._is_visible = True
+        if not was_visible:
+            self.refresh()
+        if self._auto_refresh_job is None:
+            self._auto_refresh_job = self.after(60000, self._schedule_auto_refresh)
 
     def destroy(self):
         self._destroyed = True
+        if self._auto_refresh_job is not None:
+            try:
+                self.after_cancel(self._auto_refresh_job)
+            except Exception:
+                pass
+            self._auto_refresh_job = None
         SoundManager.stop_reminder()
         try:
             super().destroy()

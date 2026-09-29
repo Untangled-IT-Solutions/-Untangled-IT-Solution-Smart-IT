@@ -7,8 +7,7 @@ status/Logout card. This view only renders the Attendance content below that.
 
 import customtkinter as ctk
 from datetime import datetime
-import queue
-import threading
+from app.utils.async_tasks import run_in_background
 from app.utils.ui_tasks import ui_task, RemoteCall
 from typing import Optional, Dict, Any, List
 
@@ -72,13 +71,13 @@ class AttendanceView(ctk.CTkFrame):
         # The timer must never perform HTTP/network I/O from Tkinter's main thread.
         self._refresh_job = None
         self._timer_job = None
-        self._queue_job = None
-        self._backend_queue = queue.Queue()
+        self._datetime_job = None
         self._sync_inflight = False
         self._action_inflight = False
 
         self._calendar_days = 7
         self._is_destroyed = False
+        self._is_visible = True
         self._last_update_time = 0
         self._backend_refresh_seconds = 30
         self._retry_count = 0
@@ -113,8 +112,6 @@ class AttendanceView(ctk.CTkFrame):
         self._timer_job = self.after(1000, self._local_timer_tick)
 
         # All backend I/O starts in a worker thread.
-        self._queue_job = self.after(200, self._drain_backend_queue)
-
         # Show loader until the first status response arrives (~1–2s on Render).
         self.after(10, lambda: self._show_loading("Loading attendance…"))
         self._sync_from_backend()
@@ -623,16 +620,17 @@ class AttendanceView(ctk.CTkFrame):
     def _update_datetime(self):
         """Update the datetime label every second."""
         try:
-            if self._is_destroyed:
+            if self._is_destroyed or not self._is_visible:
+                self._datetime_job = None
                 return
             from zoneinfo import ZoneInfo
             now = datetime.now(ZoneInfo("Africa/Johannesburg"))
             self._datetime_label.configure(
                 text=f"📅  {now.strftime('%A, %d %B %Y')}   |   🕐  {now.strftime('%H:%M:%S')} SAST"
             )
-            self.after(1000, self._update_datetime)
+            self._datetime_job = self.after(1000, self._update_datetime)
         except Exception:
-            pass
+            self._datetime_job = None
 
     def _selected_employee(self):
         if self.employee_menu is not None:
@@ -651,48 +649,17 @@ class AttendanceView(ctk.CTkFrame):
         if self._is_destroyed:
             return
 
-        def worker():
-            try:
-                result = operation()
-                self._backend_queue.put(("success", result, callback, action_name))
-            except Exception as exc:
-                self._backend_queue.put(("error", exc, None, action_name))
-
-        threading.Thread(
-            target=worker,
+        run_in_background(
+            self,
+            operation,
+            callback,
+            lambda exc: self._backend_error(exc, action_name),
             name=f"{action_name}-api",
-            daemon=True,
-        ).start()
-
-    def _drain_backend_queue(self):
-        """Apply background API results on Tkinter's main thread only."""
-        if self._is_destroyed:
-            return
-
-        handled = False
-        try:
-            while True:
-                kind, payload, callback, action_name = self._backend_queue.get_nowait()
-                handled = True
-                if kind == "success":
-                    if callback:
-                        callback(payload)
-                else:
-                    self._backend_error(payload, action_name)
-        except queue.Empty:
-            pass
-        except Exception as exc:
-            print(f"⚠️ Attendance UI callback error: {exc}")
-
-        if not self._is_destroyed:
-            try:
-                self._queue_job = self.after(25 if handled else 200, self._drain_backend_queue)
-            except Exception:
-                self._queue_job = None
+        )
 
     def _sync_from_backend(self, delay=None):
         """Synchronize authoritative attendance state without blocking the UI."""
-        if self._is_destroyed:
+        if self._is_destroyed or not self._is_visible:
             return
 
         if self._mongo is None:
@@ -731,11 +698,11 @@ class AttendanceView(ctk.CTkFrame):
         )
 
     def _accept_backend_state(self, state):
-        if self._is_destroyed:
+        self._sync_inflight = False
+        if self._is_destroyed or not self._is_visible:
             return
 
         self._hide_loading()
-        self._sync_inflight = False
         self._timer_state = dict(state or {})
         # Prefer the record from this payload; never wipe an active session with None
         incoming = self._timer_state.get("record")
@@ -776,7 +743,7 @@ class AttendanceView(ctk.CTkFrame):
             self._schedule_backend_sync(delay)
 
     def _schedule_backend_sync(self, delay_ms=None):
-        if self._is_destroyed:
+        if self._is_destroyed or not self._is_visible:
             return
 
         if self._refresh_job is not None:
@@ -804,7 +771,8 @@ class AttendanceView(ctk.CTkFrame):
 
     def _local_timer_tick(self):
         """Update the visible timer every second without touching the backend."""
-        if self._is_destroyed:
+        if self._is_destroyed or not self._is_visible:
+            self._timer_job = None
             return
 
         self._render_live_timer()
@@ -813,6 +781,31 @@ class AttendanceView(ctk.CTkFrame):
             self._timer_job = self.after(1000, self._local_timer_tick)
         except Exception:
             self._timer_job = None
+
+    def on_hide(self) -> None:
+        """Pause attendance timers while this cached page is hidden."""
+        self._is_visible = False
+        for attr in ("_refresh_job", "_timer_job", "_datetime_job", "_spin_job"):
+            job = getattr(self, attr, None)
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def on_show(self) -> None:
+        """Resume local timers and request one fresh authoritative state."""
+        if self._is_destroyed:
+            return
+        was_visible = self._is_visible
+        self._is_visible = True
+        if self._datetime_job is None:
+            self._update_datetime()
+        if self._timer_job is None:
+            self._timer_job = self.after(1000, self._local_timer_tick)
+        if not was_visible:
+            self._sync_from_backend(delay=0)
 
     def _render_live_timer(self):
         """Use the same live calculation as MainWindow.TimerWidget."""
@@ -1397,7 +1390,7 @@ class AttendanceView(ctk.CTkFrame):
                 pass
             self._spin_job = None
 
-        for attr in ("_refresh_job", "_timer_job", "_queue_job"):
+        for attr in ("_refresh_job", "_timer_job", "_datetime_job"):
             job = getattr(self, attr, None)
             if job is not None:
                 try:

@@ -200,6 +200,38 @@ def test_dashboard_existing_worker(root,controllers):
     view.destroy()
 
 
+def test_navigation_reuses_cached_workspace_view(controllers, monkeypatch):
+    app, _ = controllers
+    created = []
+
+    class Window:
+        workspace = object()
+
+        def __init__(self):
+            self.cache = {}
+
+        def get_cached_workspace_view(self, destination):
+            return self.cache.get(destination)
+
+        def show_workspace_view(self, view, destination):
+            self.cache[destination] = view
+            return True
+
+    window = Window()
+    app._main_window = window
+
+    def create_view(destination, workspace, controller):
+        view = object()
+        created.append((destination, view))
+        return view
+
+    app._navigation_controller = SimpleNamespace(get_view=create_view)
+
+    assert app._navigate_destination("Projects") is True
+    assert app._navigate_destination("Projects") is True
+    assert len(created) == 1
+
+
 def test_main_thread_network_guard(root):
     from app.services.backend_api_client import BackendAPIClient, BackendAPIError
     with pytest.raises(BackendAPIError,match='background worker'):

@@ -7,6 +7,7 @@ from app.security import employee_reference_values, require_session, serialize_i
 from app.domain import PEOPLE_OVERSIGHT, role, require_roles, refs, own, employee_by_reference, date_string, now, name, as_datetime, change, audit
 
 router = APIRouter(tags=['attendance'])
+ATTENDANCE_OVERSIGHT = PEOPLE_OVERSIGHT | {'Business Lead'}
 
 
 def _serialize_attendance(record):
@@ -21,10 +22,10 @@ async def _get_today_record(db, employee_id):
 async def attendance_filter(ctx, employee_id=None):
     if employee_id is not None:
         employee = await employee_by_reference(ctx['db'], employee_id)
-        if role(ctx) not in PEOPLE_OVERSIGHT and not own(ctx, employee['_id']):
+        if role(ctx) not in ATTENDANCE_OVERSIGHT and not own(ctx, employee['_id']):
             raise HTTPException(403, 'You can only view your own attendance.')
         return {'employee_id': {'$in': refs(employee)}}
-    return {} if role(ctx) in PEOPLE_OVERSIGHT else {'employee_id': {'$in': refs(ctx['employee'])}}
+    return {} if role(ctx) in ATTENDANCE_OVERSIGHT else {'employee_id': {'$in': refs(ctx['employee'])}}
 
 
 @router.get('/api/attendance/today')
@@ -40,7 +41,7 @@ async def attendance_today(date: str | None = None, employee_id: str | None = No
 @router.get('/api/attendance/team')
 @router.get('/api/admin/attendance/team')
 async def attendance_team(date: str | None = None, ctx: dict = Depends(require_session)):
-    require_roles(ctx, PEOPLE_OVERSIGHT)
+    require_roles(ctx, ATTENDANCE_OVERSIGHT)
     return await attendance_today(date, None, ctx)
 
 
@@ -62,7 +63,7 @@ async def attendance_history(days: int = Query(1, ge=1, le=366), employee_id: st
 
 @router.get('/api/attendance/working-now')
 async def working_now(ctx: dict = Depends(require_session)):
-    require_roles(ctx, PEOPLE_OVERSIGHT)
+    require_roles(ctx, ATTENDANCE_OVERSIGHT)
     on_shift = await ctx['db']['attendance'].find({'work_date': today_south_africa(), 'clock_in_at': {'$exists': True, '$ne': None}, 'clock_out_at': None}).to_list(None)
     working = [row for row in on_shift if str(row.get('status') or '').lower() not in {'on_break', 'break'}]
     return {
