@@ -7,6 +7,7 @@ reads and updates those same MongoDB collections only through this API.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,12 +27,15 @@ from app.domain import (
     role,
 )
 from app.security import is_active, require_session, serialize_id
+from app.quotation import build_snapshot
 
 router = APIRouter(tags=["quotes"])
 
 QUOTE_STATES = {
     "received", "pending", "assigned", "accepted", "in_progress", "in_review",
-    "returned", "quoted", "completed", "cancelled",
+    "returned", "quoted", "completed", "cancelled", "awaiting_details",
+    "awaiting_client_approval", "awaiting_client", "awaiting_payment", "paid",
+    "out_for_delivery",
 }
 ORDER_STATES = {
     "pending", "confirmed", "processing", "in_progress", "ready", "shipped",
@@ -68,6 +72,27 @@ class DirectorReview(BaseModel):
     model_config = ConfigDict(extra="ignore")
     general_reply: str = Field(default="", max_length=20000)
     items: list[dict[str, Any]] = Field(default_factory=list, max_length=500)
+
+
+class QuotationLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sku: str = Field(default="", max_length=120)
+    description: str = Field(min_length=1, max_length=1000)
+    quantity: Decimal = Field(gt=0, le=100000)
+    cost_unit_excl_vat: Decimal = Field(ge=0, le=100000000)
+    markup_percent: Decimal = Field(default=Decimal("25"), ge=0, le=500)
+    specifications: list[str] = Field(default_factory=list, max_length=20)
+
+
+class QuotationDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lines: list[QuotationLine] = Field(min_length=1, max_length=500)
+    validity_days: int = Field(default=14, ge=1, le=90)
+    vat_percent: Decimal = Field(default=Decimal("15"), ge=0, le=30)
+    delivery_fee_excl_vat: Decimal = Field(default=Decimal("0"), ge=0, le=100000000)
+    source_filename: str = Field(default="", max_length=255)
+    supplier: str = Field(default="", max_length=160)
+    notes: str = Field(default="", max_length=2000)
 
 
 def scope(ctx):
@@ -225,6 +250,47 @@ async def update_status(ctx, collection, reference, body):
 @router.patch("/api/quotes/{reference}/status")
 async def update_quote_status(reference: str, body: StatusUpdate, ctx: dict = Depends(require_session)):
     return await update_status(ctx, "quotes", reference, body)
+
+
+@router.put("/api/quotes/{reference}/quotation")
+async def save_quotation(reference: str, body: QuotationDraft, ctx: dict = Depends(require_session)):
+    """Save an auditable quotation revision using server-calculated totals."""
+    require_roles(ctx, MANAGEMENT)
+    record = await load_record(ctx, "quotes", reference, require_access=False)
+    snapshot = build_snapshot(reference, body, name(ctx["employee"]))
+    history = list(record.get("quotation_history") or [])
+    previous = record.get("quotation_snapshot")
+    if isinstance(previous, dict):
+        history.append(previous)
+    history = history[-20:]
+    public_lines = [
+        {
+            "sku": line["sku"],
+            "description": line["description"],
+            "quantity": line["quantity"],
+            "unit_price_excl_vat": line["unit_price_excl_vat"],
+            "amount": line["line_total_excl_vat"],
+        }
+        for line in snapshot["lines"]
+    ]
+    updated = await change(
+        ctx["db"]["quotes"], record,
+        {
+            "quotation_snapshot": snapshot,
+            "quotation_history": history,
+            "quotation": public_lines,
+            "quotation_subtotal": snapshot["subtotal_excl_vat"],
+            "quotation_vat": snapshot["vat_amount"],
+            "quotation_total": snapshot["total_incl_vat"],
+            "paymentAmount": float(snapshot["total_incl_vat"]),
+            "paymentRequired": True,
+            "quote_valid_until": snapshot["valid_until"],
+            "status": "quoted",
+            "updatedAt": now(),
+        },
+        audit(ctx, "quotation_saved", f"{len(snapshot['lines'])} priced line(s)"),
+    )
+    return {"success": True, "quote": serialize_id(updated)}
 
 
 class OrderStatusUpdate(StatusUpdate):

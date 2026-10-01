@@ -92,8 +92,16 @@ def date_string(value):
 
 async def change(collection, record, updates, event=None):
     """Compare-and-set prevents concurrent timers/reviews from overwriting changes."""
-    query = {'_id': record['_id'], 'revision': record.get('revision')}
-    update = {'$set': {**updates, 'updated_at': now()}, '$inc': {'revision': 1}}
+    revision = record.get('revision')
+    query = {'_id': record['_id'], 'revision': revision}
+    set_values = {**updates, 'updated_at': now()}
+    if revision is None:
+        # Website-created legacy records may have no revision yet.  Establish
+        # the counter atomically on their first Nexus update.
+        set_values['revision'] = 1
+        update = {'$set': set_values}
+    else:
+        update = {'$set': set_values, '$inc': {'revision': 1}}
     if event:
         update['$push'] = {'history': event}
     result = await collection.find_one_and_update(query, update, return_document=ReturnDocument.AFTER)

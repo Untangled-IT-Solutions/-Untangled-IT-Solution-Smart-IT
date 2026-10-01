@@ -3,14 +3,18 @@
 """Quote Management View - Complete employee workspace with all statuses."""
 
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, simpledialog
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 import base64
 import os
+import re
+from urllib.parse import quote as urlquote
 
 # Production: Backend API only — no direct MongoDB from the desktop client.
 from app.services.backend_api_client import BackendAPIClient
+from app.services.distributor_import import import_distributor_quote
+from app.services.quotation_pdf import generate_quotation_pdf
 from app.utils.theme import Theme
 from app.utils.async_tasks import run_in_background
 from app.utils.ui_tasks import ui_task, ui_steps, RemoteCall, ui_callback
@@ -2114,6 +2118,8 @@ class QuoteManagementView(ctk.CTkFrame):
                 lines.append({
                     "name": line.get("name") or line.get("description") or "Item",
                     "amount": float(line.get("amount") or line.get("price") or 0),
+                    "quantity": line.get("quantity") or 1,
+                    "unit_price": line.get("unit_price_excl_vat") or line.get("unit_price") or line.get("price") or 0,
                 })
             return lines
 
@@ -2250,7 +2256,16 @@ class QuoteManagementView(ctk.CTkFrame):
         row += 1
 
         lines = self._quotation_lines(quote)
-        total = self._quotation_total(quote)
+        snapshot = quote.get("quotation_snapshot") or {}
+        subtotal = snapshot.get("subtotal_excl_vat") or quote.get("quotation_subtotal")
+        vat_amount = snapshot.get("vat_amount") or quote.get("quotation_vat")
+        total = snapshot.get("total_incl_vat") or self._quotation_total(quote)
+        try:
+            subtotal = float(subtotal) if subtotal is not None else sum(float(line["amount"]) for line in lines)
+            vat_amount = float(vat_amount) if vat_amount is not None else max(float(total) - subtotal, 0)
+            total = float(total)
+        except (TypeError, ValueError):
+            subtotal, vat_amount, total = 0.0, 0.0, 0.0
         validity = quote.get("quote_valid_until") or quote.get("valid_until") or "14 days"
         includes = quote.get("quote_includes") or "Includes delivery to the client's address"
 
@@ -2285,14 +2300,14 @@ class QuoteManagementView(ctk.CTkFrame):
 
             ctk.CTkLabel(
                 box,
-                text="Total",
+                text="Subtotal (excl. VAT)",
                 font=ctk.CTkFont(size=13, weight="bold"),
                 text_color=Theme.TEXT,
                 anchor="w",
             ).grid(row=len(lines) + 1, column=0, sticky="w", padx=14, pady=(2, 2))
             ctk.CTkLabel(
                 box,
-                text=self._format_rand(total),
+                text=self._format_rand(subtotal),
                 font=ctk.CTkFont(size=13, weight="bold"),
                 text_color="#2E7D32",
                 anchor="e",
@@ -2300,24 +2315,74 @@ class QuoteManagementView(ctk.CTkFrame):
 
             ctk.CTkLabel(
                 box,
-                text=f"Validity: {validity}  •  {includes}",
+                text="VAT (15%)",
+                font=ctk.CTkFont(size=12),
+                text_color=Theme.TEXT,
+                anchor="w",
+            ).grid(row=len(lines) + 2, column=0, sticky="w", padx=14, pady=2)
+            ctk.CTkLabel(
+                box,
+                text=self._format_rand(vat_amount),
+                font=ctk.CTkFont(size=12),
+                text_color=Theme.TEXT,
+                anchor="e",
+            ).grid(row=len(lines) + 2, column=1, sticky="e", padx=14, pady=2)
+            ctk.CTkLabel(
+                box,
+                text="Total (incl. VAT)",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=Theme.TEXT,
+                anchor="w",
+            ).grid(row=len(lines) + 3, column=0, sticky="w", padx=14, pady=2)
+            ctk.CTkLabel(
+                box,
+                text=self._format_rand(total),
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color="#2E7D32",
+                anchor="e",
+            ).grid(row=len(lines) + 3, column=1, sticky="e", padx=14, pady=2)
+            ctk.CTkLabel(
+                box,
+                text=f"Validity: {validity}  |  {includes}",
                 font=ctk.CTkFont(size=10),
                 text_color=Theme.MUTED_TEXT,
                 anchor="w",
-            ).grid(row=len(lines) + 2, column=0, columnspan=2, sticky="w", padx=14, pady=(2, 10))
+            ).grid(row=len(lines) + 4, column=0, columnspan=2, sticky="w", padx=14, pady=(2, 10))
 
         btn_row = ctk.CTkFrame(box, fg_color="transparent")
         btn_row.grid(row=50, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
         ctk.CTkButton(
             btn_row,
-            text="Generate / Refresh Quote",
+            text="Prepare Quotation",
             height=30,
             width=180,
             fg_color="#4CAF50",
             hover_color="#388E3C",
             font=ctk.CTkFont(size=11, weight="bold"),
             command=lambda: self._generate_quotation(quote),
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
+        if self._is_manager:
+            ctk.CTkButton(
+                btn_row,
+                text="Import Distributor Quote",
+                height=30,
+                width=190,
+                fg_color="#287A78",
+                hover_color="#1F6260",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._import_distributor_quote(quote),
+            ).grid(row=0, column=1, sticky="w", padx=(8, 0), pady=(0, 6))
+        if lines and total > 0:
+            ctk.CTkButton(
+                btn_row,
+                text="Export PDF",
+                height=30,
+                width=110,
+                fg_color="#34444D",
+                hover_color="#26343B",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._export_quotation_pdf(quote),
+            ).grid(row=1, column=0, sticky="w", pady=(0, 6))
         if total > 0 and quote.get("status") in (
             "Quoted", "Awaiting Details", "Assigned", "In Review", "Pending"
         ):
@@ -2330,7 +2395,7 @@ class QuoteManagementView(ctk.CTkFrame):
                 hover_color="#7B1FA2",
                 font=ctk.CTkFont(size=11, weight="bold"),
                 command=lambda: self._apply_status_change(quote, "Awaiting Client Approval"),
-            ).pack(side="left", padx=(8, 0))
+            ).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(0, 6))
         return row
 
     def _render_delivery_section(self, quote: Dict[str, Any], row: int) -> int:
@@ -2428,22 +2493,91 @@ class QuoteManagementView(ctk.CTkFrame):
 
     @ui_task
     def _generate_quotation(self, quote: Dict[str, Any]):
-        """Build / refresh quotation totals from items and optional delivery fee."""
-        lines = self._quotation_lines(quote)
-        total = sum(line["amount"] for line in lines)
-        quote["quotation"] = lines
-        quote["quotation_total"] = total
-        if total > 0:
-            quote["paymentAmount"] = total
-            quote["paymentRequired"] = True
-        # Advance to Quoted if we were collecting details / assigned
-        status = quote.get("status", "")
-        if status in ("Awaiting Details", "Assigned", "Pending", "In Review", "Accepted"):
-            (yield from ui_steps(self._apply_status_change, quote, "Quoted"))
-        else:
-            # just refresh UI
+        """Open the auditable distributor-pricing workflow or refresh a saved quote."""
+        if quote.get("quotation_snapshot"):
             self._show_quote_details(quote)
-        self._toast(f"Quotation total {self._format_rand(total)}", "success")
+            self._toast(f"Quotation total {self._format_rand(self._quotation_total(quote))}", "success")
+            return
+        if not self._is_manager:
+            self._toast("Management must import supplier pricing before a quotation can be prepared.", "error")
+            return
+        (yield from ui_steps(self._import_distributor_quote, quote))
+
+    @ui_task
+    def _import_distributor_quote(self, quote: Dict[str, Any]):
+        """Import a supplier workbook and save a server-calculated quotation revision."""
+        if not self._is_manager:
+            self._toast("Only management can import supplier pricing.", "error")
+            return
+        filename = filedialog.askopenfilename(
+            title="Choose distributor quotation",
+            filetypes=[("Excel quotations", "*.xlsx *.xls"), ("Excel workbook", "*.xlsx"), ("Legacy Excel", "*.xls")],
+        )
+        if not filename:
+            return
+        reference = str(quote.get("reference") or "").strip()
+        if not reference:
+            self._toast("This quote has no reference.", "error")
+            return
+        imported = (yield RemoteCall(import_distributor_quote, filename))
+        count = int(imported.get("priced_line_count") or 0)
+        markup = simpledialog.askfloat(
+            "Quotation Markup",
+            "Markup percentage for this quotation:",
+            initialvalue=25.0,
+            minvalue=0.0,
+            maxvalue=500.0,
+            parent=self,
+        )
+        if markup is None:
+            return
+        if not messagebox.askyesno(
+            "Import Distributor Quote",
+            f"Found {count} priced line(s). Apply {markup:g}% markup and 15% VAT, then save this quotation?",
+            parent=self,
+        ):
+            return
+        payload = {
+            "source_filename": imported.get("source_filename") or "",
+            "supplier": imported.get("supplier") or "",
+            "validity_days": 14,
+            "vat_percent": "15",
+            "delivery_fee_excl_vat": "0",
+            "lines": [
+                {**line, "markup_percent": str(markup)}
+                for line in imported.get("lines") or []
+            ],
+        }
+        response = (yield RemoteCall(
+            self._backend_api.request,
+            "PUT",
+            f"/api/quotes/{urlquote(reference, safe='')}/quotation",
+            payload,
+        ))
+        saved = response.get("quote") or {}
+        if not saved:
+            raise RuntimeError("The server did not return the saved quotation.")
+        saved["status"] = self._map_mongo_to_display(saved.get("status") or "quoted")
+        quote.clear()
+        quote.update(saved)
+        self._filter_quotes()
+        self._show_quote_details(quote)
+        self._toast(f"Quotation saved from {count} priced line(s).", "success")
+
+    @ui_task
+    def _export_quotation_pdf(self, quote: Dict[str, Any]):
+        """Export the current immutable quotation snapshot as a branded PDF."""
+        reference = re.sub(r"[^A-Za-z0-9._-]", "-", str(quote.get("reference") or "quotation"))
+        filename = filedialog.asksaveasfilename(
+            title="Export quotation PDF",
+            defaultextension=".pdf",
+            initialfile=f"Untangled-Quotation-{reference}.pdf",
+            filetypes=[("PDF document", "*.pdf")],
+        )
+        if not filename:
+            return
+        output = (yield RemoteCall(generate_quotation_pdf, dict(quote), filename))
+        self._toast(f"Quotation exported to {os.path.basename(output)}", "success")
 
     @ui_task
     def _apply_status_change(self, quote: Dict[str, Any], new_status: str):

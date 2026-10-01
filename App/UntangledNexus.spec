@@ -24,6 +24,10 @@ hiddenimports = [
     "idna",
     "dotenv",
     "tzdata",
+    "openpyxl",
+    "xlrd",
+    "reportlab",
+    "reportlab.pdfbase._fontdata",
 ]
 
 a = Analysis(
