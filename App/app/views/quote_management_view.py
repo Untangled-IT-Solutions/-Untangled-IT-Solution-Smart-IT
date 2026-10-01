@@ -14,6 +14,7 @@ from urllib.parse import quote as urlquote
 # Production: Backend API only — no direct MongoDB from the desktop client.
 from app.services.backend_api_client import BackendAPIClient
 from app.services.distributor_import import import_distributor_quote
+from app.services.invoice_pdf import generate_invoice_pdf
 from app.services.quotation_pdf import generate_quotation_pdf
 from app.utils.theme import Theme
 from app.utils.async_tasks import run_in_background
@@ -100,7 +101,7 @@ class QuoteManagementView(ctk.CTkFrame):
         "Assigned": {"label": "📝 Request Details", "action": "request_details", "color": "#FF9800"},
         "Awaiting Details": {"label": "💰 Generate Quote", "action": "generate_quote", "color": "#4CAF50"},
         "Quoted": {"label": "📤 Send for Approval", "action": "send_approval", "color": "#9C27B0"},
-        "Awaiting Client Approval": {"label": "💳 Mark Awaiting Payment", "action": "await_payment", "color": "#E91E63"},
+        "Awaiting Client Approval": {"label": "✓ Approve & Create Invoice", "action": "approve_invoice", "color": "#287A78"},
         "Awaiting Payment": {"label": "✅ Mark Paid", "action": "mark_paid", "color": "#00BCD4"},
         "Paid": {"label": "🔧 Start Work", "action": "start_work", "color": "#FF9800"},
         "In Progress": {"label": "🚚 Out for Delivery", "action": "out_for_delivery", "color": "#3F51B5"},
@@ -905,6 +906,8 @@ class QuoteManagementView(ctk.CTkFrame):
 
     def _get_next_action(self, status: str) -> Optional[Dict[str, Any]]:
         """Next primary action for the professional workflow."""
+        if status == "Awaiting Client Approval" and not self._is_manager:
+            return None
         return self.WORKFLOW_NEXT.get(status)
 
     @ui_task
@@ -922,6 +925,8 @@ class QuoteManagementView(ctk.CTkFrame):
             (yield from ui_steps(self._generate_quotation, quote))
         elif action == "send_approval":
             (yield from ui_steps(self._apply_status_change, quote, "Awaiting Client Approval"))
+        elif action == "approve_invoice":
+            (yield from ui_steps(self._approve_quote_and_create_invoice, quote))
         elif action == "await_payment":
             (yield from ui_steps(self._apply_status_change, quote, "Awaiting Payment"))
         elif action == "mark_paid":
@@ -1028,9 +1033,12 @@ class QuoteManagementView(ctk.CTkFrame):
             row += 1
 
             status_var = ctk.StringVar(value=status)
+            status_values = [value for value in self.STATUS_OPTIONS if value not in ("Accepted", "Awaiting Payment")]
+            if status not in status_values:
+                status_values.append(status)
             self._status_dropdown = ctk.CTkOptionMenu(
                 status_frame,
-                values=self.STATUS_OPTIONS,
+                values=status_values,
                 variable=status_var,
                 command=self._on_status_change,
                 width=200,
@@ -1195,6 +1203,9 @@ class QuoteManagementView(ctk.CTkFrame):
 
         # === QUOTATION ===
         row = self._render_quotation_section(quote, row)
+
+        # === LINKED INVOICE ===
+        row = self._render_invoice_section(quote, row)
 
         # === DELIVERY (after payment) ===
         row = self._render_delivery_section(quote, row)
@@ -2397,6 +2408,202 @@ class QuoteManagementView(ctk.CTkFrame):
                 command=lambda: self._apply_status_change(quote, "Awaiting Client Approval"),
             ).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(0, 6))
         return row
+
+    def _render_invoice_section(self, quote: Dict[str, Any], row: int) -> int:
+        """Show the approval-to-invoice state without exposing internal pricing."""
+        snapshot = quote.get("quotation_snapshot") or {}
+        if not snapshot:
+            return row
+        invoice = quote.get("_invoice") if isinstance(quote.get("_invoice"), dict) else {}
+        invoice_id = quote.get("invoice_id") or invoice.get("_id")
+        awaiting_approval = quote.get("status") == "Awaiting Client Approval"
+        if not invoice_id and not awaiting_approval:
+            return row
+
+        row = self._add_divider(row)
+        row = self._add_section_title("Invoice", row)
+        box = ctk.CTkFrame(self._details_frame, fg_color=("gray95", "gray15"), corner_radius=8)
+        box.grid(row=row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        box.grid_columnconfigure(0, weight=1)
+        row += 1
+
+        if not invoice_id:
+            ctk.CTkLabel(
+                box,
+                text="Record the customer's approval to lock this quotation and create its invoice draft.",
+                font=ctk.CTkFont(size=11), text_color=Theme.MUTED_TEXT,
+                anchor="w", justify="left", wraplength=460,
+            ).grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
+            if self._is_manager:
+                ctk.CTkButton(
+                    box, text="✓ Record Approval & Create Draft", height=32, width=220,
+                    fg_color="#287A78", hover_color="#1F6260",
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    command=lambda: self._approve_quote_and_create_invoice(quote),
+                ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 12))
+            return row
+
+        status = str(invoice.get("status") or quote.get("invoice_status") or "draft").lower()
+        number = invoice.get("invoice_number") or quote.get("invoice_number") or "Allocated when issued"
+        issue_date = invoice.get("issue_date") or quote.get("invoice_issue_date") or "Not issued"
+        due_date = invoice.get("due_date") or quote.get("invoice_due_date") or "Set when issued"
+        total = invoice.get("total_incl_vat") or snapshot.get("total_incl_vat") or 0
+        status_label = "Issued" if status == "issued" else "Draft"
+        status_color = "#2E7D32" if status == "issued" else "#B26A00"
+
+        heading = ctk.CTkFrame(box, fg_color="transparent")
+        heading.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 6))
+        heading.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            heading, text=str(number), font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=Theme.TEXT, anchor="w",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            heading, text=status_label, font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=status_color, anchor="e",
+        ).grid(row=0, column=1, sticky="e")
+
+        details = f"Total: {self._format_rand(total)}   |   Issue date: {issue_date}   |   Due: {due_date}"
+        ctk.CTkLabel(
+            box, text=details, font=ctk.CTkFont(size=11), text_color=Theme.MUTED_TEXT,
+            anchor="w", justify="left", wraplength=480,
+        ).grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 8))
+
+        actions = ctk.CTkFrame(box, fg_color="transparent")
+        actions.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 12))
+        if status == "draft" and self._current_role in ("Director", "Operations Manager"):
+            ctk.CTkButton(
+                actions, text="Issue Tax Invoice", height=30, width=150,
+                fg_color="#287A78", hover_color="#1F6260",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda: self._issue_invoice(quote),
+            ).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(
+            actions, text="Export Invoice PDF", height=30, width=150,
+            fg_color="#34444D", hover_color="#26343B",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=lambda: self._export_invoice_pdf(quote),
+        ).pack(side="left")
+        return row
+
+    @ui_task
+    def _approve_quote_and_create_invoice(self, quote: Dict[str, Any]):
+        if not self._is_manager:
+            self._toast("Only management can record customer approval.", "error")
+            return
+        if not quote.get("quotation_snapshot"):
+            self._toast("Prepare and save the quotation first.", "error")
+            return
+        if quote.get("invoice_id"):
+            self._toast("This quotation already has an invoice draft.", "info")
+            return
+        if not messagebox.askyesno(
+            "Record Customer Approval",
+            "Has the customer explicitly approved this exact quotation?\n\n"
+            "Nexus will lock this revision and create one linked invoice draft.",
+            parent=self,
+        ):
+            return
+        approver_name = simpledialog.askstring(
+            "Customer Approver", "Customer approver name:",
+            initialvalue=quote.get("customerName") or "", parent=self,
+        )
+        if approver_name is None:
+            return
+        approver_email = simpledialog.askstring(
+            "Customer Approver", "Customer approver email:",
+            initialvalue=quote.get("email") or "", parent=self,
+        )
+        if approver_email is None:
+            return
+        purchase_order = simpledialog.askstring(
+            "Purchase Order", "Customer purchase order number (optional):",
+            initialvalue=quote.get("purchase_order_number") or "", parent=self,
+        )
+        if purchase_order is None:
+            return
+        reference = str(quote.get("reference") or "").strip()
+        snapshot = quote.get("quotation_snapshot") or {}
+        payload = {
+            "approval_channel": "purchase_order" if purchase_order.strip() else "written_acceptance",
+            "approver_name": approver_name.strip(),
+            "approver_email": approver_email.strip(),
+            "purchase_order_number": purchase_order.strip(),
+            "idempotency_key": f"quote:{reference}:{snapshot.get('created_at') or snapshot.get('issue_date') or ''}",
+        }
+        response = (yield RemoteCall(self._backend_api.approve_quote, reference, payload))
+        saved = response.get("quote") or {}
+        invoice = response.get("invoice") or {}
+        if not saved or not invoice:
+            raise RuntimeError("The server did not return the accepted quote and invoice draft.")
+        saved["status"] = self._map_mongo_to_display(saved.get("status") or "awaiting_payment")
+        saved["_invoice"] = invoice
+        quote.clear()
+        quote.update(saved)
+        self._filter_quotes()
+        self._show_quote_details(quote)
+        self._toast("Customer approval recorded and invoice draft created.", "success")
+
+    @ui_task
+    def _issue_invoice(self, quote: Dict[str, Any]):
+        if self._current_role not in ("Director", "Operations Manager"):
+            self._toast("Only a Director or Operations Manager can issue an invoice.", "error")
+            return
+        invoice_id = str(quote.get("invoice_id") or (quote.get("_invoice") or {}).get("_id") or "")
+        if not invoice_id:
+            self._toast("No linked invoice draft was found.", "error")
+            return
+        terms = simpledialog.askinteger(
+            "Payment Terms", "Payment terms in calendar days:",
+            initialvalue=14, minvalue=0, maxvalue=180, parent=self,
+        )
+        if terms is None:
+            return
+        if not messagebox.askyesno(
+            "Issue Tax Invoice",
+            "Issue this invoice now? Its financial values cannot be edited after issue.",
+            parent=self,
+        ):
+            return
+        purchase_order = str((quote.get("_invoice") or {}).get("purchase_order_number") or "")
+        response = (yield RemoteCall(
+            self._backend_api.issue_invoice,
+            invoice_id,
+            {"payment_terms_days": terms, "purchase_order_number": purchase_order},
+        ))
+        invoice = response.get("invoice") or {}
+        if not invoice:
+            raise RuntimeError("The server did not return the issued invoice.")
+        quote["_invoice"] = invoice
+        quote["invoice_status"] = invoice.get("status")
+        quote["invoice_number"] = invoice.get("invoice_number")
+        quote["invoice_issue_date"] = invoice.get("issue_date")
+        quote["invoice_due_date"] = invoice.get("due_date")
+        self._show_quote_details(quote)
+        self._toast(f"Invoice {invoice.get('invoice_number')} issued.", "success")
+
+    @ui_task
+    def _export_invoice_pdf(self, quote: Dict[str, Any]):
+        invoice_id = str(quote.get("invoice_id") or (quote.get("_invoice") or {}).get("_id") or "")
+        if not invoice_id:
+            self._toast("No linked invoice was found.", "error")
+            return
+        response = (yield RemoteCall(self._backend_api.get_invoice, invoice_id))
+        invoice = response.get("invoice") or {}
+        if not invoice:
+            raise RuntimeError("The server did not return the invoice.")
+        number = str(invoice.get("invoice_number") or f"Draft-{quote.get('reference') or 'Invoice'}")
+        safe_number = re.sub(r"[^A-Za-z0-9._-]", "-", number)
+        filename = filedialog.asksaveasfilename(
+            title="Export invoice PDF", defaultextension=".pdf",
+            initialfile=f"Untangled-{safe_number}.pdf",
+            filetypes=[("PDF document", "*.pdf")],
+        )
+        if not filename:
+            return
+        output = (yield RemoteCall(generate_invoice_pdf, invoice, filename))
+        quote["_invoice"] = invoice
+        self._toast(f"Invoice exported to {os.path.basename(output)}", "success")
 
     def _render_delivery_section(self, quote: Dict[str, Any], row: int) -> int:
         status = quote.get("status", "")

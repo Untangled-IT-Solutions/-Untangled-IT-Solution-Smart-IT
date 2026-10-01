@@ -127,3 +127,6 @@ async def ensure_indexes(db):
     )
     await db['documents'].create_index([('employee_id', 1), ('expiry_date', 1)], name='nexus_document_employee_expiry')
     await db['documents'].create_index([('expiry_status', 1), ('expiry_date', 1)], name='nexus_document_expiry_status')
+    await db['invoices'].create_index('source_quote_id', unique=True, name='nexus_invoice_source_quote_unique')
+    await db['invoices'].create_index('invoice_number', unique=True, sparse=True, name='nexus_invoice_number_unique')
+    await db['invoices'].create_index([('status', 1), ('due_date', 1)], name='nexus_invoice_status_due')

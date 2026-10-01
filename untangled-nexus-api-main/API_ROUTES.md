@@ -57,6 +57,9 @@ Generated from the FastAPI application. Business routes require bearer authentic
 | GET | `/api/employees` |
 | GET | `/api/employees/{employee_id}` |
 | GET | `/api/health` |
+| GET | `/api/invoices` |
+| GET | `/api/invoices/{invoice_id}` |
+| POST | `/api/invoices/{invoice_id}/issue` |
 | GET | `/api/leave` |
 | POST | `/api/leave` |
 | GET | `/api/leave/{leave_id}` |
@@ -78,6 +81,8 @@ Generated from the FastAPI application. Business routes require bearer authentic
 | GET | `/api/projects/{project_id}` |
 | GET | `/api/quotes` |
 | GET | `/api/quotes/track` |
+| POST | `/api/quotes/{reference}/approve` |
+| PUT | `/api/quotes/{reference}/quotation` |
 | GET | `/api/ready` |
 | POST | `/api/reports/export` |
 | GET | `/api/reports/preview` |
@@ -114,8 +119,8 @@ New leave and private document endpoints need desktop controls in later phases. 
 
 ## Website-owned calls still present in the desktop
 
-Quote/order creation, assignment, status changes and Director commerce reviews remain Website-owned. The desktop still contains calls to `/api/quotes`, `/api/orders`, `/api/admin/quotes/*`, `/api/admin/orders/*` and their mutation/review variants. Only authenticated quote/order readers are retained in Nexus. These commerce mutations were not copied into FastAPI and are not claimed to work against it. A deliberate later integration or desktop boundary change is required; do not route the entire desktop to the Website backend.
+Public quote/order creation remains Website-owned. Authenticated Nexus operations now include quote assignment and status updates, Director reviews, quotation pricing, customer approval, linked invoice-draft creation and controlled invoice issue. Payment allocation, credit notes, statements and customer portal authentication are later quote-to-cash phases and must not be simulated through generic status changes.
 
 ## Data storage
 
-Existing collection names are retained for employees, users, api_sessions, attendance, work_assignments, approvals, notifications, quotes, orders and projects. Calendar events, office requests, documents and login attempts use their corresponding MongoDB collections. Leave is stored as a typed approval with dates and document IDs, avoiding competing approval state. Files contain BSON binary content, not just names/sizes.
+Existing collection names are retained for employees, users, api_sessions, attendance, work_assignments, approvals, notifications, quotes, orders and projects. Invoices use a separate `invoices` collection with unique source-quote and invoice-number indexes; yearly invoice sequences use `counters`. Calendar events, office requests, documents and login attempts use their corresponding MongoDB collections. Leave is stored as a typed approval with dates and document IDs, avoiding competing approval state. Files contain BSON binary content, not just names/sizes.

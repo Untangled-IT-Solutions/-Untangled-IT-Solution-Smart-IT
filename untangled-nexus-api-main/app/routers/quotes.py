@@ -234,6 +234,10 @@ async def update_status(ctx, collection, reference, body):
     allowed = QUOTE_STATES if collection == "quotes" else ORDER_STATES
     if status not in allowed:
         raise HTTPException(422, "Unsupported status.")
+    if collection == "quotes" and status == "awaiting_payment":
+        raise HTTPException(409, "Use the customer approval action so Nexus creates the linked invoice draft.")
+    if collection == "quotes" and status == "paid":
+        require_roles(ctx, MANAGEMENT)
     updated = await change(
         ctx["db"][collection], record,
         {"status": status, "updatedAt": now()},
@@ -257,6 +261,8 @@ async def save_quotation(reference: str, body: QuotationDraft, ctx: dict = Depen
     """Save an auditable quotation revision using server-calculated totals."""
     require_roles(ctx, MANAGEMENT)
     record = await load_record(ctx, "quotes", reference, require_access=False)
+    if record.get("invoice_id") or record.get("accepted_quotation_snapshot"):
+        raise HTTPException(409, "This quotation revision is locked because the customer approved it.")
     snapshot = build_snapshot(reference, body, name(ctx["employee"]))
     history = list(record.get("quotation_history") or [])
     previous = record.get("quotation_snapshot")

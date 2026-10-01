@@ -576,6 +576,15 @@ class BackendAPIClient:
     def get_director_review(self, reference: str) -> dict[str, Any]:
         return self.request("GET", f"/api/quotes/{reference}/director-review")
 
+    def approve_quote(self, reference: str, payload: dict) -> dict[str, Any]:
+        return self.request("POST", f"/api/quotes/{reference}/approve", payload)
+
+    def get_invoice(self, invoice_id: str) -> dict[str, Any]:
+        return self.request("GET", f"/api/invoices/{invoice_id}")
+
+    def issue_invoice(self, invoice_id: str, payload: dict) -> dict[str, Any]:
+        return self.request("POST", f"/api/invoices/{invoice_id}/issue", payload)
+
     # ------------------------------------------------------------------
     # Tasks / Work (backend endpoints – extend as your API grows)
     # ------------------------------------------------------------------

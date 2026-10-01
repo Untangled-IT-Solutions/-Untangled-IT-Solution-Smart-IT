@@ -29,6 +29,7 @@ from app.routers import (
     tasks,
     approvals,
     quotes,
+    invoices,
     employees,
 )
 
@@ -124,6 +125,7 @@ app.include_router(notifications.router)
 app.include_router(tasks.router)
 app.include_router(approvals.router)
 app.include_router(quotes.router)
+app.include_router(invoices.router)
 app.include_router(employees.router)
 
 for module in (users, documents, leave, calendar, office_requests, reports, projects):

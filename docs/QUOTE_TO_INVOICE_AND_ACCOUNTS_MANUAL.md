@@ -37,6 +37,20 @@ The branch already provides the following foundation:
 
 The next work must extend this baseline rather than replace it.
 
+### 2.1 Implemented on this branch
+
+The first invoice foundation is now implemented on `nexus-reliability-notifications`:
+
+- management can record explicit customer approval against the current quotation revision;
+- approval locks that quotation snapshot and creates exactly one linked invoice draft;
+- repeated approval requests return the existing draft rather than duplicating it;
+- Directors and Operations Managers can issue a uniquely numbered Tax Invoice;
+- issued invoice values and dates are retained independently from the quotation;
+- management can export branded draft and issued invoice PDFs; and
+- server-side permissions, indexes, audit events and workflow tests protect the transition.
+
+Payment capture, credit notes, customer ledgers, statements, arrears automation and website customer profiles remain later phases. Until those phases are implemented, employees must not use quote status changes as a substitute for financial transactions.
+
 ## 3. Core Accounting Rule
 
 An accepted quotation must never be overwritten or renamed into an invoice.
