@@ -57,7 +57,7 @@ def generate_quotation_pdf(quote: dict[str, Any], filename: str) -> str:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
-        Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
     )
 
     target = Path(filename).resolve()
@@ -82,20 +82,41 @@ def generate_quotation_pdf(quote: dict[str, Any], filename: str) -> str:
     styles = getSampleStyleSheet()
     body = ParagraphStyle("QuoteBody", parent=styles["BodyText"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.HexColor("#27313A"))
     small = ParagraphStyle("QuoteSmall", parent=body, fontSize=7.5, leading=9, textColor=colors.HexColor("#58636D"))
+    company_style = ParagraphStyle("QuoteCompany", parent=small, alignment=TA_RIGHT, fontSize=7.5, leading=9.5)
+    terms_style = ParagraphStyle("QuoteTerms", parent=small, fontSize=6.8, leading=8.4, spaceAfter=3)
     heading = ParagraphStyle("QuoteHeading", parent=styles["Heading1"], fontName="Helvetica-Bold", fontSize=22, leading=24, textColor=colors.HexColor("#20272D"), alignment=TA_RIGHT)
     doc = SimpleDocTemplate(str(target), pagesize=A4, rightMargin=16 * mm, leftMargin=16 * mm, topMargin=14 * mm, bottomMargin=15 * mm, title=f"Quotation {safe_reference}", author=COMPANY["name"])
 
     logo = _logo_path()
     logo_cell: Any = Paragraph(f"<b>{COMPANY['name']}</b>", styles["Heading2"])
     if logo:
-        logo_cell = Image(str(logo), width=57 * mm, height=24 * mm, kind="proportional")
+        logo_cell = Image(str(logo), width=70 * mm, height=32 * mm, kind="proportional")
     company_text = Paragraph(
         f"<b>{COMPANY['name']}</b><br/>{COMPANY['address']}<br/>"
         f"Reg: {COMPANY['registration']} &nbsp; VAT: {COMPANY['vat']} &nbsp; CSD: {COMPANY['csd']}<br/>"
-        f"{COMPANY['phone']} &nbsp; {COMPANY['email']}", small,
+        f"{COMPANY['phone']} &nbsp; {COMPANY['email']}", company_style,
     )
-    header = Table([[logo_cell, Paragraph("QUOTATION", heading)], [company_text, ""]], colWidths=[120 * mm, 55 * mm])
-    header.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT"), ("SPAN", (0, 1), (1, 1)), ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    title_block = Table(
+        [[Paragraph("QUOTATION", heading)], [company_text]],
+        colWidths=[95 * mm],
+    )
+    title_block.setStyle(TableStyle([
+        ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    header = Table([[logo_cell, title_block]], colWidths=[80 * mm, 95 * mm])
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
 
     billed_to = "<br/>".join(filter(None, [f"<b>{escape(client['company'] or client['name'])}</b>", escape(client["name"]) if client["company"] else "", escape(client["address"]), escape(client["email"]), escape(client["phone"])]))
     meta = Table([
@@ -137,10 +158,40 @@ def generate_quotation_pdf(quote: dict[str, Any], filename: str) -> str:
         ("LINEABOVE", (0, 2), (-1, 2), 1, colors.HexColor("#7DBE42")),
         ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
-    terms = KeepTogether([
-        Paragraph("<b>TERMS</b>", body), Spacer(1, 2 * mm),
-        Paragraph(f"Prices are quoted in South African Rand. This quotation is valid for {validity_days} calendar days, until {valid_until}. Delivery timing and warranty are subject to final supplier confirmation and the accepted scope.", small),
-    ])
+    term_items = [
+        ("1. Pricing and VAT", f"Prices are in ZAR and exclude VAT unless stated otherwise. VAT is charged at {vat_percent}%. This quotation remains valid for {validity_days} calendar days, until {escape(valid_until)}; expired pricing may be requoted."),
+        ("2. Acceptance and payment", "A written acceptance or purchase order confirms the scope. Procurement and work begin after any required deposit or cleared payment, unless approved account terms state otherwise."),
+        ("3. Availability", "Products, exchange-rate pricing and lead times remain subject to distributor or manufacturer confirmation. Any material substitution requires the client's written approval."),
+        ("4. Delivery", "Delivery dates are estimates from order confirmation and payment. Untangled IT Solutions will communicate supplier, courier or other delays outside its reasonable control."),
+        ("5. Scope", "Only listed products and services are included. Installation, cabling, migration, configuration, training, travel and after-hours work are excluded unless expressly itemised."),
+        ("6. Warranty", "Hardware carries the stated OEM warranty. Defects will be handled under the applicable manufacturer process and South African law. Misuse or unauthorised modification may invalidate OEM cover."),
+        ("7. Returns and cancellations", "Returns and cancellations are subject to applicable law and supplier RMA rules. Where legally permitted, opened, special-order or correctly supplied non-defective goods may attract charges or be non-returnable."),
+        ("8. Software and subscriptions", "Software, cloud services and subscriptions are governed by the publisher's licence terms. Activated licences and commenced subscriptions may be non-refundable where the law permits."),
+        ("9. Risk and ownership", "Risk passes on delivery or collection. Ownership remains with Untangled IT Solutions until full payment has cleared, subject to applicable law."),
+        ("10. Client data", "The client must maintain current backups before installation, repair or migration. Credentials must be supplied securely and changed after completion where appropriate."),
+        ("11. Liability", "To the extent permitted by law, liability is limited to direct loss up to the value of the affected quotation. This does not exclude mandatory consumer rights, fraud, wilful misconduct or gross negligence."),
+        ("12. Applicable rights", "Written or electronic acceptance may constitute acceptance under applicable law. Nothing in these terms limits rights that cannot lawfully be excluded, including applicable Consumer Protection Act rights."),
+    ]
+    split = (len(term_items) + 1) // 2
+    left_terms = [Paragraph(f"<b>{title}.</b> {text}", terms_style) for title, text in term_items[:split]]
+    right_terms = [Paragraph(f"<b>{title}.</b> {text}", terms_style) for title, text in term_items[split:]]
+    term_rows = []
+    for index in range(max(len(left_terms), len(right_terms))):
+        term_rows.append([
+            left_terms[index] if index < len(left_terms) else "",
+            right_terms[index] if index < len(right_terms) else "",
+        ])
+    terms_table = Table(term_rows, colWidths=[86 * mm, 86 * mm], hAlign="LEFT")
+    terms_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (0, -1), 0),
+        ("RIGHTPADDING", (0, 0), (0, -1), 4 * mm),
+        ("LEFTPADDING", (1, 0), (1, -1), 4 * mm),
+        ("RIGHTPADDING", (1, 0), (1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    terms = [Paragraph("<b>TERMS AND CONDITIONS</b>", body), Spacer(1, 2 * mm), terms_table]
 
     def footer(canvas, document):
         canvas.saveState()
@@ -150,6 +201,6 @@ def generate_quotation_pdf(quote: dict[str, Any], filename: str) -> str:
         canvas.drawRightString(194 * mm, 8 * mm, f"Page {document.page}")
         canvas.restoreState()
 
-    doc.build([header, Spacer(1, 6 * mm), meta, Spacer(1, 7 * mm), items, Spacer(1, 6 * mm), totals, Spacer(1, 8 * mm), terms], onFirstPage=footer, onLaterPages=footer)
+    doc.build([header, Spacer(1, 6 * mm), meta, Spacer(1, 7 * mm), items, Spacer(1, 6 * mm), totals, Spacer(1, 7 * mm), *terms], onFirstPage=footer, onLaterPages=footer)
     return str(target)
 
