@@ -309,6 +309,76 @@ def test_task_action_captures_widgets_before_worker(root,controllers):
     view.destroy()
 
 
+def test_task_header_actions_fit_workspace(root, controllers):
+    from app.views.task_view import TaskView
+
+    app, _calls = controllers
+    view = TaskView(root, app._task_controller)
+    view.configure(width=980, height=700)
+    view.place(x=0, y=0)
+    pump(root, lambda: not view.__dict__.get('_nexus_ui_task'))
+    view.update_idletasks()
+
+    assert view._pill_frame.grid_info()['row'] == 1
+    assert view._pill_frame.winfo_width() <= view.winfo_width() - 48
+    assert view._new_task_button.winfo_x() + view._new_task_button.winfo_width() <= view._new_task_button.master.winfo_width()
+    view.destroy()
+
+
+def test_user_management_compact_controls_reflow(root, controllers):
+    from app.views.user_management_view import UserManagementView
+
+    app, _calls = controllers
+    view = UserManagementView(root, app._user_management_controller)
+    view.configure(width=800, height=700)
+    view.place(x=0, y=0)
+    pump(root, lambda: not view.__dict__.get('_nexus_ui_task'))
+    view.update_idletasks()
+    view._compact = None
+    view._apply_responsive_layout()
+
+    assert view._compact is True
+    assert view.search_entry.grid_info()['row'] == 1
+    assert view.search_entry.grid_info()['columnspan'] == 2
+    assert {(item.grid_info()['row'], item.grid_info()['column']) for item in view._stat_items} == {
+        (1, 0), (1, 1), (2, 0), (2, 1),
+    }
+    view.destroy()
+
+
+def test_quote_workspace_reflows_without_horizontal_overflow(root, controllers, monkeypatch):
+    from app.views.quote_management_view import QuoteManagementView
+
+    app, calls = controllers
+    view = QuoteManagementView(
+        root,
+        auth_service=app._auth,
+        navigation_controller=app._navigation_controller,
+        backend_api=app._backend,
+    )
+    view.configure(width=980, height=700)
+    view.place(x=0, y=0)
+    pump(root, lambda: any(path == '/api/quotes' for path in calls))
+    view.update_idletasks()
+    monkeypatch.setattr(view, 'winfo_width', lambda: 980)
+    view._compact_layout = None
+    view._apply_responsive_layout()
+
+    assert view._compact_layout is False
+    assert view.grid_columnconfigure(0)['minsize'] + view.grid_columnconfigure(1)['minsize'] < view.winfo_width()
+    assert view._status_filter_menu.grid_info()['sticky'] == 'ew'
+
+    monkeypatch.setattr(view, 'winfo_width', lambda: 760)
+    view.update_idletasks()
+    view._compact_layout = None
+    view._apply_responsive_layout()
+    assert view._compact_layout is True
+    assert view._list_panel.grid_info()['column'] == 0
+    assert view._details_panel.grid_info()['column'] == 0
+    assert view._details_panel.grid_info()['row'] == 1
+    view.destroy()
+
+
 def _password_dialog_owner(root):
     owner = ctk.CTkFrame(root)
     owner._bg = lambda: "#f3f6f0"

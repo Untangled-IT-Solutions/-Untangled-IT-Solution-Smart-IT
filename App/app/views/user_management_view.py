@@ -133,7 +133,7 @@ class UserManagementView(ctk.CTkFrame):
             sticky="w",
         )
 
-        ctk.CTkLabel(
+        self.subtitle_label = ctk.CTkLabel(
             self.header,
             text=(
                 "Manage real employee login credentials, passwords, "
@@ -141,14 +141,17 @@ class UserManagementView(ctk.CTkFrame):
             ),
             text_color=Theme.MUTED_TEXT,
             font=Theme.FONT_BODY,
-        ).grid(
+            justify="left",
+            wraplength=760,
+        )
+        self.subtitle_label.grid(
             row=1,
             column=0,
             pady=(2, 0),
             sticky="w",
         )
 
-        ctk.CTkButton(
+        self.refresh_button = ctk.CTkButton(
             self.header,
             text="Refresh",
             width=100,
@@ -157,7 +160,8 @@ class UserManagementView(ctk.CTkFrame):
             hover_color=Theme.BORDER,
             text_color=Theme.TEXT,
             command=self._refresh_all,
-        ).grid(
+        )
+        self.refresh_button.grid(
             row=0,
             column=1,
             rowspan=2,
@@ -360,6 +364,7 @@ class UserManagementView(ctk.CTkFrame):
         )
 
         self.stat_labels: dict[str, ctk.CTkLabel] = {}
+        self._stat_items: list[ctk.CTkFrame] = []
 
         statistics = (
             ("total_users", "Total accounts"),
@@ -385,6 +390,7 @@ class UserManagementView(ctk.CTkFrame):
                 pady=(2, 14),
                 sticky="ew",
             )
+            self._stat_items.append(item)
 
             ctk.CTkLabel(
                 item,
@@ -421,35 +427,36 @@ class UserManagementView(ctk.CTkFrame):
             weight=1,
         )
 
-        header = ctk.CTkFrame(
+        self.accounts_header = ctk.CTkFrame(
             self.accounts,
             fg_color="transparent",
         )
-        header.grid(
+        self.accounts_header.grid(
             row=0,
             column=0,
             padx=18,
             pady=(14, 8),
             sticky="ew",
         )
-        header.grid_columnconfigure(
+        self.accounts_header.grid_columnconfigure(
             1,
             weight=1,
         )
 
-        ctk.CTkLabel(
-            header,
+        self.accounts_title = ctk.CTkLabel(
+            self.accounts_header,
             text="User accounts",
             text_color=Theme.TEXT,
             font=Theme.FONT_HEADING,
-        ).grid(
+        )
+        self.accounts_title.grid(
             row=0,
             column=0,
             sticky="w",
         )
 
         self.search_entry = ctk.CTkEntry(
-            header,
+            self.accounts_header,
             height=34,
             placeholder_text="Search users...",
             fg_color=Theme.PANEL_ALT,
@@ -467,7 +474,7 @@ class UserManagementView(ctk.CTkFrame):
         )
 
         self.filter_menu = ctk.CTkOptionMenu(
-            header,
+            self.accounts_header,
             values=[
                 "All Users",
                 "Active Only",
@@ -1823,9 +1830,7 @@ class UserManagementView(ctk.CTkFrame):
     ) -> None:
         self._resize_job = None
 
-        compact = (
-            self.winfo_width() < 760
-        )
+        compact = self.winfo_width() < 920
 
         if compact == self._compact:
             return
@@ -1850,8 +1855,52 @@ class UserManagementView(ctk.CTkFrame):
 
         if compact:
             self._compact_form_layout()
+            self._compact_supporting_layout()
         else:
             self._desktop_form_layout()
+            self._desktop_supporting_layout()
+
+    def _desktop_supporting_layout(self) -> None:
+        self.title_label.grid_configure(row=0, column=0, columnspan=1)
+        self.subtitle_label.grid_configure(row=1, column=0, columnspan=1, pady=(2, 0))
+        self.refresh_button.grid_configure(row=0, column=1, rowspan=2, pady=0)
+
+        for column, item in enumerate(self._stat_items):
+            self.stats.grid_columnconfigure(column, weight=1)
+            item.grid_configure(row=1, column=column, padx=18, pady=(2, 14))
+
+        self.accounts_header.grid_columnconfigure(0, weight=0)
+        self.accounts_header.grid_columnconfigure(1, weight=1)
+        self.accounts_header.grid_columnconfigure(2, weight=0)
+        self.accounts_title.grid_configure(row=0, column=0, columnspan=1)
+        self.search_entry.grid_configure(row=0, column=1, columnspan=1, padx=(16, 8), pady=0)
+        self.filter_menu.grid_configure(row=0, column=2, pady=0)
+
+    def _compact_supporting_layout(self) -> None:
+        self.title_label.grid_configure(row=0, column=0, columnspan=1)
+        self.refresh_button.grid_configure(row=0, column=1, rowspan=1, pady=(0, 4))
+        self.subtitle_label.grid_configure(row=1, column=0, columnspan=2, pady=(4, 0))
+
+        for column in range(4):
+            self.stats.grid_columnconfigure(column, weight=0)
+        self.stats.grid_columnconfigure(0, weight=1)
+        self.stats.grid_columnconfigure(1, weight=1)
+        for index, item in enumerate(self._stat_items):
+            item.grid_configure(
+                row=1 + index // 2,
+                column=index % 2,
+                padx=18,
+                pady=(2, 10 if index < 2 else 14),
+            )
+
+        self.accounts_header.grid_columnconfigure(0, weight=1)
+        self.accounts_header.grid_columnconfigure(1, weight=0)
+        self.accounts_header.grid_columnconfigure(2, weight=0)
+        self.accounts_title.grid_configure(row=0, column=0, columnspan=1)
+        self.filter_menu.grid_configure(row=0, column=1, pady=(0, 8))
+        self.search_entry.grid_configure(
+            row=1, column=0, columnspan=2, padx=0, pady=(2, 0), sticky="ew",
+        )
 
     def _desktop_form_layout(self) -> None:
         self.employee_label.grid(

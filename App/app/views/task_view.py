@@ -250,12 +250,13 @@ class TaskView(ctk.CTkFrame):
             scopes = ["My Tasks"]
             default = "My Tasks"
 
-        self._pill_frame = ctk.CTkFrame(right, fg_color="transparent")
-        self._pill_frame.pack(side="left", padx=(0, 10))
+        self._pill_frame = ctk.CTkFrame(header, fg_color="transparent")
+        self._pill_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         self._scope_buttons: dict[str, ctk.CTkButton] = {}
         self._active_scope = default
 
-        for scope in scopes:
+        for column, scope in enumerate(scopes):
+            self._pill_frame.grid_columnconfigure(column, weight=1, uniform="task_scope")
             btn = ctk.CTkButton(
                 self._pill_frame,
                 text=scope,
@@ -269,11 +270,16 @@ class TaskView(ctk.CTkFrame):
                 font=ctk.CTkFont(size=12, weight="bold"),
                 command=lambda s=scope: self._set_scope(s),
             )
-            btn.pack(side="left", padx=3)
+            btn.grid(
+                row=0,
+                column=column,
+                sticky="ew",
+                padx=(0 if column == 0 else 4, 0 if column == len(scopes) - 1 else 4),
+            )
             self._scope_buttons[scope] = btn
 
         if self._is_manager:
-            ctk.CTkButton(
+            self._new_task_button = ctk.CTkButton(
                 right,
                 text="+  New Task",
                 width=120,
@@ -284,7 +290,8 @@ class TaskView(ctk.CTkFrame):
                 text_color="#FFFFFF",
                 font=ctk.CTkFont(size=13, weight="bold"),
                 command=self._open_create,
-            ).pack(side="left", padx=(6, 0))
+            )
+            self._new_task_button.pack(side="right")
 
     @ui_task
     def _set_scope(self, scope: str) -> None:

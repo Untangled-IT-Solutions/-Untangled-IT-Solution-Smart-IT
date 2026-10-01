@@ -190,11 +190,15 @@ class QuoteManagementView(ctk.CTkFrame):
         self._loaded_reply = ""
         self._employee_names: List[str] = []
         self._employee_cache: Dict[str, Dict[str, Any]] = {}
+        self._layout_job = None
+        self._compact_layout = None
 
         if not self._check_authorization():
             return
 
         self._setup_ui()
+        self.bind("<Configure>", self._schedule_responsive_layout, add="+")
+        self.after_idle(self._apply_responsive_layout)
         # Defer network loads until the frame is mapped into the workspace.
         # Starting workers during __init__ raced with show_workspace_view and
         # the apply() callback was dropped before the list could render.
@@ -277,9 +281,10 @@ class QuoteManagementView(ctk.CTkFrame):
     # -------------------------------------------------------------------- ui
 
     def _setup_ui(self):
-        # Desktop-friendly proportions - 30% list, 70% details
-        self.grid_columnconfigure(0, weight=30, minsize=320)
-        self.grid_columnconfigure(1, weight=70, minsize=500)
+        # The list and details panes resize together; fixed child widths must
+        # never be allowed to force either pane outside the viewport.
+        self.grid_columnconfigure(0, weight=40, minsize=300)
+        self.grid_columnconfigure(1, weight=60, minsize=420)
         self.grid_rowconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=0)
 
@@ -355,7 +360,8 @@ class QuoteManagementView(ctk.CTkFrame):
         self._search_entry.grid(row=0, column=0, sticky="ew")
         self._search_entry.bind("<KeyRelease>", self._on_search_key)
 
-        # Filter chips - scrollable horizontal
+        # A menu scales to every viewport. The previous packed chip row grew
+        # wider than the window and pushed the details pane off-screen.
         self._filter_bar = ctk.CTkFrame(self._list_panel, fg_color="transparent")
         self._filter_bar.grid(row=2, column=0, padx=12, pady=(0, 4), sticky="ew")
         self._build_filter_chips()
@@ -384,28 +390,62 @@ class QuoteManagementView(ctk.CTkFrame):
 
         statuses = ["All"] + self.STATUS_OPTIONS
         self._filter_buttons = {}
-
-        # Use a scrollable frame for chips
-        chip_frame = ctk.CTkFrame(self._filter_bar, fg_color="transparent")
-        chip_frame.pack(fill="x")
-
-        for i, name in enumerate(statuses):
-            btn = ctk.CTkButton(
-                chip_frame,
-                text=name,
-                height=24,
-                width=0,
-                corner_radius=12,
-                font=ctk.CTkFont(size=10),
-                fg_color=Theme.PANEL_ALT if name != "All" else Theme.ACCENT,
-                hover_color=Theme.PANEL_ALT,
-                text_color=Theme.TEXT if name != "All" else "#1a1a1a",
-                command=lambda n=name: self._set_status_filter(n),
-            )
-            btn.pack(side="left", padx=2, pady=2)
-            self._filter_buttons[name] = btn
-
+        self._filter_bar.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            self._filter_bar,
+            text="Status",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=Theme.MUTED_TEXT,
+        ).grid(row=0, column=0, padx=(4, 8), pady=2, sticky="w")
+        self._status_filter_menu = ctk.CTkOptionMenu(
+            self._filter_bar,
+            values=statuses,
+            height=30,
+            fg_color=Theme.PANEL_ALT,
+            button_color=Theme.ACCENT,
+            button_hover_color=Theme.ACCENT_HOVER,
+            text_color=Theme.TEXT,
+            dropdown_fg_color=Theme.PANEL,
+            dropdown_hover_color=Theme.PANEL_ALT,
+            command=self._set_status_filter,
+        )
+        self._status_filter_menu.grid(row=0, column=1, padx=(0, 4), pady=2, sticky="ew")
+        self._status_filter_menu.set("All")
         self._active_status_filter = "All"
+
+    def _schedule_responsive_layout(self, _event=None):
+        if self._layout_job is not None:
+            try:
+                self.after_cancel(self._layout_job)
+            except Exception:
+                pass
+        self._layout_job = self.after(80, self._apply_responsive_layout)
+
+    def _apply_responsive_layout(self):
+        """Stack panes only when the workspace is genuinely too narrow."""
+        self._layout_job = None
+        compact = self.winfo_width() < 820
+        if compact == self._compact_layout:
+            return
+        self._compact_layout = compact
+        if compact:
+            self.grid_columnconfigure(0, weight=1, minsize=0)
+            self.grid_columnconfigure(1, weight=0, minsize=0)
+            self.grid_rowconfigure(0, weight=1)
+            self.grid_rowconfigure(1, weight=2)
+            self.grid_rowconfigure(2, weight=0)
+            self._list_panel.grid_configure(row=0, column=0, padx=0, pady=(0, 6))
+            self._details_panel.grid_configure(row=1, column=0, padx=0, pady=(6, 0))
+            self._status_bar.grid_configure(row=2, column=0, columnspan=1)
+        else:
+            self.grid_columnconfigure(0, weight=40, minsize=300)
+            self.grid_columnconfigure(1, weight=60, minsize=420)
+            self.grid_rowconfigure(0, weight=1)
+            self.grid_rowconfigure(1, weight=0)
+            self.grid_rowconfigure(2, weight=0)
+            self._list_panel.grid_configure(row=0, column=0, padx=(0, 6), pady=(0, 2))
+            self._details_panel.grid_configure(row=0, column=1, padx=(6, 0), pady=(0, 2))
+            self._status_bar.grid_configure(row=1, column=0, columnspan=2)
 
     def _setup_details_panel(self):
         self._details_panel = ctk.CTkFrame(self, corner_radius=12, fg_color=Theme.PANEL)
@@ -945,6 +985,9 @@ class QuoteManagementView(ctk.CTkFrame):
                 btn.configure(fg_color=Theme.ACCENT, text_color="#1a1a1a")
             else:
                 btn.configure(fg_color=Theme.PANEL_ALT, text_color=Theme.TEXT)
+        menu = getattr(self, "_status_filter_menu", None)
+        if menu is not None and menu.get() != name:
+            menu.set(name)
         self._filter_quotes()
 
     def _select_quote(self, quote: Dict[str, Any]):
