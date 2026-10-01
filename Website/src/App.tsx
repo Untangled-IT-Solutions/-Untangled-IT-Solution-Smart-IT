@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Header from './components/header'
 import Home from './pages/home'
 import QuotePage from './pages/quote'
@@ -13,17 +13,34 @@ import CartPage from './pages/cart'
 import CheckoutPage from './pages/checkout'
 import TrackQuotePage from './pages/track-quote'
 import TrackOrderPage from './pages/track-order'
+import TermsAndConditionsPage from './pages/terms-and-conditions'
 import { StoreProvider } from './lib/store-context'
 import './App.css'
 
-export type Page = 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order'
+export type Page = 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order' | 'terms-and-conditions'
+
+function pageFromLocation(): Page {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('page') === 'terms-and-conditions' ? 'terms-and-conditions' : 'home'
+}
 
 function AppContent() {
-  const [currentPage, setCurrentPage] = useState<Page>('home')
+  const [currentPage, setCurrentPage] = useState<Page>(pageFromLocation)
   const [showQuote, setShowQuote] = useState(false)
+
+  useEffect(() => {
+    const handleHistory = () => setCurrentPage(pageFromLocation())
+    window.addEventListener('popstate', handleHistory)
+    return () => window.removeEventListener('popstate', handleHistory)
+  }, [])
 
   const navigateTo = (page: Page) => {
     console.log('📍 Navigating to:', page);
+    if (page === 'terms-and-conditions') {
+      window.history.pushState(null, '', '/?page=terms-and-conditions')
+    } else if (new URLSearchParams(window.location.search).get('page') === 'terms-and-conditions') {
+      window.history.pushState(null, '', '/')
+    }
     setCurrentPage(page)
     if (page !== 'quote') {
       setShowQuote(false)
@@ -111,6 +128,8 @@ function AppContent() {
         return <TrackQuotePage />
       case 'track-order':
         return <TrackOrderPage />
+      case 'terms-and-conditions':
+        return <TermsAndConditionsPage />
       default:
         return <Home onNavigate={navigateTo} />
     }

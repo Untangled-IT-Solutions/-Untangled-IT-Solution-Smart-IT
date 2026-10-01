@@ -5,9 +5,9 @@ import { useTheme } from "../context/ThemeContext";
 import { useStore } from "../lib/store-context";
 
 interface HeaderProps {
-  onNavigate: (page: 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order') => void;
+  onNavigate: (page: 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order' | 'terms-and-conditions') => void;
   onRequestQuote: () => void;
-  currentPage: 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order';
+  currentPage: 'home' | 'products' | 'refurbished' | 'software' | 'support' | 'solutions' | 'help-me-choose' | 'cart' | 'checkout' | 'quote' | 'track-quote' | 'track-order' | 'terms-and-conditions';
 }
 
 const NAV_ITEMS = [
