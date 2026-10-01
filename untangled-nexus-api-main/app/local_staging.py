@@ -94,6 +94,37 @@ async def seed_local_staging(db, password: str) -> None:
         "created_at": now(),
         "revision": 0,
     })
+    await db["quotes"].insert_one({
+        "_id": ObjectId(),
+        "reference": "STG-QUOTE-001",
+        "customerName": "Nexus Test Client",
+        "company": "Nexus Test Company",
+        "email": "procurement@example.co.za",
+        "phone": "010 000 0000",
+        "address": "Midrand, Gauteng, South Africa",
+        "delivery_address": "Midrand, Gauteng, South Africa",
+        "preferred_delivery_date": (now() + timedelta(days=14)).date().isoformat(),
+        "items": [
+            {
+                "id": "stg-item-001",
+                "name": "Business computer equipment",
+                "qty": 1,
+            },
+        ],
+        "assigned_to": {
+            "id": str(employees["Operations Manager"]["_id"]),
+            "employee_id": employees["Operations Manager"]["employee_id"],
+            "name": employees["Operations Manager"]["full_name"],
+            "full_name": employees["Operations Manager"]["full_name"],
+            "email": employees["Operations Manager"]["email"],
+        },
+        "assigned_employee_id": employees["Operations Manager"]["_id"],
+        "status": "assigned",
+        "notes": "Local-only quotation automation walkthrough.",
+        "createdAt": now(),
+        "updatedAt": now(),
+        "revision": 0,
+    })
     await db["calendar_events"].insert_one({
         "_id": ObjectId(),
         "title": "Staging operations review",
